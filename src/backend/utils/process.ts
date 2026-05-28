@@ -5,11 +5,15 @@ export type CommandResult = {
   stderr: string;
 };
 
-export async function runCommand(command: string, args: string[], options: { cwd?: string; input?: string } = {}): Promise<CommandResult> {
+export async function runCommand(
+  command: string,
+  args: string[],
+  options: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: process.env,
+      env: options.env ?? process.env,
       stdio: "pipe",
     });
 

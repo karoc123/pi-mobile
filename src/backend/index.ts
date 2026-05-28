@@ -18,6 +18,8 @@ const config = loadConfig();
 const authService = new AuthService(config.appPassword);
 const workspaceService = new WorkspaceService(config.workspaceRoot, config.defaultRepo);
 const costService = new CostService(config.costsDbPath);
+const gitIdentity = config.gitUserName && config.gitUserEmail ? { name: config.gitUserName, email: config.gitUserEmail } : undefined;
+const gitService = new GitService(gitIdentity);
 
 let websocketHub: WebsocketHub;
 
@@ -51,7 +53,7 @@ const app = createApp({
   workspaceService,
   repositoryRuntimeService,
   fileService: new FileService(),
-  gitService: new GitService(),
+  gitService,
   costService,
   piAgentService,
 });

@@ -50,11 +50,15 @@ cp .env.example .env
 
 ```env
 APP_PASSWORD=your-local-password
+GIT_USER_NAME=Your Name
+GIT_USER_EMAIL=you@example.com
 WORKSPACE_ROOT=/home/zink/dev
 COSTS_DB_PATH=/home/zink/dev/.pi-mobile/costs.sqlite
 PI_AGENT_DIR=/home/zink/.pi/agent
 PI_SESSION_DIR=/home/zink/.pi/agent/sessions
 ```
+
+`GIT_USER_NAME` and `GIT_USER_EMAIL` are injected into every Git operation so containerized runs do not depend on a global gitconfig.
 
 3. Install dependencies.
 
@@ -113,11 +117,16 @@ http://localhost:3000
 
 ```env
 APP_PASSWORD=your-local-password
+GIT_USER_NAME=Your Name
+GIT_USER_EMAIL=you@example.com
+HOST_PORT=3000
 WORKSPACE_HOST_PATH=/home/zink/dev
 PI_HOME_HOST_PATH=/home/zink/.pi
 GITCONFIG_HOST_PATH=/home/zink/.gitconfig
 SSH_HOST_PATH=/home/zink/.ssh
 ```
+
+If port 3000 is already in use on the host, change `HOST_PORT` to another free port such as `3001`.
 
 2. Start the container:
 
@@ -128,7 +137,7 @@ docker compose up --build
 3. Open:
 
 ```text
-http://localhost:3000
+http://localhost:HOST_PORT
 ```
 
 4. Pick `pi-mobile` from the repository picker to work on this repository itself.

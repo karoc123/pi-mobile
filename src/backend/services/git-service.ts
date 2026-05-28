@@ -2,18 +2,98 @@ import type { DiffFile, DiffHunk, SelectedRepo } from "../../shared/contracts.js
 
 import { runCommand } from "../utils/process.js";
 
+type GitIdentity = {
+  name: string;
+  email: string;
+};
+
 export class GitService {
+  private readonly gitEnv?: NodeJS.ProcessEnv;
+
+  constructor(identity?: GitIdentity) {
+    if (identity) {
+      this.gitEnv = {
+        ...process.env,
+        GIT_AUTHOR_NAME: identity.name,
+        GIT_AUTHOR_EMAIL: identity.email,
+        GIT_COMMITTER_NAME: identity.name,
+        GIT_COMMITTER_EMAIL: identity.email,
+      };
+    }
+  }
+
   async getDiff(repo: SelectedRepo) {
-    const { stdout } = await runCommand("git", ["-C", repo.absolutePath, "diff", "--no-ext-diff", "--patch", "--unified=3", "--no-color"]);
+    const { stdout } = await this.runGit(repo, [
+      "diff",
+      "--no-ext-diff",
+      "--patch",
+      "--unified=3",
+      "--no-color",
+    ]);
     return parseUnifiedDiff(stdout);
   }
 
   async revertHunk(repo: SelectedRepo, diff: string) {
     const normalizedDiff = diff.endsWith("\n") ? diff : `${diff}\n`;
-    await runCommand("git", ["-C", repo.absolutePath, "apply", "-R", "--recount", "--whitespace=nowarn", "-"], {
-      input: normalizedDiff,
-    });
+    await this.runGit(
+      repo,
+      ["apply", "-R", "--recount", "--whitespace=nowarn", "-"],
+      {
+        input: normalizedDiff,
+      },
+    );
   }
+
+  async commit(repo: SelectedRepo, message: string) {
+    const trimmed = message.trim();
+
+    if (!trimmed) {
+      throw new Error("Commit message is required.");
+    }
+
+    await this.runGit(repo, ["add", "--all"]);
+    const { stdout: status } = await this.runGit(repo, ["status", "--porcelain"]);
+
+    if (!status.trim()) {
+      throw new Error("No changes to commit.");
+    }
+
+    try {
+      await this.runGit(repo, ["commit", "-m", trimmed]);
+    } catch (error) {
+      if (isMissingIdentityError(error)) {
+        throw new Error(
+          "Git author identity is missing. Set GIT_USER_NAME and GIT_USER_EMAIL in your environment or configure the repository's git config.",
+        );
+      }
+
+      throw error;
+    }
+
+    const { stdout: commitSha } = await this.runGit(repo, ["rev-parse", "HEAD"]);
+
+    return commitSha.trim();
+  }
+
+  private runGit(repo: SelectedRepo, args: string[], options: { input?: string } = {}) {
+    return runCommand(
+      "git",
+      ["-C", repo.absolutePath, ...args],
+      {
+        ...options,
+        env: this.gitEnv,
+      },
+    );
+  }
+}
+
+function isMissingIdentityError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("please tell me who you are") || message.includes("unable to auto-detect email address");
 }
 
 export function parseUnifiedDiff(input: string): DiffFile[] {

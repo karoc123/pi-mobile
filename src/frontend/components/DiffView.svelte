@@ -9,9 +9,11 @@
   export let files: DiffFile[] = [];
   export let loading = false;
   export let revertingHunkId: string | null = null;
+  export let committing = false;
 
   const dispatch = createEventDispatcher<{
     revert: { diff: string; hunkId: string };
+    commit: void;
   }>();
 </script>
 
@@ -21,7 +23,12 @@
       <p class="eyebrow">Git diff</p>
       <h2>Review every hunk</h2>
     </div>
-    <span class="status-pill">{files.length} file{files.length === 1 ? '' : 's'}</span>
+    <div class="header-actions">
+      <span class="status-pill">{files.length} file{files.length === 1 ? '' : 's'}</span>
+      <button class="primary-button" type="button" disabled={loading || files.length === 0 || committing} on:click={() => dispatch('commit')}>
+        {committing ? 'Committing…' : 'Commit changes'}
+      </button>
+    </div>
   </div>
 
   {#if loading}

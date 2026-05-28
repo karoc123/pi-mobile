@@ -81,6 +81,42 @@
 
     return new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
+
+  function describeMessageRole(message: ChatMessage) {
+    if (message.role === 'assistant') {
+      return 'pi';
+    }
+
+    if (message.role === 'system') {
+      return 'system';
+    }
+
+    return 'you';
+  }
+
+  function describeMessagePrompt(message: ChatMessage) {
+    if (message.role === 'assistant') {
+      return 'pi>';
+    }
+
+    if (message.role === 'system') {
+      return '!!';
+    }
+
+    return '$';
+  }
+
+  function describeToolPrefix(tool: ToolActivity) {
+    if (tool.status === 'error') {
+      return '!';
+    }
+
+    if (tool.status === 'running') {
+      return '...';
+    }
+
+    return '*';
+  }
 </script>
 
 <section class="view-shell chat-view">
@@ -88,7 +124,7 @@
     <div class="chat-status-main">
       <span class:ready={statusTone === 'ready'} class:error={statusTone === 'error'} class:running={statusTone === 'running'} class="live-dot"></span>
       <div>
-        <p class="eyebrow">Live agent</p>
+        <p class="eyebrow">CLI session</p>
         <h2>{statusTitle}</h2>
         <p class="subdued">{statusDetail}</p>
       </div>
@@ -109,15 +145,18 @@
   {#if tools.length > 0}
     <section class="activity-panel card-panel">
       <div class="activity-header">
-        <strong>Recent tool activity</strong>
+        <strong>Tool trace</strong>
         <span class="subdued">{tools.length}</span>
       </div>
       <div class="tool-strip">
         {#each tools as tool}
           <article class:error={tool.status === 'error'} class:running={tool.status === 'running'} class:success={tool.status === 'complete'} class="tool-chip">
             <div class="tool-chip-header">
-              <strong>{tool.toolName}</strong>
-              <span>{tool.status}</span>
+              <div class="tool-chip-label">
+                <span class="tool-chip-prefix">{describeToolPrefix(tool)}</span>
+                <strong>{tool.toolName}</strong>
+              </div>
+              <span class="tool-chip-status">{tool.status}</span>
             </div>
             {#if tool.detail}
               <p>{tool.detail}</p>
@@ -131,16 +170,19 @@
   <div class="chat-log">
     {#if messages.length === 0}
       <article class="empty-state-card">
-        <h3>No conversation yet</h3>
-        <p>Send the first prompt once a repository is selected. The status card above will switch between working and ready as Pi completes each run.</p>
+        <h3>No transcript yet</h3>
+        <p>Send the first prompt once a repository is selected. New prompts and agent output will appear here like a running CLI session.</p>
       </article>
     {/if}
 
     {#each messages as message}
-      <article class:assistant={message.role === 'assistant'} class:user={message.role === 'user'} class="message-card">
+      <article class:assistant={message.role === 'assistant'} class:system={message.role === 'system'} class:user={message.role === 'user'} class="message-card">
         <header>
-          <strong>{message.role}</strong>
-          <span>{describeMessageStatus(message)}</span>
+          <div class="message-heading">
+            <span class="message-prompt">{describeMessagePrompt(message)}</span>
+            <strong>{describeMessageRole(message)}</strong>
+          </div>
+          <span class="message-status">{describeMessageStatus(message)}</span>
         </header>
         <div class="markdown-body">{@html renderMarkdown(message.text || '_No text returned._')}</div>
       </article>
@@ -149,19 +191,22 @@
   </div>
 
   <div class="composer">
-    <textarea
-      bind:this={promptField}
-      bind:value={prompt}
-      rows="4"
-      placeholder="Ask pi to change the active repository..."
-      on:keydown={handleComposerKeydown}
-    ></textarea>
+    <label class="composer-terminal-input">
+      <span class="composer-prefix">$</span>
+      <textarea
+        bind:this={promptField}
+        bind:value={prompt}
+        rows="4"
+        placeholder="Ask pi to change the active repository..."
+        on:keydown={handleComposerKeydown}
+      ></textarea>
+    </label>
     <div class="composer-footer">
       <div class="composer-actions">
         <button class="secondary-button compact" type="button" on:click={() => dispatch('openCommands')} disabled={isStreaming}>
           CMD
         </button>
-        <span class="subdued">Use CMD for model, session, compact, tree, and fork actions.</span>
+        <span class="subdued">{formatModelLabel(usage.modelId)} {formatUsageSummary(usage)}</span>
       </div>
       <button class="primary-button" type="button" on:click={submit} disabled={prompt.trim().length === 0}>
         {isStreaming ? 'Send follow-up' : 'Send prompt'}

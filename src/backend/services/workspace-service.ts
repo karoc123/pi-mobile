@@ -71,10 +71,11 @@ export class WorkspaceService {
       throw new Error("Selected path is not a directory.");
     }
 
-    const repositoryRoot = await getGitRoot(absolutePath);
+    const { root: repositoryRoot, errorMessage } = await getGitRootWithDiagnostics(absolutePath);
 
     if (!repositoryRoot) {
-      throw new Error("Selected directory is not a Git repository.");
+      const hint = errorMessage ? `\n\nGit error:\n${errorMessage}` : "";
+      throw new Error(`Selected directory is not a Git repository.${hint}`);
     }
 
     resolveWithin(this.rootPath, relativeFrom(this.rootPath, repositoryRoot));
@@ -100,12 +101,52 @@ async function isGitRepo(candidatePath: string) {
 }
 
 async function getGitRoot(candidatePath: string): Promise<string | null> {
+  return (await getGitRootWithDiagnostics(candidatePath)).root;
+}
+
+async function getGitRootWithDiagnostics(candidatePath: string): Promise<{ root: string | null; errorMessage?: string }> {
   try {
     const { stdout } = await runCommand("git", ["-C", candidatePath, "rev-parse", "--show-toplevel"]);
-    return stdout.trim();
-  } catch {
-    return null;
+    return { root: stdout.trim() };
+  } catch (unknownError) {
+    const message = unknownError instanceof Error ? unknownError.message : String(unknownError);
+    const unsafeRepositoryPath = extractUnsafeRepositoryPath(message);
+
+    if (unsafeRepositoryPath) {
+      try {
+        await runCommand("git", ["config", "--global", "--add", "safe.directory", unsafeRepositoryPath]);
+        const { stdout } = await runCommand("git", ["-C", candidatePath, "rev-parse", "--show-toplevel"]);
+        return { root: stdout.trim() };
+      } catch (configError) {
+        const configMessage = configError instanceof Error ? configError.message : String(configError);
+        const combinedMessage = [
+          message,
+          `Attempted to run \`git config --global --add safe.directory "${unsafeRepositoryPath}"\` automatically but it failed:`,
+          configMessage,
+        ].join("\n");
+
+        return { root: null, errorMessage: combinedMessage };
+      }
+    }
+
+    return { root: null, errorMessage: message };
   }
+}
+
+function extractUnsafeRepositoryPath(message: string) {
+  const patterns = [
+    /detected dubious ownership in repository at '([^']+)'/,
+    /unsafe repository \('([^']+)'/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return null;
 }
 
 async function pathExists(candidatePath: string) {

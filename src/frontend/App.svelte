@@ -9,6 +9,7 @@
     AgentUsage,
     CostReport,
     DiffFile,
+    GitCommitResult,
     FileDocument,
     FileEntry,
     SelectedRepo,
@@ -85,6 +86,7 @@
   let diffLoading = false;
   let diffFiles: DiffFile[] = [];
   let revertingHunkId: string | null = null;
+  let committing = false;
 
   let fileLoading = false;
   let filePath = '.';
@@ -675,6 +677,49 @@
     }
   }
 
+  function requestCommit(_event?: CustomEvent<void>) {
+    if (committing) {
+      return;
+    }
+
+    const input = window.prompt('Commit message', '');
+
+    if (input === null) {
+      return;
+    }
+
+    const trimmed = input.trim();
+
+    if (!trimmed) {
+      showBanner('Commit message is required.', 'error');
+      return;
+    }
+
+    void commitChanges(trimmed);
+  }
+
+  async function commitChanges(message: string) {
+    if (!currentRepo) {
+      showBanner('Select a repository before committing.', 'error');
+      return;
+    }
+
+    committing = true;
+
+    try {
+      const { commitSha } = await apiFetch<GitCommitResult>('/api/git/commit', {
+        method: 'POST',
+        body: JSON.stringify({ message })
+      });
+      await loadDiff();
+      showBanner(`Committed ${commitSha.slice(0, 7)}.`, 'success');
+    } catch (error) {
+      showBanner(toErrorMessage(error), 'error');
+    } finally {
+      committing = false;
+    }
+  }
+
   async function revertHunk(diff: string, hunkId: string) {
     revertingHunkId = hunkId;
 
@@ -768,7 +813,15 @@
         />
       {:else if view === 'diff'}
         {#if diffViewComponent}
-          <svelte:component this={diffViewComponent} files={diffFiles} loading={diffLoading} revertingHunkId={revertingHunkId} on:revert={(event) => revertHunk(event.detail.diff, event.detail.hunkId)} />
+          <svelte:component
+            this={diffViewComponent}
+            files={diffFiles}
+            loading={diffLoading}
+            revertingHunkId={revertingHunkId}
+            committing={committing}
+            on:commit={requestCommit}
+            on:revert={(event) => revertHunk(event.detail.diff, event.detail.hunkId)}
+          />
         {:else if lazyViewLoading === 'diff'}
           <section class="view-shell">
             <div class="empty-state-card compact">

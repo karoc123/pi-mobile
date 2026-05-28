@@ -3,6 +3,8 @@ import path from "node:path";
 import { z } from "zod";
 
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const optionalEnvString = z.preprocess(emptyStringToUndefined, z.string().optional());
+const optionalThinkingLevel = z.preprocess(emptyStringToUndefined, z.enum(thinkingLevels).optional());
 
 const configSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -10,15 +12,17 @@ const configSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   APP_PASSWORD: z.string().min(1, "APP_PASSWORD is required"),
   WORKSPACE_ROOT: z.string().default(process.cwd()),
-  COSTS_DB_PATH: z.string().optional(),
-  DEFAULT_REPO: z.string().optional(),
+  COSTS_DB_PATH: optionalEnvString,
+  DEFAULT_REPO: optionalEnvString,
   SESSION_COOKIE_NAME: z.string().default("pi_mobile_session"),
-  PI_AGENT_DIR: z.string().optional(),
-  PI_SESSION_DIR: z.string().optional(),
-  PI_PROVIDER: z.string().optional(),
-  PI_MODEL: z.string().optional(),
-  PI_THINKING_LEVEL: z.enum(thinkingLevels).optional(),
-  PI_MOCK_MODE: z.string().optional(),
+  PI_AGENT_DIR: optionalEnvString,
+  PI_SESSION_DIR: optionalEnvString,
+  PI_PROVIDER: optionalEnvString,
+  PI_MODEL: optionalEnvString,
+  PI_THINKING_LEVEL: optionalThinkingLevel,
+  PI_MOCK_MODE: optionalEnvString,
+  GIT_USER_NAME: optionalEnvString,
+  GIT_USER_EMAIL: optionalEnvString,
 });
 
 export type AppConfig = {
@@ -36,6 +40,8 @@ export type AppConfig = {
   piModel?: string;
   piThinkingLevel?: (typeof thinkingLevels)[number];
   piMockMode: boolean;
+  gitUserName?: string;
+  gitUserEmail?: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -43,6 +49,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   if ((parsed.PI_PROVIDER && !parsed.PI_MODEL) || (!parsed.PI_PROVIDER && parsed.PI_MODEL)) {
     throw new Error("PI_PROVIDER and PI_MODEL must be configured together.");
+  }
+
+  if ((parsed.GIT_USER_NAME && !parsed.GIT_USER_EMAIL) || (!parsed.GIT_USER_NAME && parsed.GIT_USER_EMAIL)) {
+    throw new Error("GIT_USER_NAME and GIT_USER_EMAIL must be configured together.");
   }
 
   return {
@@ -60,9 +70,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     piModel: parsed.PI_MODEL,
     piThinkingLevel: parsed.PI_THINKING_LEVEL,
     piMockMode: asBoolean(parsed.PI_MOCK_MODE),
+    gitUserName: parsed.GIT_USER_NAME,
+    gitUserEmail: parsed.GIT_USER_EMAIL,
   };
 }
 
 function asBoolean(value: string | undefined) {
   return value === "1" || value === "true" || value === "yes";
+}
+
+function emptyStringToUndefined(value: unknown) {
+  if (typeof value === "string" && value.trim() === "") {
+    return undefined;
+  }
+
+  return value;
 }

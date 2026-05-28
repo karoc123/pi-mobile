@@ -4,12 +4,14 @@ services:
     container_name: pi-mobile-server
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${HOST_PORT:-3000}:3000"
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
       APP_PASSWORD: ${APP_PASSWORD}
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
       WORKSPACE_ROOT: /workspace
       COSTS_DB_PATH: /workspace/.pi-mobile/costs.sqlite
       DEFAULT_REPO: ${DEFAULT_REPO:-}

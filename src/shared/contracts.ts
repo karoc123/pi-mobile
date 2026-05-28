@@ -41,6 +41,10 @@ export type DiffFile = {
   removedLines: number;
 };
 
+export type GitCommitResult = {
+  commitSha: string;
+};
+
 export type ChatRole = "user" | "assistant" | "system";
 
 export type ChatMessage = {

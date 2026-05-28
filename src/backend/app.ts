@@ -109,6 +109,12 @@ export function createApp(services: AppServices) {
     response.json({ files: await services.gitService.getDiff(repo) });
   });
 
+  app.post("/api/git/commit", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const commitSha = await services.gitService.commit(repo, getBodyString(request, "message"));
+    response.json({ commitSha });
+  });
+
   app.get("/api/costs", requireAuth(services), (request, response) => {
     response.json(
       services.costService.getReport({

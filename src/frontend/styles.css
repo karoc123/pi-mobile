@@ -15,6 +15,38 @@
   --overlay: rgba(0, 0, 0, 0.45);
   --user-surface: #094771;
   --assistant-surface: #252526;
+  --terminal-shell: #1e1e1e;
+  --terminal-shell-line: #3c3c3c;
+  --terminal-shell-text: #d4d4d4;
+  --terminal-shell-heading: #ffffff;
+  --terminal-shell-muted: #9d9d9d;
+  --terminal-panel: #252526;
+  --terminal-panel-strong: #2d2d30;
+  --terminal-panel-subtle: #333337;
+  --terminal-panel-border: #3c3c3c;
+  --terminal-shadow-highlight: rgba(255, 255, 255, 0.02);
+  --terminal-shadow-inset: rgba(0, 0, 0, 0.24);
+  --terminal-ink: #d4d4d4;
+  --terminal-muted: #9d9d9d;
+  --terminal-accent: #9d9d9d;
+  --terminal-accent-strong: #d4d4d4;
+  --terminal-user-panel: #252526;
+  --terminal-system-panel: #2d2d30;
+  --terminal-warning-border: #b89500;
+  --terminal-error-border: #c74e39;
+  --terminal-diff-added-bg: rgba(46, 160, 67, 0.16);
+  --terminal-diff-added-border: rgba(46, 160, 67, 0.4);
+  --terminal-diff-added-highlight: rgba(46, 160, 67, 0.3);
+  --terminal-diff-added-text: #b7d9b6;
+  --terminal-diff-removed-bg: rgba(248, 81, 73, 0.14);
+  --terminal-diff-removed-border: rgba(248, 81, 73, 0.38);
+  --terminal-diff-removed-highlight: rgba(248, 81, 73, 0.28);
+  --terminal-diff-removed-text: #efb8b5;
+  --terminal-diff-change-bg: rgba(210, 153, 34, 0.18);
+  --terminal-diff-info-bg: rgba(86, 156, 214, 0.12);
+  --terminal-diff-info-border: rgba(86, 156, 214, 0.28);
+  --terminal-diff-gutter: #1f1f1f;
+  --terminal-diff-dim: #858585;
   background: #1e1e1e;
   color: var(--ink);
 }
@@ -35,6 +67,38 @@
   --overlay: rgba(0, 0, 0, 0.18);
   --user-surface: #cce6ff;
   --assistant-surface: #ffffff;
+  --terminal-shell: #d8ddd1;
+  --terminal-shell-line: #b1b9ab;
+  --terminal-shell-text: #202620;
+  --terminal-shell-heading: #111511;
+  --terminal-shell-muted: #556052;
+  --terminal-panel: #f1f5ea;
+  --terminal-panel-strong: #fafcf6;
+  --terminal-panel-subtle: #e6ebde;
+  --terminal-panel-border: rgba(58, 66, 52, 0.28);
+  --terminal-shadow-highlight: rgba(255, 255, 255, 0.7);
+  --terminal-shadow-inset: rgba(32, 38, 30, 0.08);
+  --terminal-ink: #1f261e;
+  --terminal-muted: #5f675d;
+  --terminal-accent: #6a785c;
+  --terminal-accent-strong: #34412f;
+  --terminal-user-panel: #e8eee1;
+  --terminal-system-panel: #ecefe4;
+  --terminal-warning-border: #9c8445;
+  --terminal-error-border: #a06059;
+  --terminal-diff-added-bg: #e4f0df;
+  --terminal-diff-added-border: #afcca6;
+  --terminal-diff-added-highlight: #d3e8cb;
+  --terminal-diff-added-text: #215225;
+  --terminal-diff-removed-bg: #f4e1de;
+  --terminal-diff-removed-border: #d6aaa3;
+  --terminal-diff-removed-highlight: #ecc8c2;
+  --terminal-diff-removed-text: #7a3029;
+  --terminal-diff-change-bg: #ede3bb;
+  --terminal-diff-info-bg: #edf2ea;
+  --terminal-diff-info-border: #c8d3c0;
+  --terminal-diff-gutter: #f7f9f3;
+  --terminal-diff-dim: #5c6759;
   background: #ffffff;
 }
 
@@ -249,6 +313,16 @@ code {
   align-items: flex-start;
 }
 
+.section-header .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.section-header .header-actions .primary-button {
+  white-space: nowrap;
+}
+
 .status-pill {
   padding: 0.55rem 0.85rem;
   border-radius: 999px;
@@ -260,6 +334,309 @@ code {
 .chat-log {
   display: grid;
   gap: 0.85rem;
+}
+
+.chat-view {
+  --cli-shell: var(--terminal-shell);
+  --cli-shell-line: var(--terminal-shell-line);
+  --cli-panel: var(--terminal-panel);
+  --cli-panel-strong: var(--terminal-panel-strong);
+  --cli-panel-muted: var(--terminal-panel-subtle);
+  --cli-ink: var(--terminal-ink);
+  --cli-muted: var(--terminal-muted);
+  --cli-accent: var(--terminal-accent);
+  --cli-accent-strong: var(--terminal-accent-strong);
+  --cli-user-panel: var(--terminal-user-panel);
+  --cli-system-panel: var(--terminal-system-panel);
+}
+
+.chat-view,
+.chat-view button,
+.chat-view textarea,
+.chat-view input,
+.chat-view code {
+  font-family: "IBM Plex Mono", "Consolas", "Liberation Mono", monospace;
+}
+
+.chat-view .chat-status-card,
+.chat-view .activity-panel,
+.chat-view .chat-log,
+.chat-view .composer {
+  background: var(--cli-shell);
+  border-color: var(--cli-shell-line);
+  border-radius: 0.4rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.chat-view .chat-log,
+.chat-view .composer,
+.chat-view .activity-panel {
+  padding: 0.9rem;
+}
+
+.chat-view .chat-log {
+  position: relative;
+  gap: 0.75rem;
+}
+
+.chat-view .chat-log::before {
+  content: "transcript";
+  position: absolute;
+  top: 0;
+  left: 0.9rem;
+  transform: translateY(-50%);
+  padding: 0.1rem 0.45rem;
+  background: var(--cli-shell);
+  color: color-mix(in srgb, var(--terminal-shell-text) 55%, transparent);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.chat-view .chat-status-card {
+  padding: 0.9rem;
+}
+
+.chat-view .chat-status-card h2,
+.chat-view .activity-header strong,
+.chat-view .composer-actions .subdued,
+.chat-view .ghost-button {
+  color: var(--terminal-shell-text);
+}
+
+.chat-view .chat-status-card h2,
+.chat-view .empty-state-card h3,
+.diff-view .section-header h2,
+.diff-view .diff-card h3,
+.menu-panel .sheet-header h2 {
+  color: var(--terminal-shell-heading, var(--terminal-shell-text));
+}
+
+.chat-view .chat-status-card .eyebrow,
+.chat-view .chat-status-card .subdued,
+.chat-view .activity-header .subdued,
+.chat-view .composer-actions .subdued {
+  color: var(--terminal-shell-muted);
+}
+
+.chat-view .live-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.15rem;
+  margin-top: 0.25rem;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.chat-view .live-dot.running {
+  animation: terminal-blink 1.15s steps(1, end) infinite;
+}
+
+.chat-view .usage-summary,
+.chat-view .model-summary,
+.chat-view .secondary-button,
+.chat-view .primary-button {
+  background: var(--cli-panel);
+  border-color: var(--terminal-panel-border);
+  color: var(--cli-ink);
+}
+
+.chat-view .primary-button {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.chat-view .primary-button:hover,
+.chat-view .secondary-button:hover {
+  background: var(--cli-panel-strong);
+}
+
+.chat-view .ghost-button {
+  border-color: color-mix(in srgb, var(--terminal-shell-text) 24%, transparent);
+}
+
+.chat-view .message-card,
+.chat-view .empty-state-card,
+.chat-view .tool-chip {
+  background: var(--cli-panel);
+  border-color: var(--terminal-panel-border);
+  border-radius: 0.22rem;
+  color: var(--cli-ink);
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.chat-view .message-card.user {
+  background: var(--cli-user-panel);
+}
+
+.chat-view .message-card.assistant,
+.chat-view .empty-state-card {
+  background: var(--cli-panel-strong);
+}
+
+.chat-view .message-card.system {
+  background: var(--cli-system-panel);
+}
+
+.chat-view .message-card header {
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.7rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--terminal-panel-border) 30%, transparent);
+}
+
+.chat-view .message-heading,
+.chat-view .tool-chip-label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.chat-view .message-prompt,
+.chat-view .tool-chip-prefix {
+  color: var(--cli-accent-strong);
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.chat-view .message-card header strong,
+.chat-view .tool-chip-header strong,
+.chat-view .message-status,
+.chat-view .tool-chip-status {
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chat-view .message-card header strong,
+.chat-view .tool-chip-header strong {
+  overflow-wrap: anywhere;
+}
+
+.chat-view .message-status,
+.chat-view .tool-chip-status,
+.chat-view .tool-chip p,
+.chat-view .empty-state-card p,
+.chat-view .markdown-body blockquote {
+  color: var(--cli-muted);
+}
+
+.chat-view .tool-chip.running {
+  border-color: var(--terminal-warning-border);
+}
+
+.chat-view .tool-chip.error {
+  border-color: var(--terminal-error-border);
+}
+
+.chat-view .tool-chip.success {
+  border-color: var(--terminal-panel-border);
+}
+
+.chat-view .markdown-body {
+  font-size: 0.96rem;
+  line-height: 1.65;
+  color: var(--cli-ink);
+  overflow-wrap: anywhere;
+}
+
+.chat-view .markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.chat-view .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-view .markdown-body pre {
+  padding: 0.9rem;
+  border-radius: 0.2rem;
+  border: 1px solid color-mix(in srgb, var(--terminal-panel-border) 38%, transparent);
+  background: rgba(255, 255, 255, 0.34);
+  color: var(--cli-ink);
+}
+
+.chat-view .markdown-body code {
+  background: color-mix(in srgb, var(--terminal-panel-border) 12%, transparent);
+  color: inherit;
+  padding: 0.08rem 0.28rem;
+  border-radius: 0.18rem;
+}
+
+.chat-view .markdown-body pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.chat-view .markdown-body ul,
+.chat-view .markdown-body ol {
+  padding-left: 1.35rem;
+}
+
+.chat-view .markdown-body blockquote {
+  margin: 0;
+  padding-left: 0.85rem;
+  border-left: 2px solid color-mix(in srgb, var(--terminal-panel-border) 32%, transparent);
+}
+
+.chat-view .empty-state-card h3 {
+  margin: 0 0 0.55rem;
+}
+
+.chat-view .composer {
+  gap: 0.75rem;
+}
+
+.chat-view .composer-terminal-input {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: start;
+  border: 1px solid var(--terminal-panel-border);
+  border-radius: 0.22rem;
+  background: var(--cli-panel);
+  color: var(--cli-ink);
+  padding: 0.9rem;
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.chat-view .composer-prefix {
+  color: var(--cli-accent-strong);
+  font-weight: 700;
+  padding-top: 0.05rem;
+}
+
+.chat-view .composer textarea {
+  min-height: 6.5rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--cli-ink);
+  padding: 0;
+  resize: vertical;
+  line-height: 1.65;
+}
+
+.chat-view .composer textarea:focus {
+  outline: none;
+}
+
+.chat-view .composer textarea::placeholder {
+  color: var(--cli-muted);
+}
+
+@keyframes terminal-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0.35;
+  }
 }
 
 .message-card,
@@ -665,6 +1042,263 @@ code {
   background: rgba(15, 118, 110, 0.18);
 }
 
+.menu-trigger,
+.menu-panel,
+.menu-panel button,
+.bottom-nav,
+.bottom-nav button,
+.diff-view,
+.diff-view button,
+.diff-view code {
+  font-family: "IBM Plex Mono", "Consolas", "Liberation Mono", monospace;
+}
+
+.menu-trigger {
+  background: var(--terminal-panel);
+  border-color: var(--terminal-panel-border);
+  color: var(--terminal-ink);
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.menu-panel {
+  background: var(--terminal-shell);
+  border-color: var(--terminal-shell-line);
+  color: var(--terminal-shell-text);
+  border-radius: 0.4rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.menu-panel .sheet-header {
+  padding: 0 0 0.85rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--terminal-shell-text) 12%, transparent);
+}
+
+.menu-panel .sheet-header h2 {
+  color: var(--terminal-shell-text);
+}
+
+.menu-panel .sheet-header .eyebrow {
+  color: var(--terminal-shell-muted);
+}
+
+.menu-panel .menu-section {
+  padding: 0.85rem;
+  border: 1px solid var(--terminal-panel-border);
+  border-radius: 0.22rem;
+  background: var(--terminal-panel);
+  color: var(--terminal-ink);
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.menu-panel .menu-section .eyebrow,
+.menu-panel .menu-copy {
+  color: var(--terminal-muted);
+}
+
+.menu-panel .secondary-button,
+.menu-panel .ghost-button,
+.menu-panel .theme-toggle {
+  background: var(--terminal-panel-strong);
+  border-color: var(--terminal-panel-border);
+  color: var(--terminal-ink);
+}
+
+.menu-panel .theme-toggle.selected {
+  background: var(--terminal-panel-subtle);
+  border-color: var(--terminal-accent-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--terminal-shell-text) 18%, transparent);
+}
+
+.menu-panel .danger-button {
+  color: var(--terminal-error-border);
+  border-color: color-mix(in srgb, var(--terminal-error-border) 55%, var(--terminal-panel-border));
+}
+
+.menu-panel .secondary-button:hover,
+.menu-panel .ghost-button:hover,
+.menu-panel .theme-toggle:hover,
+.menu-trigger:hover {
+  background: var(--terminal-panel-subtle);
+}
+
+.bottom-nav {
+  background: var(--terminal-shell);
+  border-color: var(--terminal-shell-line);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.bottom-nav button {
+  background: var(--terminal-panel);
+  border: 1px solid var(--terminal-panel-border);
+  color: var(--terminal-ink);
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.bottom-nav button:hover {
+  background: var(--terminal-panel-subtle);
+}
+
+.bottom-nav button.selected {
+  background: var(--terminal-panel-strong);
+  border-color: var(--terminal-accent-strong);
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px color-mix(in srgb, var(--terminal-shell-text) 20%, transparent);
+}
+
+.diff-view {
+  color: var(--terminal-shell-text);
+}
+
+.diff-view .eyebrow,
+.diff-view .subdued {
+  color: var(--terminal-shell-muted);
+}
+
+.diff-view .section-header {
+  align-items: end;
+}
+
+.diff-view .status-pill,
+.diff-view .primary-button,
+.diff-view .secondary-button {
+  background: var(--terminal-panel);
+  border-color: var(--terminal-panel-border);
+  color: var(--terminal-ink);
+}
+
+.diff-view .primary-button:hover,
+.diff-view .secondary-button:hover {
+  background: var(--terminal-panel-strong);
+}
+
+.diff-view .diff-card,
+.diff-view .empty-state-card {
+  background: var(--terminal-shell);
+  border-color: var(--terminal-shell-line);
+  color: var(--terminal-shell-text);
+  border-radius: 0.4rem;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.diff-view .empty-state-card p,
+.diff-view .diff-card-header p {
+  color: var(--terminal-shell-muted);
+}
+
+.diff-view .diff-card h3,
+.diff-view .hunk-toolbar code {
+  margin: 0;
+}
+
+.diff-view .hunk-card {
+  background: var(--terminal-panel-strong);
+  border-color: var(--terminal-panel-border);
+  color: var(--terminal-ink);
+  border-radius: 0.22rem;
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.diff-view .hunk-toolbar {
+  padding-bottom: 0.7rem;
+  margin-bottom: 0.8rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--terminal-panel-border) 30%, transparent);
+}
+
+.diff-view .hunk-toolbar code {
+  color: var(--terminal-accent-strong);
+  background: color-mix(in srgb, var(--terminal-panel-border) 10%, transparent);
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.2rem;
+}
+
+.diff-view .diff-html {
+  --d2h-bg-color: var(--terminal-panel-strong);
+  --d2h-border-color: var(--terminal-panel-border);
+  --d2h-dim-color: var(--terminal-diff-dim);
+  --d2h-line-border-color: color-mix(in srgb, var(--terminal-panel-border) 50%, transparent);
+  --d2h-file-header-bg-color: var(--terminal-panel-subtle);
+  --d2h-file-header-border-color: var(--terminal-panel-border);
+  --d2h-empty-placeholder-bg-color: var(--terminal-diff-gutter);
+  --d2h-empty-placeholder-border-color: var(--terminal-panel-border);
+  --d2h-ins-bg-color: var(--terminal-diff-added-bg);
+  --d2h-ins-border-color: var(--terminal-diff-added-border);
+  --d2h-ins-highlight-bg-color: var(--terminal-diff-added-highlight);
+  --d2h-ins-label-color: var(--terminal-diff-added-text);
+  --d2h-del-bg-color: var(--terminal-diff-removed-bg);
+  --d2h-del-border-color: var(--terminal-diff-removed-border);
+  --d2h-del-highlight-bg-color: var(--terminal-diff-removed-highlight);
+  --d2h-del-label-color: var(--terminal-diff-removed-text);
+  --d2h-change-del-color: var(--terminal-diff-change-bg);
+  --d2h-change-ins-color: var(--terminal-diff-added-highlight);
+  --d2h-info-bg-color: var(--terminal-diff-info-bg);
+  --d2h-info-border-color: var(--terminal-diff-info-border);
+  --d2h-change-label-color: var(--terminal-accent-strong);
+  --d2h-moved-label-color: var(--terminal-accent-strong);
+  font-family: "IBM Plex Mono", "Consolas", "Liberation Mono", monospace;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.diff-view .diff-html .d2h-wrapper,
+.diff-view .diff-html .d2h-file-wrapper,
+.diff-view .diff-html .d2h-file-diff {
+  border-radius: 0.22rem;
+  overflow: hidden;
+}
+
+.diff-view .diff-html .d2h-file-wrapper {
+  box-shadow: inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.diff-view .diff-html .d2h-code-line,
+.diff-view .diff-html .d2h-code-side-line,
+.diff-view .diff-html .d2h-code-line-ctn,
+.diff-view .diff-html .d2h-code-side-line-ctn,
+.diff-view .diff-html .d2h-code-line-prefix,
+.diff-view .diff-html .d2h-code-linenumber,
+.diff-view .diff-html .d2h-code-side-linenumber {
+  font-family: inherit;
+}
+
+.diff-view .diff-html .d2h-code-linenumber,
+.diff-view .diff-html .d2h-code-side-linenumber {
+  background: var(--terminal-diff-gutter);
+  color: var(--terminal-diff-dim);
+}
+
+.diff-view .diff-html .d2h-ins,
+.diff-view .diff-html .d2h-ins .d2h-code-line-ctn,
+.diff-view .diff-html .d2h-ins .d2h-code-side-line-ctn,
+.diff-view .diff-html .d2h-added,
+.diff-view .diff-html .d2h-lines-added {
+  color: var(--terminal-diff-added-text);
+}
+
+.diff-view .diff-html .d2h-del,
+.diff-view .diff-html .d2h-del .d2h-code-line-ctn,
+.diff-view .diff-html .d2h-del .d2h-code-side-line-ctn,
+.diff-view .diff-html .d2h-deleted,
+.diff-view .diff-html .d2h-lines-deleted {
+  color: var(--terminal-diff-removed-text);
+}
+
+.diff-view .diff-html .d2h-info,
+.diff-view .diff-html .d2h-emptyplaceholder,
+.diff-view .diff-html .d2h-code-side-emptyplaceholder {
+  color: var(--terminal-diff-dim);
+}
+
 .diff-html .d2h-wrapper {
   margin: 0;
 }
@@ -676,6 +1310,91 @@ code {
 
 .diff-html .d2h-diff-table {
   font-size: 0.85rem;
+  table-layout: fixed;
+  width: 100%;
+}
+
+.diff-html .d2h-code-wrapper,
+.diff-html .d2h-file-diff,
+.diff-html .d2h-file-side-diff {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.diff-html .d2h-code-linenumber,
+.diff-html .d2h-code-side-linenumber {
+  display: table-cell;
+  position: static;
+  width: clamp(5.25rem, 10vw, 7.5rem);
+  min-width: clamp(5.25rem, 10vw, 7.5rem);
+  max-width: clamp(5.25rem, 10vw, 7.5rem);
+  padding: 0 0.45rem;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  vertical-align: top;
+  white-space: nowrap;
+  direction: ltr;
+}
+
+.diff-html .d2h-code-linenumber .line-num1,
+.diff-html .d2h-code-linenumber .line-num2,
+.diff-html .d2h-code-side-linenumber .line-num1,
+.diff-html .d2h-code-side-linenumber .line-num2 {
+  float: none;
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+  padding: 0;
+}
+
+.diff-html .d2h-code-linenumber .line-num1,
+.diff-html .d2h-code-side-linenumber .line-num1 {
+  margin-right: 0.35rem;
+}
+
+.diff-html .d2h-code-line,
+.diff-html .d2h-code-side-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0 0.45rem;
+  box-sizing: border-box;
+  white-space: normal !important;
+}
+
+.diff-html .d2h-code-line-prefix {
+  flex: 0 0 auto;
+  white-space: pre;
+}
+
+.diff-html .d2h-code-line-ctn,
+.diff-html .d2h-code-side-line-ctn {
+  display: block;
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  white-space: pre-wrap !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.diff-html .d2h-code-line del,
+.diff-html .d2h-code-line ins,
+.diff-html .d2h-code-side-line del,
+.diff-html .d2h-code-side-line ins {
+  display: inline;
+  white-space: inherit;
+}
+
+@media (max-width: 1180px) {
+  .diff-view .diff-card,
+  .diff-view .hunk-card {
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 859px) {
@@ -684,14 +1403,14 @@ code {
     padding: 0.75rem;
   }
 
-  .diff-html .d2h-diff-table {
-    table-layout: fixed;
+  .chat-view .composer-footer {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  /* Keep the diff constrained to the viewport on small screens. */
-  .diff-html .d2h-file-diff,
-  .diff-html .d2h-file-side-diff {
-    overflow-x: hidden;
+  .chat-view .composer-actions {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   /* On phones the line-number gutter costs too much horizontal space. */
@@ -703,40 +1422,6 @@ code {
   .diff-html .line-num1,
   .diff-html .line-num2 {
     display: none;
-  }
-
-  .diff-html .d2h-code-line,
-  .diff-html .d2h-code-side-line {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.35rem;
-    width: 100%;
-    min-width: 0;
-    padding: 0 0.35rem;
-    white-space: normal !important;
-  }
-
-  .diff-html .d2h-code-line-prefix {
-    flex: 0 0 auto;
-    white-space: pre;
-  }
-
-  .diff-html .d2h-code-line-ctn,
-  .diff-html .d2h-code-side-line-ctn {
-    flex: 1 1 auto;
-    width: auto;
-    min-width: 0;
-    white-space: pre-wrap !important;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-  }
-
-  .diff-html .d2h-code-line del,
-  .diff-html .d2h-code-line ins,
-  .diff-html .d2h-code-side-line del,
-  .diff-html .d2h-code-side-line ins {
-    display: inline;
-    white-space: inherit;
   }
 }
 
