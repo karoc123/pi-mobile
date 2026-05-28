@@ -112,7 +112,7 @@ export class PiAgentService {
     }
 
     if (this.config.piMockMode) {
-      throw new Error('Mock mode does not create a real pi session.');
+      throw new Error("Mock mode does not create a real pi session.");
     }
 
     if (this.session) {
@@ -329,21 +329,21 @@ export class PiAgentService {
 
   private async promptWithMock(promptText: string) {
     if (!this.currentRepo) {
-      throw new Error('No repository selected for pi session.');
+      throw new Error("No repository selected for pi session.");
     }
 
     const userMessage: ChatMessage = {
       id: randomUUID(),
-      role: 'user',
+      role: "user",
       text: promptText,
-      status: 'complete',
+      status: "complete",
       timestamp: new Date().toISOString(),
     };
     const assistantMessage: ChatMessage = {
       id: randomUUID(),
-      role: 'assistant',
-      text: '',
-      status: 'streaming',
+      role: "assistant",
+      text: "",
+      status: "streaming",
       timestamp: new Date().toISOString(),
     };
 
@@ -352,8 +352,8 @@ export class PiAgentService {
     this.lastError = null;
     this.mockStreaming = true;
 
-    this.broadcast({ type: 'chat_message_added', payload: { message: userMessage } });
-    this.broadcast({ type: 'chat_message_added', payload: { message: assistantMessage } });
+    this.broadcast({ type: "chat_message_added", payload: { message: userMessage } });
+    this.broadcast({ type: "chat_message_added", payload: { message: assistantMessage } });
     this.emitStatus();
 
     const replyText = buildMockReply(promptText);
@@ -365,11 +365,11 @@ export class PiAgentService {
           const updatedMessage: ChatMessage = {
             ...assistantMessage,
             text: replyText,
-            status: 'complete',
+            status: "complete",
           };
           this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
           this.broadcast({
-            type: 'chat_message_updated',
+            type: "chat_message_updated",
             payload: {
               messageId: updatedMessage.id,
               text: updatedMessage.text,
@@ -480,7 +480,7 @@ function buildMockReply(promptText: string) {
   }
 
   if (/ready/i.test(promptText)) {
-    return 'READY';
+    return "READY";
   }
 
   return `Mock reply: ${promptText.slice(0, 120)}`;

@@ -61,5 +61,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 }
 
 function asBoolean(value: string | undefined) {
-  return value === '1' || value === 'true' || value === 'yes';
+  return value === "1" || value === "true" || value === "yes";
 }
