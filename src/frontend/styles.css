@@ -10,8 +10,7 @@
   --accent-strong: #115e59;
   --danger: #c2410c;
   background:
-    radial-gradient(circle at top left, rgba(255, 171, 64, 0.36), transparent 28%),
-    radial-gradient(circle at top right, rgba(15, 118, 110, 0.18), transparent 30%),
+    radial-gradient(circle at top left, rgba(255, 171, 64, 0.36), transparent 28%), radial-gradient(circle at top right, rgba(15, 118, 110, 0.18), transparent 30%),
     linear-gradient(180deg, #f4ead9 0%, #ead7bc 100%);
   color: var(--ink);
 }
@@ -154,7 +153,9 @@ code {
   border-radius: 999px;
   padding: 0.85rem 1.1rem;
   border: 0;
-  transition: transform 120ms ease, background 120ms ease;
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
 }
 
 .primary-button {

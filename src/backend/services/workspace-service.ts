@@ -1,17 +1,17 @@
-import { access, readdir, stat } from 'node:fs/promises';
-import path from 'node:path';
+import { access, readdir, stat } from "node:fs/promises";
+import path from "node:path";
 
-import type { SelectedRepo, WorkspaceEntry } from '../../shared/contracts.js';
+import type { SelectedRepo, WorkspaceEntry } from "../../shared/contracts.js";
 
-import { relativeFrom, resolveWithin } from '../utils/path-utils.js';
-import { runCommand } from '../utils/process.js';
+import { relativeFrom, resolveWithin } from "../utils/path-utils.js";
+import { runCommand } from "../utils/process.js";
 
 export class WorkspaceService {
   private currentRepo: SelectedRepo | null = null;
 
   constructor(
     private readonly rootPath: string,
-    private readonly defaultRepo?: string
+    private readonly defaultRepo?: string,
   ) {}
 
   async initializeDefaultRepo() {
@@ -28,12 +28,10 @@ export class WorkspaceService {
     return null;
   }
 
-  async browse(relativePath = '.') {
+  async browse(relativePath = ".") {
     const absolutePath = resolveWithin(this.rootPath, relativePath);
     const entries = await readdir(absolutePath, { withFileTypes: true });
-    const directories = entries
-      .filter((entry) => entry.isDirectory() && entry.name !== '.git' && entry.name !== 'node_modules')
-      .sort((left, right) => left.name.localeCompare(right.name));
+    const directories = entries.filter((entry) => entry.isDirectory() && entry.name !== ".git" && entry.name !== "node_modules").sort((left, right) => left.name.localeCompare(right.name));
 
     return Promise.all(
       directories.map(async (entry): Promise<WorkspaceEntry> => {
@@ -41,10 +39,10 @@ export class WorkspaceService {
         return {
           name: entry.name,
           relativePath: relativeFrom(this.rootPath, entryPath),
-          kind: 'directory',
-          isGitRepo: await isGitRepo(entryPath)
+          kind: "directory",
+          isGitRepo: await isGitRepo(entryPath),
         };
-      })
+      }),
     );
   }
 
@@ -59,7 +57,7 @@ export class WorkspaceService {
 
   requireCurrentRepo() {
     if (!this.currentRepo) {
-      throw new Error('No repository is currently selected.');
+      throw new Error("No repository is currently selected.");
     }
 
     return this.currentRepo;
@@ -70,13 +68,13 @@ export class WorkspaceService {
     const entryStats = await stat(absolutePath);
 
     if (!entryStats.isDirectory()) {
-      throw new Error('Selected path is not a directory.');
+      throw new Error("Selected path is not a directory.");
     }
 
     const repositoryRoot = await getGitRoot(absolutePath);
 
     if (!repositoryRoot) {
-      throw new Error('Selected directory is not a Git repository.');
+      throw new Error("Selected directory is not a Git repository.");
     }
 
     resolveWithin(this.rootPath, relativeFrom(this.rootPath, repositoryRoot));
@@ -89,12 +87,12 @@ function createSelectedRepo(rootPath: string, absolutePath: string): SelectedRep
   return {
     name: path.basename(absolutePath),
     relativePath: relativeFrom(rootPath, absolutePath),
-    absolutePath
+    absolutePath,
   };
 }
 
 async function isGitRepo(candidatePath: string) {
-  if (await pathExists(path.join(candidatePath, '.git'))) {
+  if (await pathExists(path.join(candidatePath, ".git"))) {
     return true;
   }
 
@@ -103,7 +101,7 @@ async function isGitRepo(candidatePath: string) {
 
 async function getGitRoot(candidatePath: string): Promise<string | null> {
   try {
-    const { stdout } = await runCommand('git', ['-C', candidatePath, 'rev-parse', '--show-toplevel']);
+    const { stdout } = await runCommand("git", ["-C", candidatePath, "rev-parse", "--show-toplevel"]);
     return stdout.trim();
   } catch {
     return null;

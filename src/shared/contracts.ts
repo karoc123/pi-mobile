@@ -1,7 +1,7 @@
 export type WorkspaceEntry = {
   name: string;
   relativePath: string;
-  kind: 'directory';
+  kind: "directory";
   isGitRepo: boolean;
 };
 
@@ -14,7 +14,7 @@ export type SelectedRepo = {
 export type FileEntry = {
   name: string;
   relativePath: string;
-  kind: 'directory' | 'file';
+  kind: "directory" | "file";
 };
 
 export type FileDocument = {
@@ -34,27 +34,27 @@ export type DiffFile = {
   path: string;
   oldPath: string;
   newPath: string;
-  status: 'modified' | 'added' | 'deleted' | 'renamed';
+  status: "modified" | "added" | "deleted" | "renamed";
   diff: string;
   hunks: DiffHunk[];
   addedLines: number;
   removedLines: number;
 };
 
-export type ChatRole = 'user' | 'assistant' | 'system';
+export type ChatRole = "user" | "assistant" | "system";
 
 export type ChatMessage = {
   id: string;
   role: ChatRole;
   text: string;
-  status: 'streaming' | 'complete';
+  status: "streaming" | "complete";
   timestamp: string;
 };
 
 export type ToolActivity = {
   id: string;
   toolName: string;
-  status: 'running' | 'complete' | 'error';
+  status: "running" | "complete" | "error";
   detail: string;
 };
 
@@ -69,48 +69,48 @@ export type AgentSnapshot = {
 
 export type WebsocketEnvelope =
   | {
-      type: 'connected';
+      type: "connected";
       payload: AgentSnapshot;
     }
   | {
-      type: 'agent_status';
-      payload: Pick<AgentSnapshot, 'isConfigured' | 'isStreaming' | 'lastError' | 'repo'>;
+      type: "agent_status";
+      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "lastError" | "repo">;
     }
   | {
-      type: 'chat_message_added';
+      type: "chat_message_added";
       payload: {
         message: ChatMessage;
       };
     }
   | {
-      type: 'chat_message_updated';
+      type: "chat_message_updated";
       payload: {
         messageId: string;
         text: string;
-        status: ChatMessage['status'];
+        status: ChatMessage["status"];
       };
     }
   | {
-      type: 'tool_activity';
+      type: "tool_activity";
       payload: {
         tool: ToolActivity;
       };
     }
   | {
-      type: 'workspace_changed';
+      type: "workspace_changed";
       payload: {
         path: string;
-        kind: 'add' | 'change' | 'unlink';
+        kind: "add" | "change" | "unlink";
       };
     }
   | {
-      type: 'repo_selected';
+      type: "repo_selected";
       payload: {
         repo: SelectedRepo;
       };
     }
   | {
-      type: 'agent_error';
+      type: "agent_error";
       payload: {
         message: string;
       };

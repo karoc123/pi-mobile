@@ -13,22 +13,10 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@backend/*": [
-        "src/backend/*"
-      ],
-      "@frontend/*": [
-        "src/frontend/*"
-      ],
-      "@shared/*": [
-        "src/shared/*"
-      ]
+      "@backend/*": ["src/backend/*"],
+      "@frontend/*": ["src/frontend/*"],
+      "@shared/*": ["src/shared/*"]
     }
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.d.ts",
-    "src/**/*.svelte",
-    "vite.config.ts",
-    "vitest.config.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.svelte", "vite.config.ts", "vitest.config.ts"]
 }

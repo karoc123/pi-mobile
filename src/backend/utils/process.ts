@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from "node:child_process";
 
 export type CommandResult = {
   stdout: string;
@@ -10,25 +10,25 @@ export async function runCommand(command: string, args: string[], options: { cwd
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: process.env,
-      stdio: 'pipe'
+      stdio: "pipe",
     });
 
-    let stdout = '';
-    let stderr = '';
+    let stdout = "";
+    let stderr = "";
 
-    child.stdout.on('data', (chunk) => {
+    child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
     });
 
-    child.stderr.on('data', (chunk) => {
+    child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
 
-    child.on('error', (error) => {
+    child.on("error", (error) => {
       reject(error);
     });
 
-    child.on('close', (code) => {
+    child.on("close", (code) => {
       if (code === 0) {
         resolve({ stdout, stderr });
         return;

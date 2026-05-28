@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 export class AuthService {
   private readonly sessions = new Map<string, { createdAt: number }>();

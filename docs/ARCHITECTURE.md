@@ -110,7 +110,7 @@ Since Git does not natively provide a single non-interactive CLI command to disc
 5. The backend executes the following atomic pipe sequence on the Pi:
 
    ```bash
-  echo "<hunk-diff>" | git apply -R --recount --whitespace=nowarn -
+   echo "<hunk-diff>" | git apply -R --recount --whitespace=nowarn -
    ```
 
 6. The file is cleanly rolled back at that exact position. The `FileService` emits an updated state event, and the `pi` agent natively detects the updated file layout on its next turn.

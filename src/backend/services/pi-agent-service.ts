@@ -1,18 +1,11 @@
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 
-import {
-  AuthStorage,
-  ModelRegistry,
-  SessionManager,
-  createAgentSession,
-  type AgentSession,
-  type AgentSessionEvent
-} from '@earendil-works/pi-coding-agent';
+import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
-import type { AgentSnapshot, ChatMessage, SelectedRepo, ToolActivity, WebsocketEnvelope } from '../../shared/contracts.js';
+import type { AgentSnapshot, ChatMessage, SelectedRepo, ToolActivity, WebsocketEnvelope } from "../../shared/contracts.js";
 
-import type { AppConfig } from '../config.js';
+import type { AppConfig } from "../config.js";
 
 type Broadcast = (event: WebsocketEnvelope) => void;
 
@@ -27,7 +20,7 @@ export class PiAgentService {
 
   constructor(
     private readonly config: AppConfig,
-    private readonly broadcast: Broadcast
+    private readonly broadcast: Broadcast,
   ) {}
 
   getSnapshot(): AgentSnapshot {
@@ -37,7 +30,7 @@ export class PiAgentService {
       isStreaming: this.session?.isStreaming ?? false,
       messages: this.messages,
       tools: this.tools,
-      lastError: this.lastError
+      lastError: this.lastError,
     };
   }
 
@@ -61,21 +54,21 @@ export class PiAgentService {
     const accepted = await this.acceptPrompt(session, promptText);
 
     if (!accepted) {
-      throw new Error('The prompt was rejected by the pi runtime.');
+      throw new Error("The prompt was rejected by the pi runtime.");
     }
 
     const userMessage: ChatMessage = {
       id: randomUUID(),
-      role: 'user',
+      role: "user",
       text: promptText,
-      status: 'complete',
-      timestamp: new Date().toISOString()
+      status: "complete",
+      timestamp: new Date().toISOString(),
     };
 
     this.messages = [...this.messages, userMessage];
     this.broadcast({
-      type: 'chat_message_added',
-      payload: { message: userMessage }
+      type: "chat_message_added",
+      payload: { message: userMessage },
     });
     this.lastError = null;
     this.emitStatus();
@@ -100,19 +93,15 @@ export class PiAgentService {
 
   private async ensureSession() {
     if (!this.currentRepo) {
-      throw new Error('No repository selected for pi session.');
+      throw new Error("No repository selected for pi session.");
     }
 
     if (this.session) {
       return this.session;
     }
 
-    const authStorage = this.config.piAgentDir
-      ? AuthStorage.create(path.join(this.config.piAgentDir, 'auth.json'))
-      : AuthStorage.create();
-    const modelRegistry = this.config.piAgentDir
-      ? ModelRegistry.create(authStorage, path.join(this.config.piAgentDir, 'models.json'))
-      : ModelRegistry.create(authStorage);
+    const authStorage = this.config.piAgentDir ? AuthStorage.create(path.join(this.config.piAgentDir, "auth.json")) : AuthStorage.create();
+    const modelRegistry = this.config.piAgentDir ? ModelRegistry.create(authStorage, path.join(this.config.piAgentDir, "models.json")) : ModelRegistry.create(authStorage);
     const sessionManager = SessionManager.continueRecent(this.currentRepo.absolutePath, this.config.piSessionDir);
     const configuredModel = this.resolveConfiguredModel(modelRegistry);
     const { session } = await createAgentSession({
@@ -122,7 +111,7 @@ export class PiAgentService {
       modelRegistry,
       sessionManager,
       model: configuredModel,
-      thinkingLevel: this.config.piThinkingLevel
+      thinkingLevel: this.config.piThinkingLevel,
     });
 
     this.session = session;
@@ -155,7 +144,7 @@ export class PiAgentService {
 
       try {
         const runPromise = session.prompt(promptText, {
-          streamingBehavior: session.isStreaming ? 'steer' : undefined,
+          streamingBehavior: session.isStreaming ? "steer" : undefined,
           preflightResult: (success) => {
             if (preflightSettled) {
               return;
@@ -163,7 +152,7 @@ export class PiAgentService {
 
             preflightSettled = true;
             resolve(success);
-          }
+          },
         });
 
         void runPromise.catch((error) => {
@@ -182,26 +171,26 @@ export class PiAgentService {
   }
 
   private handleSessionEvent(event: AgentSessionEvent) {
-    if (event.type === 'message_start' && event.message.role === 'assistant') {
+    if (event.type === "message_start" && event.message.role === "assistant") {
       const message: ChatMessage = {
         id: randomUUID(),
-        role: 'assistant',
-        text: '',
-        status: 'streaming',
-        timestamp: new Date().toISOString()
+        role: "assistant",
+        text: "",
+        status: "streaming",
+        timestamp: new Date().toISOString(),
       };
 
       this.activeAssistantMessageId = message.id;
       this.messages = [...this.messages, message];
       this.broadcast({
-        type: 'chat_message_added',
-        payload: { message }
+        type: "chat_message_added",
+        payload: { message },
       });
       this.emitStatus();
       return;
     }
 
-    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       if (!this.activeAssistantMessageId) {
         return;
       }
@@ -216,25 +205,21 @@ export class PiAgentService {
       const updatedMessage: ChatMessage = {
         ...currentMessage,
         text: `${currentMessage.text}${event.assistantMessageEvent.delta}`,
-        status: 'streaming'
+        status: "streaming",
       };
-      this.messages = [
-        ...this.messages.slice(0, index),
-        updatedMessage,
-        ...this.messages.slice(index + 1)
-      ];
+      this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
       this.broadcast({
-        type: 'chat_message_updated',
+        type: "chat_message_updated",
         payload: {
           messageId: updatedMessage.id,
           text: updatedMessage.text,
-          status: updatedMessage.status
-        }
+          status: updatedMessage.status,
+        },
       });
       return;
     }
 
-    if (event.type === 'message_end' && event.message.role === 'assistant') {
+    if (event.type === "message_end" && event.message.role === "assistant") {
       if (!this.activeAssistantMessageId) {
         return;
       }
@@ -250,54 +235,40 @@ export class PiAgentService {
       const updatedMessage: ChatMessage = {
         ...currentMessage,
         text: currentMessage.text || flattenMessageText(event.message),
-        status: 'complete'
+        status: "complete",
       };
-      this.messages = [
-        ...this.messages.slice(0, index),
-        updatedMessage,
-        ...this.messages.slice(index + 1)
-      ];
+      this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
       this.activeAssistantMessageId = null;
       this.broadcast({
-        type: 'chat_message_updated',
+        type: "chat_message_updated",
         payload: {
           messageId: updatedMessage.id,
           text: updatedMessage.text,
-          status: updatedMessage.status
-        }
+          status: updatedMessage.status,
+        },
       });
       this.emitStatus();
       return;
     }
 
-    if (event.type === 'tool_execution_start' || event.type === 'tool_execution_update' || event.type === 'tool_execution_end') {
+    if (event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
       const tool: ToolActivity = {
         id: event.toolCallId,
         toolName: event.toolName,
-        status:
-          event.type === 'tool_execution_end'
-            ? event.isError
-              ? 'error'
-              : 'complete'
-            : 'running',
-        detail:
-          event.type === 'tool_execution_start'
-            ? summarizePayload(event.args)
-            : event.type === 'tool_execution_update'
-              ? summarizePayload(event.partialResult)
-              : summarizePayload(event.result)
+        status: event.type === "tool_execution_end" ? (event.isError ? "error" : "complete") : "running",
+        detail: event.type === "tool_execution_start" ? summarizePayload(event.args) : event.type === "tool_execution_update" ? summarizePayload(event.partialResult) : summarizePayload(event.result),
       };
 
       this.tools = upsertTool(this.tools, tool);
       this.broadcast({
-        type: 'tool_activity',
-        payload: { tool }
+        type: "tool_activity",
+        payload: { tool },
       });
       this.emitStatus();
       return;
     }
 
-    if (event.type === 'agent_end' || event.type === 'turn_end') {
+    if (event.type === "agent_end" || event.type === "turn_end") {
       this.emitStatus();
     }
   }
@@ -306,21 +277,21 @@ export class PiAgentService {
     const message = toErrorMessage(error);
     this.lastError = message;
     this.broadcast({
-      type: 'agent_error',
-      payload: { message }
+      type: "agent_error",
+      payload: { message },
     });
     this.emitStatus();
   }
 
   private emitStatus() {
     this.broadcast({
-      type: 'agent_status',
+      type: "agent_status",
       payload: {
         isConfigured: this.currentRepo !== null,
         isStreaming: this.session?.isStreaming ?? false,
         lastError: this.lastError,
-        repo: this.currentRepo
-      }
+        repo: this.currentRepo,
+      },
     });
   }
 
@@ -333,19 +304,17 @@ export class PiAgentService {
 }
 
 function hydrateMessagesFromSession(sessionMessages: readonly unknown[]) {
-  return sessionMessages
-    .map((entry) => toChatMessage(entry))
-    .filter((entry): entry is ChatMessage => entry !== null);
+  return sessionMessages.map((entry) => toChatMessage(entry)).filter((entry): entry is ChatMessage => entry !== null);
 }
 
 function toChatMessage(entry: unknown): ChatMessage | null {
-  if (!entry || typeof entry !== 'object' || !('role' in entry)) {
+  if (!entry || typeof entry !== "object" || !("role" in entry)) {
     return null;
   }
 
   const candidate = entry as { role?: string; createdAt?: string; content?: unknown[] };
 
-  if (candidate.role !== 'user' && candidate.role !== 'assistant') {
+  if (candidate.role !== "user" && candidate.role !== "assistant") {
     return null;
   }
 
@@ -353,43 +322,43 @@ function toChatMessage(entry: unknown): ChatMessage | null {
     id: randomUUID(),
     role: candidate.role,
     text: flattenMessageText(candidate),
-    status: 'complete',
-    timestamp: candidate.createdAt ?? new Date().toISOString()
+    status: "complete",
+    timestamp: candidate.createdAt ?? new Date().toISOString(),
   };
 }
 
 function flattenMessageText(message: { content?: unknown[] }) {
   if (!Array.isArray(message.content)) {
-    return '';
+    return "";
   }
 
   return message.content
     .map((chunk) => {
-      if (typeof chunk === 'string') {
+      if (typeof chunk === "string") {
         return chunk;
       }
 
-      if (!chunk || typeof chunk !== 'object') {
-        return '';
+      if (!chunk || typeof chunk !== "object") {
+        return "";
       }
 
       const typedChunk = chunk as { type?: string; text?: string; toolName?: string; name?: string; result?: unknown };
 
-      if (typedChunk.type === 'text') {
-        return typedChunk.text ?? '';
+      if (typedChunk.type === "text") {
+        return typedChunk.text ?? "";
       }
 
-      if (typedChunk.type === 'tool-call') {
-        return `\n[tool:${typedChunk.toolName ?? typedChunk.name ?? 'unknown'}]`;
+      if (typedChunk.type === "tool-call") {
+        return `\n[tool:${typedChunk.toolName ?? typedChunk.name ?? "unknown"}]`;
       }
 
-      if (typedChunk.type === 'tool-result') {
+      if (typedChunk.type === "tool-result") {
         return `\n${summarizePayload(typedChunk.result)}`;
       }
 
-      return typedChunk.text ?? '';
+      return typedChunk.text ?? "";
     })
-    .join('')
+    .join("")
     .trim();
 }
 
@@ -399,12 +368,12 @@ function upsertTool(tools: ToolActivity[], tool: ToolActivity) {
 }
 
 function summarizePayload(payload: unknown) {
-  if (typeof payload === 'string') {
+  if (typeof payload === "string") {
     return payload.slice(0, 240);
   }
 
   if (payload === null || payload === undefined) {
-    return '';
+    return "";
   }
 
   try {
@@ -415,5 +384,5 @@ function summarizePayload(payload: unknown) {
 }
 
 function toErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unknown pi runtime error.';
+  return error instanceof Error ? error.message : "Unknown pi runtime error.";
 }

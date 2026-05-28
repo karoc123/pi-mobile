@@ -1,15 +1,15 @@
-import type { SelectedRepo } from '../../shared/contracts.js';
+import type { SelectedRepo } from "../../shared/contracts.js";
 
-import { PiAgentService } from './pi-agent-service.js';
-import { WatcherService } from './watcher-service.js';
-import { WorkspaceService } from './workspace-service.js';
+import { PiAgentService } from "./pi-agent-service.js";
+import { WatcherService } from "./watcher-service.js";
+import { WorkspaceService } from "./workspace-service.js";
 
 export class RepositoryRuntimeService {
   constructor(
     private readonly workspaceService: WorkspaceService,
     private readonly watcherService: WatcherService,
     private readonly piAgentService: PiAgentService,
-    private readonly onRepoSelected: (repo: SelectedRepo) => void
+    private readonly onRepoSelected: (repo: SelectedRepo) => void,
   ) {}
 
   async initialize() {

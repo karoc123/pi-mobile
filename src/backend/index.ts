@@ -1,17 +1,17 @@
-import { createServer } from 'node:http';
+import { createServer } from "node:http";
 
-import type { WebsocketEnvelope } from '../shared/contracts.js';
+import type { WebsocketEnvelope } from "../shared/contracts.js";
 
-import { createApp } from './app.js';
-import { loadConfig } from './config.js';
-import { AuthService } from './services/auth-service.js';
-import { FileService } from './services/file-service.js';
-import { GitService } from './services/git-service.js';
-import { PiAgentService } from './services/pi-agent-service.js';
-import { RepositoryRuntimeService } from './services/repository-runtime-service.js';
-import { WatcherService } from './services/watcher-service.js';
-import { WorkspaceService } from './services/workspace-service.js';
-import { WebsocketHub } from './services/websocket-hub.js';
+import { createApp } from "./app.js";
+import { loadConfig } from "./config.js";
+import { AuthService } from "./services/auth-service.js";
+import { FileService } from "./services/file-service.js";
+import { GitService } from "./services/git-service.js";
+import { PiAgentService } from "./services/pi-agent-service.js";
+import { RepositoryRuntimeService } from "./services/repository-runtime-service.js";
+import { WatcherService } from "./services/watcher-service.js";
+import { WorkspaceService } from "./services/workspace-service.js";
+import { WebsocketHub } from "./services/websocket-hub.js";
 
 const config = loadConfig();
 const authService = new AuthService(config.appPassword);
@@ -25,22 +25,17 @@ const piAgentService = new PiAgentService(config, (event) => {
 
 const watcherService = new WatcherService((payload) => {
   websocketHub.broadcast({
-    type: 'workspace_changed',
-    payload
+    type: "workspace_changed",
+    payload,
   } satisfies WebsocketEnvelope);
 });
 
-const repositoryRuntimeService = new RepositoryRuntimeService(
-  workspaceService,
-  watcherService,
-  piAgentService,
-  (repo) => {
-    websocketHub.broadcast({
-      type: 'repo_selected',
-      payload: { repo }
-    });
-  }
-);
+const repositoryRuntimeService = new RepositoryRuntimeService(workspaceService, watcherService, piAgentService, (repo) => {
+  websocketHub.broadcast({
+    type: "repo_selected",
+    payload: { repo },
+  });
+});
 
 websocketHub = new WebsocketHub(authService, config.sessionCookieName, () => piAgentService.getSnapshot());
 
@@ -51,13 +46,13 @@ const app = createApp({
   repositoryRuntimeService,
   fileService: new FileService(),
   gitService: new GitService(),
-  piAgentService
+  piAgentService,
 });
 
 const server = createServer(app);
 
-server.on('upgrade', (request, socket, head) => {
-  if (request.url !== '/ws') {
+server.on("upgrade", (request, socket, head) => {
+  if (request.url !== "/ws") {
     socket.destroy();
     return;
   }
@@ -86,10 +81,10 @@ async function shutdown() {
   });
 }
 
-process.once('SIGINT', () => {
+process.once("SIGINT", () => {
   void shutdown();
 });
 
-process.once('SIGTERM', () => {
+process.once("SIGTERM", () => {
   void shutdown();
 });

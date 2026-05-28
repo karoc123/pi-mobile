@@ -1,26 +1,26 @@
-import path from 'node:path';
+import path from "node:path";
 
-import { z } from 'zod';
+import { z } from "zod";
 
-const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 const configSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  HOST: z.string().default('0.0.0.0'),
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().default(3000),
-  APP_PASSWORD: z.string().min(1, 'APP_PASSWORD is required'),
+  APP_PASSWORD: z.string().min(1, "APP_PASSWORD is required"),
   WORKSPACE_ROOT: z.string().default(process.cwd()),
   DEFAULT_REPO: z.string().optional(),
-  SESSION_COOKIE_NAME: z.string().default('pi_mobile_session'),
+  SESSION_COOKIE_NAME: z.string().default("pi_mobile_session"),
   PI_AGENT_DIR: z.string().optional(),
   PI_SESSION_DIR: z.string().optional(),
   PI_PROVIDER: z.string().optional(),
   PI_MODEL: z.string().optional(),
-  PI_THINKING_LEVEL: z.enum(thinkingLevels).optional()
+  PI_THINKING_LEVEL: z.enum(thinkingLevels).optional(),
 });
 
 export type AppConfig = {
-  nodeEnv: 'development' | 'production' | 'test';
+  nodeEnv: "development" | "production" | "test";
   host: string;
   port: number;
   appPassword: string;
@@ -38,7 +38,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = configSchema.parse(env);
 
   if ((parsed.PI_PROVIDER && !parsed.PI_MODEL) || (!parsed.PI_PROVIDER && parsed.PI_MODEL)) {
-    throw new Error('PI_PROVIDER and PI_MODEL must be configured together.');
+    throw new Error("PI_PROVIDER and PI_MODEL must be configured together.");
   }
 
   return {
@@ -53,6 +53,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     piSessionDir: parsed.PI_SESSION_DIR ? path.resolve(parsed.PI_SESSION_DIR) : undefined,
     piProvider: parsed.PI_PROVIDER,
     piModel: parsed.PI_MODEL,
-    piThinkingLevel: parsed.PI_THINKING_LEVEL
+    piThinkingLevel: parsed.PI_THINKING_LEVEL,
   };
 }

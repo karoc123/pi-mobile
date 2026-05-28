@@ -1,9 +1,9 @@
-import DOMPurify from 'dompurify';
-import { marked } from 'marked';
+import DOMPurify from "dompurify";
+import { marked } from "marked";
 
 marked.setOptions({
   breaks: true,
-  gfm: true
+  gfm: true,
 });
 
 export function renderMarkdown(input: string) {
