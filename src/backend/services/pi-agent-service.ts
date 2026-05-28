@@ -870,17 +870,33 @@ function flattenMessageText(message: { content?: string | unknown[] }) {
         return "";
       }
 
-      const typedChunk = chunk as { type?: string; text?: string; toolName?: string; name?: string; result?: unknown };
+      const typedChunk = chunk as {
+        type?: string;
+        text?: string;
+        toolName?: string;
+        name?: string;
+        result?: unknown;
+        arguments?: unknown;
+        args?: unknown;
+      };
+      const type = typedChunk.type ?? "";
 
-      if (typedChunk.type === "text") {
+      if (type === "text") {
         return typedChunk.text ?? "";
       }
 
-      if (typedChunk.type === "tool-call") {
-        return `\n[tool:${typedChunk.toolName ?? typedChunk.name ?? "unknown"}]`;
+      if (type === "thinking" || type === "hidden" || type === "reasoning") {
+        return "";
       }
 
-      if (typedChunk.type === "tool-result") {
+      if (type === "tool-call" || type === "toolCall" || type === "tool_call") {
+        const toolName = typedChunk.toolName ?? typedChunk.name ?? "unknown";
+        const toolArgs = typedChunk.arguments ?? typedChunk.args;
+        const argsSummary = toolArgs ? summarizePayload(toolArgs) : "";
+        return `\n[tool:${toolName}]${argsSummary ? ` ${argsSummary}` : ""}`;
+      }
+
+      if (type === "tool-result" || type === "toolResult" || type === "tool_result") {
         return `\n${summarizePayload(typedChunk.result)}`;
       }
 

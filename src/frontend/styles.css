@@ -579,6 +579,68 @@ code {
   font-size: 0.85rem;
 }
 
+@media (max-width: 859px) {
+  .diff-view .diff-card,
+  .diff-view .hunk-card {
+    padding: 0.75rem;
+  }
+
+  .diff-html .d2h-diff-table {
+    table-layout: fixed;
+  }
+
+  /* Keep the diff constrained to the viewport on small screens. */
+  .diff-html .d2h-file-diff,
+  .diff-html .d2h-file-side-diff {
+    overflow-x: hidden;
+  }
+
+  /* On phones the line-number gutter costs too much horizontal space. */
+  .diff-html .d2h-code-linenumber,
+  .diff-html .d2h-code-side-linenumber {
+    display: none;
+  }
+
+  .diff-html .line-num1,
+  .diff-html .line-num2 {
+    display: none;
+  }
+
+  .diff-html .d2h-code-line,
+  .diff-html .d2h-code-side-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0 0.35rem;
+    white-space: normal !important;
+  }
+
+  .diff-html .d2h-code-line-prefix {
+    flex: 0 0 auto;
+    white-space: pre;
+  }
+
+  .diff-html .d2h-code-line-ctn,
+  .diff-html .d2h-code-side-line-ctn {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .diff-html .d2h-code-line del,
+  .diff-html .d2h-code-line ins,
+  .diff-html .d2h-code-side-line del,
+  .diff-html .d2h-code-side-line ins {
+    display: inline;
+    white-space: inherit;
+  }
+}
+
 .small {
   font-size: 0.92rem;
 }

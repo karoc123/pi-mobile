@@ -25,7 +25,6 @@
           <p class="eyebrow">Workspace menu</p>
           <h2>{currentRepo ? currentRepo.name : 'PiMobile'}</h2>
         </div>
-        <button class="ghost-button" type="button" on:click={() => dispatch('close')}>Close</button>
       </div>
 
       <section class="menu-section">

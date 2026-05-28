@@ -609,7 +609,15 @@
   <LoginScreen pending={loginPending} error={loginError} on:submit={(event) => login(event.detail.password)} />
 {:else}
   <main class="app-shell">
-    <button class="menu-trigger" type="button" aria-label="Open workspace menu" on:click={() => (menuOpen = true)}>Menu</button>
+    <button
+      class="menu-trigger"
+      type="button"
+      aria-expanded={menuOpen}
+      aria-label={menuOpen ? 'Close workspace menu' : 'Open workspace menu'}
+      on:click={() => (menuOpen = !menuOpen)}
+    >
+      Menu
+    </button>
 
     {#if bannerMessage}
       <div class:success={bannerTone === 'success'} class:error={bannerTone === 'error'} class="notice floating">{bannerMessage}</div>
