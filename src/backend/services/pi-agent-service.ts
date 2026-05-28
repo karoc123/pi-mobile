@@ -19,6 +19,7 @@ import type {
 } from "../../shared/contracts.js";
 
 import type { AppConfig } from "../config.js";
+import { CostService } from "./cost-service.js";
 
 type Broadcast = (event: WebsocketEnvelope) => void;
 
@@ -33,10 +34,14 @@ export class PiAgentService {
   private mockReplyTimeout: NodeJS.Timeout | null = null;
   private mockStreaming = false;
   private mockUsage: AgentUsage = createUsageSummary("mock/session", true);
+  private activeCostSessionKey: string | null = null;
+  private activeCostSessionStartedAt: string | null = null;
+  private mockSessionId: string | null = null;
 
   constructor(
     private readonly config: AppConfig,
     private readonly broadcast: Broadcast,
+    private readonly costService: CostService,
   ) {}
 
   getSnapshot(): AgentSnapshot {
@@ -87,6 +92,7 @@ export class PiAgentService {
           isCurrent: currentModel?.provider === model.provider && currentModel.id === model.id,
           usingSubscription: session.modelRegistry.isUsingOAuth(model),
         }))
+        .filter((model) => model.available || model.isCurrent)
         .sort((left, right) => {
           if (left.isCurrent !== right.isCurrent) {
             return left.isCurrent ? -1 : 1;
@@ -247,6 +253,8 @@ export class PiAgentService {
     await this.resetSession();
     if (!this.config.piMockMode) {
       await this.restoreSession();
+    } else {
+      this.beginMockSession();
     }
     this.emitStatus();
   }
@@ -311,6 +319,8 @@ export class PiAgentService {
       } catch (error) {
         this.recordError(error);
       }
+    } else {
+      this.beginMockSession();
     }
 
     this.emitStatus();
@@ -403,11 +413,13 @@ export class PiAgentService {
       thinkingLevel,
     });
 
+    this.finalizeTrackedSession();
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.session?.dispose();
 
     this.session = session;
+    this.ensureTrackedSessionReference(new Date().toISOString());
     this.messages = hydrateMessagesFromSession(session.messages);
     this.tools = [];
     this.lastError = null;
@@ -580,6 +592,7 @@ export class PiAgentService {
   }
 
   private emitStatus() {
+    this.persistCostSnapshot();
     this.broadcast({
       type: "agent_status",
       payload: {
@@ -593,6 +606,8 @@ export class PiAgentService {
   }
 
   private async resetSession() {
+    this.finalizeTrackedSession();
+
     if (this.mockReplyTimeout) {
       clearTimeout(this.mockReplyTimeout);
       this.mockReplyTimeout = null;
@@ -603,6 +618,112 @@ export class PiAgentService {
     this.unsubscribe = null;
     this.session?.dispose();
     this.session = null;
+    this.mockSessionId = null;
+  }
+
+  private beginMockSession() {
+    this.mockSessionId = randomUUID();
+    this.ensureTrackedSessionReference(new Date().toISOString());
+  }
+
+  private ensureTrackedSessionReference(startedAt: string) {
+    if (!this.currentRepo) {
+      return null;
+    }
+
+    if (this.config.piMockMode) {
+      if (!this.mockSessionId) {
+        this.mockSessionId = randomUUID();
+      }
+
+      return this.registerTrackedSession(`mock:${this.currentRepo.absolutePath}:${this.mockSessionId}`, startedAt, this.mockSessionId, null);
+    }
+
+    if (!this.session) {
+      return null;
+    }
+
+    const sessionStats = this.session.getSessionStats();
+    const sessionId = sessionStats.sessionId ?? null;
+    const sessionFile = this.session.sessionFile ?? sessionStats.sessionFile ?? null;
+    const identity = sessionId ?? sessionFile;
+
+    if (!identity) {
+      return null;
+    }
+
+    return this.registerTrackedSession(`${this.currentRepo.absolutePath}:${identity}`, startedAt, sessionId, sessionFile);
+  }
+
+  private registerTrackedSession(sessionKey: string, startedAt: string, sessionId: string | null, sessionFile: string | null) {
+    if (this.activeCostSessionKey !== sessionKey) {
+      this.activeCostSessionKey = sessionKey;
+      this.activeCostSessionStartedAt = startedAt;
+    }
+
+    return {
+      sessionKey,
+      sessionId,
+      sessionFile,
+      startedAt: this.activeCostSessionStartedAt ?? startedAt,
+    };
+  }
+
+  private persistCostSnapshot() {
+    const usage = this.getUsageSummary();
+
+    if (!this.currentRepo || (usage.totalTokens === 0 && usage.totalCost === 0)) {
+      return;
+    }
+
+    const trackedSession = this.ensureTrackedSessionReference(new Date().toISOString());
+
+    if (!trackedSession) {
+      return;
+    }
+
+    try {
+      this.costService.recordSession({
+        sessionKey: trackedSession.sessionKey,
+        sessionId: trackedSession.sessionId,
+        sessionFile: trackedSession.sessionFile,
+        repoName: this.currentRepo.name,
+        repoRelativePath: this.currentRepo.relativePath,
+        repoAbsolutePath: this.currentRepo.absolutePath,
+        modelId: usage.modelId,
+        startedAt: trackedSession.startedAt,
+        updatedAt: new Date().toISOString(),
+        endedAt: null,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        totalTokens: usage.totalTokens,
+        totalCost: usage.totalCost,
+        contextTokens: usage.contextTokens,
+        contextWindow: usage.contextWindow,
+        contextPercent: usage.contextPercent,
+        usingSubscription: usage.usingSubscription,
+        autoCompactEnabled: usage.autoCompactEnabled,
+      });
+    } catch (error) {
+      console.error("Failed to persist session costs", error);
+    }
+  }
+
+  private finalizeTrackedSession() {
+    if (!this.activeCostSessionKey) {
+      return;
+    }
+
+    try {
+      this.costService.finalizeSession(this.activeCostSessionKey, new Date().toISOString());
+    } catch (error) {
+      console.error("Failed to finalize session costs", error);
+    } finally {
+      this.activeCostSessionKey = null;
+      this.activeCostSessionStartedAt = null;
+    }
   }
 
   private getUsageSummary(): AgentUsage {

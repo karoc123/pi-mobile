@@ -11,6 +11,7 @@ import { FileService } from "./services/file-service.js";
 import { GitService } from "./services/git-service.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { RepositoryRuntimeService } from "./services/repository-runtime-service.js";
+import { CostService } from "./services/cost-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
 
 type AppServices = {
@@ -20,6 +21,7 @@ type AppServices = {
   repositoryRuntimeService: RepositoryRuntimeService;
   fileService: FileService;
   gitService: GitService;
+  costService: CostService;
   piAgentService: PiAgentService;
 };
 
@@ -107,6 +109,17 @@ export function createApp(services: AppServices) {
     response.json({ files: await services.gitService.getDiff(repo) });
   });
 
+  app.get("/api/costs", requireAuth(services), (request, response) => {
+    response.json(
+      services.costService.getReport({
+        repo: getOptionalQueryString(request, "repo"),
+        model: getOptionalQueryString(request, "model"),
+        from: getOptionalQueryString(request, "from"),
+        to: getOptionalQueryString(request, "to"),
+      }),
+    );
+  });
+
   app.post("/api/git/revert-hunk", requireAuth(services), async (request, response) => {
     const repo = services.workspaceService.requireCurrentRepo();
     await services.gitService.revertHunk(repo, getBodyString(request, "diff"));
@@ -180,6 +193,11 @@ function getQueryString(request: Request, key: string, fallback?: string) {
   }
 
   throw new Error(`Missing query parameter: ${key}`);
+}
+
+function getOptionalQueryString(request: Request, key: string) {
+  const candidate = request.query[key];
+  return typeof candidate === "string" && candidate.length > 0 ? candidate : undefined;
 }
 
 function getBodyString(request: Request, key: string) {

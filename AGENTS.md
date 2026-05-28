@@ -18,6 +18,7 @@
   - Combined Node.js/TypeScript stack.
   - `src/backend/` — Express server, WebSocket management, and Git/Filesystem orchestration.
   - `src/frontend/` — Mobile-first web interface (Svelte).
+  - Persistent cost tracking is stored below `WORKSPACE_ROOT/.pi-mobile/costs.sqlite` unless `COSTS_DB_PATH` overrides it.
 
 ### High-Value Commands
 

@@ -10,6 +10,7 @@ const configSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   APP_PASSWORD: z.string().min(1, "APP_PASSWORD is required"),
   WORKSPACE_ROOT: z.string().default(process.cwd()),
+  COSTS_DB_PATH: z.string().optional(),
   DEFAULT_REPO: z.string().optional(),
   SESSION_COOKIE_NAME: z.string().default("pi_mobile_session"),
   PI_AGENT_DIR: z.string().optional(),
@@ -26,6 +27,7 @@ export type AppConfig = {
   port: number;
   appPassword: string;
   workspaceRoot: string;
+  costsDbPath: string;
   defaultRepo?: string;
   sessionCookieName: string;
   piAgentDir?: string;
@@ -44,11 +46,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   return {
+    workspaceRoot: path.resolve(parsed.WORKSPACE_ROOT),
     nodeEnv: parsed.NODE_ENV,
     host: parsed.HOST,
     port: parsed.PORT,
     appPassword: parsed.APP_PASSWORD,
-    workspaceRoot: path.resolve(parsed.WORKSPACE_ROOT),
+    costsDbPath: parsed.COSTS_DB_PATH ? path.resolve(parsed.COSTS_DB_PATH) : path.resolve(parsed.WORKSPACE_ROOT, ".pi-mobile", "costs.sqlite"),
     defaultRepo: parsed.DEFAULT_REPO,
     sessionCookieName: parsed.SESSION_COOKIE_NAME,
     piAgentDir: parsed.PI_AGENT_DIR ? path.resolve(parsed.PI_AGENT_DIR) : undefined,

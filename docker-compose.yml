@@ -11,6 +11,7 @@ services:
       PORT: 3000
       APP_PASSWORD: ${APP_PASSWORD}
       WORKSPACE_ROOT: /workspace
+      COSTS_DB_PATH: /workspace/.pi-mobile/costs.sqlite
       DEFAULT_REPO: ${DEFAULT_REPO:-}
       PI_AGENT_DIR: /home/node/.pi/agent
       PI_SESSION_DIR: /home/node/.pi/agent/sessions

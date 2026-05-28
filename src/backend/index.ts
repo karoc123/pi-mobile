@@ -5,6 +5,7 @@ import type { WebsocketEnvelope } from "../shared/contracts.js";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { AuthService } from "./services/auth-service.js";
+import { CostService } from "./services/cost-service.js";
 import { FileService } from "./services/file-service.js";
 import { GitService } from "./services/git-service.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
@@ -16,12 +17,17 @@ import { WebsocketHub } from "./services/websocket-hub.js";
 const config = loadConfig();
 const authService = new AuthService(config.appPassword);
 const workspaceService = new WorkspaceService(config.workspaceRoot, config.defaultRepo);
+const costService = new CostService(config.costsDbPath);
 
 let websocketHub: WebsocketHub;
 
-const piAgentService = new PiAgentService(config, (event) => {
-  websocketHub.broadcast(event);
-});
+const piAgentService = new PiAgentService(
+  config,
+  (event) => {
+    websocketHub.broadcast(event);
+  },
+  costService,
+);
 
 const watcherService = new WatcherService((payload) => {
   websocketHub.broadcast({
@@ -46,6 +52,7 @@ const app = createApp({
   repositoryRuntimeService,
   fileService: new FileService(),
   gitService: new GitService(),
+  costService,
   piAgentService,
 });
 

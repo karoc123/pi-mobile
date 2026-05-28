@@ -7,6 +7,7 @@
     AgentCommandState,
     AgentSnapshot,
     AgentUsage,
+    CostReport,
     DiffFile,
     FileDocument,
     FileEntry,
@@ -19,10 +20,12 @@
   import BottomNav, { type ViewName } from './components/BottomNav.svelte';
   import ChatView from './components/ChatView.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
+  import CostView, { type CostRangePreset } from './components/CostView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
   import { apiFetch } from './lib/api.js';
 
+  type AppViewName = ViewName | 'costs';
   type AsyncViewName = Exclude<ViewName, 'chat'>;
 
   const themeStorageKey = 'pimobile.theme';
@@ -51,6 +54,23 @@
     usage: emptyUsage,
   };
 
+  const emptyCostReport: CostReport = {
+    summary: {
+      totalSessions: 0,
+      totalCost: 0,
+      totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    },
+    sessions: [],
+    filters: {
+      repos: [],
+      models: [],
+    },
+  };
+
   let authChecked = false;
   let authenticated = false;
   let loginPending = false;
@@ -60,7 +80,7 @@
   let workspacePath = '.';
   let workspaceEntries: WorkspaceEntry[] = [];
   let currentRepo: SelectedRepo | null = null;
-  let view: ViewName = 'chat';
+  let view: AppViewName = 'chat';
 
   let diffLoading = false;
   let diffFiles: DiffFile[] = [];
@@ -94,6 +114,13 @@
   let commandState: AgentCommandState | null = null;
   let composerPrefill = '';
   let composerPrefillToken = 0;
+  let costReport: CostReport = emptyCostReport;
+  let costLoading = false;
+  let costRepoFilter = '';
+  let costModelFilter = '';
+  let costFromDate = '';
+  let costToDate = '';
+  let costPreset: CostRangePreset = 'all';
 
   onMount(() => {
     initializeTheme();
@@ -242,6 +269,7 @@
     await apiFetch('/api/auth/logout', { method: 'POST' });
     authenticated = false;
     currentRepo = null;
+    view = 'chat';
     menuOpen = false;
     commandPaletteOpen = false;
     commandState = null;
@@ -253,6 +281,12 @@
     draftContent = '';
     editorDirty = false;
     agentSnapshot = emptyAgentSnapshot;
+    costReport = emptyCostReport;
+    costRepoFilter = '';
+    costModelFilter = '';
+    costFromDate = '';
+    costToDate = '';
+    costPreset = 'all';
     socket?.close();
   }
 
@@ -336,7 +370,7 @@
       draftContent = '';
       editorDirty = false;
       filePath = '.';
-      view = 'chat';
+      view = view === 'costs' ? 'costs' : 'chat';
       void refreshCurrentRepoData();
       return;
     }
@@ -385,6 +419,85 @@
 
   async function refreshCurrentRepoData() {
     await Promise.all([loadDiff(), loadFiles('.'), loadAgentState()]);
+  }
+
+  async function openCostView() {
+    menuOpen = false;
+    view = 'costs';
+    await loadCosts();
+  }
+
+  async function loadCosts() {
+    costLoading = true;
+
+    try {
+      const query = new URLSearchParams();
+
+      if (costRepoFilter) {
+        query.set('repo', costRepoFilter);
+      }
+
+      if (costModelFilter) {
+        query.set('model', costModelFilter);
+      }
+
+      if (costFromDate) {
+        query.set('from', `${costFromDate}T00:00:00.000Z`);
+      }
+
+      if (costToDate) {
+        query.set('to', `${costToDate}T23:59:59.999Z`);
+      }
+
+      const suffix = query.size > 0 ? `?${query.toString()}` : '';
+      costReport = await apiFetch<CostReport>(`/api/costs${suffix}`);
+    } catch (error) {
+      showBanner(toErrorMessage(error), 'error');
+    } finally {
+      costLoading = false;
+    }
+  }
+
+  function updateCostRepoFilter(value: string) {
+    costRepoFilter = value;
+    void loadCosts();
+  }
+
+  function updateCostModelFilter(value: string) {
+    costModelFilter = value;
+    void loadCosts();
+  }
+
+  function updateCostFromDate(value: string) {
+    costFromDate = value;
+    costPreset = 'custom';
+    void loadCosts();
+  }
+
+  function updateCostToDate(value: string) {
+    costToDate = value;
+    costPreset = 'custom';
+    void loadCosts();
+  }
+
+  function applyCostPreset(preset: Exclude<CostRangePreset, 'custom'>) {
+    costPreset = preset;
+
+    if (preset === 'all') {
+      costFromDate = '';
+      costToDate = '';
+      void loadCosts();
+      return;
+    }
+
+    const end = new Date();
+    const start = new Date(end);
+    const dayCount = preset === '7d' ? 6 : preset === '30d' ? 29 : 89;
+
+    start.setUTCDate(start.getUTCDate() - dayCount);
+    costFromDate = start.toISOString().slice(0, 10);
+    costToDate = end.toISOString().slice(0, 10);
+    void loadCosts();
   }
 
   async function loadAgentState() {
@@ -623,7 +736,23 @@
       <div class:success={bannerTone === 'success'} class:error={bannerTone === 'error'} class="notice floating">{bannerMessage}</div>
     {/if}
 
-    {#if currentRepo}
+    {#if view === 'costs'}
+      <CostView
+        report={costReport}
+        loading={costLoading}
+        selectedRepo={costRepoFilter}
+        selectedModel={costModelFilter}
+        fromDate={costFromDate}
+        toDate={costToDate}
+        selectedPreset={costPreset}
+        on:refresh={() => void loadCosts()}
+        on:setRepo={(event) => updateCostRepoFilter(event.detail.value)}
+        on:setModel={(event) => updateCostModelFilter(event.detail.value)}
+        on:setFrom={(event) => updateCostFromDate(event.detail.value)}
+        on:setTo={(event) => updateCostToDate(event.detail.value)}
+        on:applyPreset={(event) => applyCostPreset(event.detail.value)}
+      />
+    {:else if currentRepo}
       {#if view === 'chat'}
         <ChatView
           messages={agentSnapshot.messages}
@@ -700,7 +829,7 @@
       </section>
     {/if}
 
-    <BottomNav currentView={view} disabled={!currentRepo} on:navigate={(event) => (view = event.detail.view)} />
+    <BottomNav currentView={view === 'costs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => (view = event.detail.view)} />
     <AppMenu
       open={menuOpen}
       currentRepo={currentRepo}
@@ -710,6 +839,7 @@
         menuOpen = false;
         workspaceOpen = true;
       }}
+      on:openCosts={() => void openCostView()}
       on:setTheme={(event) => setTheme(event.detail.value)}
       on:logout={logout}
     />

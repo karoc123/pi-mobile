@@ -83,6 +83,55 @@ export type AgentSnapshot = {
   usage: AgentUsage;
 };
 
+export type CostFilterOption = {
+  value: string;
+  label: string;
+};
+
+export type CostSummary = {
+  totalSessions: number;
+  totalCost: number;
+  totalTokens: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+};
+
+export type CostSession = {
+  sessionKey: string;
+  sessionId: string | null;
+  sessionFile: string | null;
+  repoName: string;
+  repoRelativePath: string;
+  repoAbsolutePath: string;
+  modelId: string | null;
+  modelsUsed: string[];
+  startedAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  totalCost: number;
+  contextTokens: number | null;
+  contextWindow: number | null;
+  contextPercent: number | null;
+  usingSubscription: boolean;
+  autoCompactEnabled: boolean;
+};
+
+export type CostReport = {
+  summary: CostSummary;
+  sessions: CostSession[];
+  filters: {
+    repos: CostFilterOption[];
+    models: CostFilterOption[];
+  };
+};
+
 export type AgentThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export type AgentModelOption = {

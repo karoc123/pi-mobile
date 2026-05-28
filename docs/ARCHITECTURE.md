@@ -1,6 +1,3 @@
-Hier ist die bereinigte und fokussierte Fassung der **`ARCHITECTURE.md`**. Alle Erklärungen zum lokalen Netzwerk-Routing wurden entfernt, und die Architektur wurde strikt auf **Vorschlag B** (die native Installation von `pi.dev` direkt innerhalb des Docker-Containers) sowie die Passwort-Authentifizierung ausgerichtet.
-
-````markdown
 # ARCHITECTURE.md — System and Software Architecture
 
 This document outlines the technical design of the **PiMobile Agent Server**. The system integrates the official `pi.dev` core engine directly inside a custom Node.js/TypeScript backend wrapper, packaged into a lightweight, secured Docker container optimized for the ARM architecture of a Raspberry Pi.
@@ -184,4 +181,3 @@ services:
       - /home/pi/.ssh:/home/node/.ssh:ro
     user: "${UID}:${GID}" # Runs with identical host IDs to negate Docker root permission locking
 ```
-````

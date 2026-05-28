@@ -39,6 +39,7 @@ describe("createApp", () => {
       port: 3000,
       appPassword: "secret-pass",
       workspaceRoot: tempDir,
+      costsDbPath: path.join(tempDir, ".pi-mobile", "costs.sqlite"),
       sessionCookieName: "pi_mobile_session",
     };
     const authService = new AuthService(config.appPassword);
@@ -57,6 +58,47 @@ describe("createApp", () => {
       message: "Started a new session.",
       prompt: null,
     }));
+    const getCostReport = vi.fn(() => ({
+      summary: {
+        totalSessions: 1,
+        totalCost: 2.75,
+        totalTokens: 355,
+        inputTokens: 240,
+        outputTokens: 95,
+        cacheReadTokens: 20,
+        cacheWriteTokens: 0,
+      },
+      sessions: [
+        {
+          sessionKey: "repo-a:session-1",
+          sessionId: "session-1",
+          sessionFile: "/workspace/repo-a/.pi/sessions/session-1.json",
+          repoName: path.basename(tempDir),
+          repoRelativePath: path.basename(tempDir),
+          repoAbsolutePath: tempDir,
+          modelId: "anthropic/claude-sonnet-4",
+          modelsUsed: ["anthropic/claude-sonnet-4"],
+          startedAt: "2026-05-01T10:00:00.000Z",
+          updatedAt: "2026-05-01T10:05:00.000Z",
+          endedAt: "2026-05-01T10:06:00.000Z",
+          inputTokens: 240,
+          outputTokens: 95,
+          cacheReadTokens: 20,
+          cacheWriteTokens: 0,
+          totalTokens: 355,
+          totalCost: 2.75,
+          contextTokens: 355,
+          contextWindow: 200000,
+          contextPercent: 0.2,
+          usingSubscription: true,
+          autoCompactEnabled: true,
+        },
+      ],
+      filters: {
+        repos: [{ value: path.basename(tempDir), label: path.basename(tempDir) }],
+        models: [{ value: "anthropic/claude-sonnet-4", label: "anthropic/claude-sonnet-4" }],
+      },
+    }));
 
     const app = createApp({
       config,
@@ -73,6 +115,9 @@ describe("createApp", () => {
       gitService: {
         getDiff: vi.fn(async () => []),
         revertHunk: vi.fn(async () => undefined),
+      } as never,
+      costService: {
+        getReport: getCostReport,
       } as never,
       piAgentService: {
         getSnapshot: vi.fn(() => ({ repo: workspaceService.getCurrentRepo(), isConfigured: true, isStreaming: false, messages: [], tools: [], lastError: null })),
@@ -96,6 +141,7 @@ describe("createApp", () => {
     const authorized = await request(app).get("/api/workspaces/browse").set("Cookie", cookie);
     const commandStateResponse = await request(app).get("/api/agent/command-state").set("Cookie", cookie);
     const commandExecuteResponse = await request(app).post("/api/agent/command").set("Cookie", cookie).send({ command: "new-session" });
+    const costResponse = await request(app).get("/api/costs?repo=repo-a&model=anthropic%2Fclaude-sonnet-4&from=2026-05-01T00%3A00%3A00.000Z&to=2026-05-02T00%3A00%3A00.000Z").set("Cookie", cookie);
 
     expect(authorized.status).toBe(200);
     expect(authorized.body.entries).toEqual([]);
@@ -117,5 +163,13 @@ describe("createApp", () => {
       prompt: null,
     });
     expect(executeCommand).toHaveBeenCalledWith({ command: "new-session" });
+    expect(costResponse.status).toBe(200);
+    expect(costResponse.body.summary.totalCost).toBe(2.75);
+    expect(getCostReport).toHaveBeenCalledWith({
+      repo: "repo-a",
+      model: "anthropic/claude-sonnet-4",
+      from: "2026-05-01T00:00:00.000Z",
+      to: "2026-05-02T00:00:00.000Z",
+    });
   });
 });

@@ -12,6 +12,7 @@
   const dispatch = createEventDispatcher<{
     close: void;
     chooseRepo: void;
+    openCosts: void;
     logout: void;
     setTheme: { value: ThemeName };
   }>();
@@ -43,6 +44,12 @@
             VS Code Light
           </button>
         </div>
+      </section>
+
+      <section class="menu-section">
+        <p class="eyebrow">Insights</p>
+        <p class="menu-copy">Open the aggregated cost overview with filters for repository, model, and timeframe.</p>
+        <button class="secondary-button" type="button" on:click={() => dispatch('openCosts')}>Open costs</button>
       </section>
 
       <section class="menu-section">
