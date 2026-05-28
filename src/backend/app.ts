@@ -3,6 +3,8 @@ import path from "node:path";
 import cookieParser from "cookie-parser";
 import express, { type NextFunction, type Request, type Response } from "express";
 
+import type { AgentCommandRequest } from "../shared/contracts.js";
+
 import type { AppConfig } from "./config.js";
 import { AuthService } from "./services/auth-service.js";
 import { FileService } from "./services/file-service.js";
@@ -115,6 +117,14 @@ export function createApp(services: AppServices) {
     response.json(services.piAgentService.getSnapshot());
   });
 
+  app.get("/api/agent/command-state", requireAuth(services), async (_request, response) => {
+    response.json(await services.piAgentService.getCommandState());
+  });
+
+  app.post("/api/agent/command", requireAuth(services), async (request, response) => {
+    response.json(await services.piAgentService.executeCommand(getBodyObject<AgentCommandRequest>(request)));
+  });
+
   app.post("/api/agent/prompt", requireAuth(services), async (request, response) => {
     await services.piAgentService.prompt(getBodyString(request, "prompt"));
     response.status(202).json({ accepted: true });
@@ -122,6 +132,11 @@ export function createApp(services: AppServices) {
 
   app.post("/api/agent/abort", requireAuth(services), async (_request, response) => {
     await services.piAgentService.abort();
+    response.json({ ok: true });
+  });
+
+  app.post("/api/agent/new-session", requireAuth(services), async (_request, response) => {
+    await services.piAgentService.startNewSession();
     response.json({ ok: true });
   });
 
@@ -175,4 +190,12 @@ function getBodyString(request: Request, key: string) {
   }
 
   return candidate;
+}
+
+function getBodyObject<T>(request: Request) {
+  if (!request.body || typeof request.body !== "object") {
+    throw new Error("Missing request body.");
+  }
+
+  return request.body as T;
 }

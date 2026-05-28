@@ -115,6 +115,14 @@ Since Git does not natively provide a single non-interactive CLI command to disc
 
 6. The file is cleanly rolled back at that exact position. The `FileService` emits an updated state event, and the `pi` agent natively detects the updated file layout on its next turn.
 
+### 3.3 Start a Fresh Agent Session (Context + Cost Reset)
+
+To avoid carrying forward long-running conversation context, the chat UI exposes a **New session** action:
+
+1. The frontend calls `POST /api/agent/new-session`.
+2. The backend disposes the active `AgentSession`, clears in-memory chat/tool state, and creates a brand-new SDK session via `SessionManager.create(...)` for the current repository.
+3. The frontend refreshes `/api/agent/state`, so messages/tool activity become empty and usage/cost counters restart from zero for the new session.
+
 ---
 
 ## 4. Container Deployment & Environment Setup

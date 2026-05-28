@@ -44,6 +44,19 @@ describe("createApp", () => {
     const authService = new AuthService(config.appPassword);
     const workspaceService = new WorkspaceService(tempDir);
     await workspaceService.initializeDefaultRepo();
+    const getCommandState = vi.fn(async () => ({
+      session: null,
+      models: [],
+      thinkingLevels: [],
+      autoCompactEnabled: false,
+      resumeSessions: [],
+      treeEntries: [],
+      forkEntries: [],
+    }));
+    const executeCommand = vi.fn(async () => ({
+      message: "Started a new session.",
+      prompt: null,
+    }));
 
     const app = createApp({
       config,
@@ -63,6 +76,8 @@ describe("createApp", () => {
       } as never,
       piAgentService: {
         getSnapshot: vi.fn(() => ({ repo: workspaceService.getCurrentRepo(), isConfigured: true, isStreaming: false, messages: [], tools: [], lastError: null })),
+        getCommandState,
+        executeCommand,
         prompt: vi.fn(async () => undefined),
         abort: vi.fn(async () => undefined),
       } as never,
@@ -79,9 +94,28 @@ describe("createApp", () => {
 
     const cookie = login.headers["set-cookie"];
     const authorized = await request(app).get("/api/workspaces/browse").set("Cookie", cookie);
+    const commandStateResponse = await request(app).get("/api/agent/command-state").set("Cookie", cookie);
+    const commandExecuteResponse = await request(app).post("/api/agent/command").set("Cookie", cookie).send({ command: "new-session" });
 
     expect(authorized.status).toBe(200);
     expect(authorized.body.entries).toEqual([]);
     expect(authorized.body.currentRepo.name).toBe(path.basename(tempDir));
+    expect(commandStateResponse.status).toBe(200);
+    expect(commandStateResponse.body).toEqual({
+      session: null,
+      models: [],
+      thinkingLevels: [],
+      autoCompactEnabled: false,
+      resumeSessions: [],
+      treeEntries: [],
+      forkEntries: [],
+    });
+    expect(getCommandState).toHaveBeenCalledTimes(1);
+    expect(commandExecuteResponse.status).toBe(200);
+    expect(commandExecuteResponse.body).toEqual({
+      message: "Started a new session.",
+      prompt: null,
+    });
+    expect(executeCommand).toHaveBeenCalledWith({ command: "new-session" });
   });
 });

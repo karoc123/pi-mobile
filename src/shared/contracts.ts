@@ -58,6 +58,21 @@ export type ToolActivity = {
   detail: string;
 };
 
+export type AgentUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  totalCost: number;
+  contextTokens: number | null;
+  contextWindow: number | null;
+  contextPercent: number | null;
+  modelId: string | null;
+  usingSubscription: boolean;
+  autoCompactEnabled: boolean;
+};
+
 export type AgentSnapshot = {
   repo: SelectedRepo | null;
   isConfigured: boolean;
@@ -65,6 +80,106 @@ export type AgentSnapshot = {
   messages: ChatMessage[];
   tools: ToolActivity[];
   lastError: string | null;
+  usage: AgentUsage;
+};
+
+export type AgentThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export type AgentModelOption = {
+  provider: string;
+  modelId: string;
+  name: string;
+  available: boolean;
+  isCurrent: boolean;
+  usingSubscription: boolean;
+};
+
+export type AgentThinkingLevelOption = {
+  value: AgentThinkingLevel;
+  isCurrent: boolean;
+};
+
+export type AgentSessionSummary = {
+  sessionFile: string | null;
+  sessionId: string | null;
+  sessionName: string | null;
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  toolResults: number;
+  totalMessages: number;
+};
+
+export type AgentResumeSession = {
+  path: string;
+  id: string;
+  name: string | null;
+  modifiedAt: string;
+  messageCount: number;
+  preview: string;
+  isCurrent: boolean;
+};
+
+export type AgentTreeEntry = {
+  entryId: string;
+  role: "user" | "assistant";
+  depth: number;
+  preview: string;
+  isCurrent: boolean;
+};
+
+export type AgentForkEntry = {
+  entryId: string;
+  preview: string;
+};
+
+export type AgentCommandState = {
+  session: AgentSessionSummary | null;
+  models: AgentModelOption[];
+  thinkingLevels: AgentThinkingLevelOption[];
+  autoCompactEnabled: boolean;
+  resumeSessions: AgentResumeSession[];
+  treeEntries: AgentTreeEntry[];
+  forkEntries: AgentForkEntry[];
+};
+
+export type AgentCommandRequest =
+  | {
+      command: "set-model";
+      provider: string;
+      modelId: string;
+    }
+  | {
+      command: "set-thinking";
+      level: AgentThinkingLevel;
+    }
+  | {
+      command: "set-auto-compact";
+      enabled: boolean;
+    }
+  | {
+      command: "compact";
+      customInstructions?: string;
+    }
+  | {
+      command: "new-session";
+    }
+  | {
+      command: "resume-session";
+      sessionPath: string;
+    }
+  | {
+      command: "navigate-tree";
+      entryId: string;
+    }
+  | {
+      command: "fork-session";
+      entryId: string;
+    };
+
+export type AgentCommandResponse = {
+  message: string | null;
+  prompt: string | null;
 };
 
 export type WebsocketEnvelope =
@@ -74,7 +189,7 @@ export type WebsocketEnvelope =
     }
   | {
       type: "agent_status";
-      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "lastError" | "repo">;
+      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "lastError" | "repo" | "usage">;
     }
   | {
       type: "chat_message_added";

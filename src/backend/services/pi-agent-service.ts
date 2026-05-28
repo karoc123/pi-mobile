@@ -3,7 +3,20 @@ import { randomUUID } from "node:crypto";
 
 import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
-import type { AgentSnapshot, ChatMessage, SelectedRepo, ToolActivity, WebsocketEnvelope } from "../../shared/contracts.js";
+import type {
+  AgentCommandRequest,
+  AgentCommandResponse,
+  AgentCommandState,
+  AgentResumeSession,
+  AgentSnapshot,
+  AgentThinkingLevel,
+  AgentTreeEntry,
+  AgentUsage,
+  ChatMessage,
+  SelectedRepo,
+  ToolActivity,
+  WebsocketEnvelope,
+} from "../../shared/contracts.js";
 
 import type { AppConfig } from "../config.js";
 
@@ -19,6 +32,7 @@ export class PiAgentService {
   private activeAssistantMessageId: string | null = null;
   private mockReplyTimeout: NodeJS.Timeout | null = null;
   private mockStreaming = false;
+  private mockUsage: AgentUsage = createUsageSummary("mock/session", true);
 
   constructor(
     private readonly config: AppConfig,
@@ -33,7 +47,190 @@ export class PiAgentService {
       messages: this.messages,
       tools: this.tools,
       lastError: this.lastError,
+      usage: this.getUsageSummary(),
     };
+  }
+
+  async getCommandState(): Promise<AgentCommandState> {
+    if (!this.currentRepo) {
+      return createEmptyCommandState();
+    }
+
+    if (this.config.piMockMode) {
+      return this.getMockCommandState();
+    }
+
+    const session = await this.ensureSession();
+    const sessionStats = session.getSessionStats();
+    const currentModel = session.model;
+    const currentSessionFile = session.sessionFile;
+    const resumeSessions = await SessionManager.list(this.currentRepo.absolutePath, this.config.piSessionDir);
+
+    return {
+      session: {
+        sessionFile: sessionStats.sessionFile ?? null,
+        sessionId: sessionStats.sessionId,
+        sessionName: session.sessionName ?? null,
+        userMessages: sessionStats.userMessages,
+        assistantMessages: sessionStats.assistantMessages,
+        toolCalls: sessionStats.toolCalls,
+        toolResults: sessionStats.toolResults,
+        totalMessages: sessionStats.totalMessages,
+      },
+      models: session.modelRegistry
+        .getAll()
+        .map((model) => ({
+          provider: model.provider,
+          modelId: model.id,
+          name: model.name,
+          available: session.modelRegistry.hasConfiguredAuth(model),
+          isCurrent: currentModel?.provider === model.provider && currentModel.id === model.id,
+          usingSubscription: session.modelRegistry.isUsingOAuth(model),
+        }))
+        .sort((left, right) => {
+          if (left.isCurrent !== right.isCurrent) {
+            return left.isCurrent ? -1 : 1;
+          }
+
+          if (left.available !== right.available) {
+            return left.available ? -1 : 1;
+          }
+
+          return `${left.provider}/${left.modelId}`.localeCompare(`${right.provider}/${right.modelId}`);
+        }),
+      thinkingLevels: session.getAvailableThinkingLevels().map((level) => ({
+        value: level as AgentThinkingLevel,
+        isCurrent: session.thinkingLevel === level,
+      })),
+      autoCompactEnabled: session.autoCompactionEnabled,
+      resumeSessions: resumeSessions.sort((left, right) => right.modified.getTime() - left.modified.getTime()).map((entry) => toResumeSession(entry, currentSessionFile)),
+      treeEntries: flattenTreeEntries(session.sessionManager.getTree(), session.sessionManager.getLeafId()),
+      forkEntries: session.getUserMessagesForForking().map((entry) => ({
+        entryId: entry.entryId,
+        preview: summarizeText(entry.text),
+      })),
+    };
+  }
+
+  async executeCommand(request: AgentCommandRequest): Promise<AgentCommandResponse> {
+    if (!request || typeof request !== "object" || typeof request.command !== "string") {
+      throw new Error("Missing agent command.");
+    }
+
+    if (this.config.piMockMode) {
+      return this.executeMockCommand(request);
+    }
+
+    const session = await this.ensureSession();
+
+    switch (request.command) {
+      case "set-model": {
+        const model = session.modelRegistry.find(request.provider, request.modelId);
+
+        if (!model) {
+          throw new Error(`Configured pi model ${request.provider}/${request.modelId} was not found.`);
+        }
+
+        await session.setModel(model);
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: `Model switched to ${request.provider}/${request.modelId}.`,
+          prompt: null,
+        };
+      }
+
+      case "set-thinking": {
+        session.setThinkingLevel(request.level);
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: `Thinking set to ${session.thinkingLevel}.`,
+          prompt: null,
+        };
+      }
+
+      case "set-auto-compact": {
+        session.setAutoCompactionEnabled(request.enabled);
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.",
+          prompt: null,
+        };
+      }
+
+      case "compact": {
+        const customInstructions = typeof request.customInstructions === "string" && request.customInstructions.trim().length > 0 ? request.customInstructions.trim() : undefined;
+        await session.compact(customInstructions);
+        this.messages = hydrateMessagesFromSession(session.messages);
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: "Context compacted.",
+          prompt: null,
+        };
+      }
+
+      case "new-session": {
+        await this.createSession(false, {
+          preferredModel: getModelReference(session),
+          preferredThinkingLevel: session.thinkingLevel as AgentThinkingLevel,
+          useConfiguredDefaults: true,
+        });
+        return {
+          message: "Started a new session.",
+          prompt: null,
+        };
+      }
+
+      case "resume-session": {
+        await this.openSessionManager(SessionManager.open(request.sessionPath), {
+          useConfiguredDefaults: false,
+        });
+        return {
+          message: "Session resumed.",
+          prompt: null,
+        };
+      }
+
+      case "navigate-tree": {
+        const result = await session.navigateTree(request.entryId);
+
+        if (result.cancelled) {
+          return {
+            message: "Tree navigation cancelled.",
+            prompt: null,
+          };
+        }
+
+        this.messages = hydrateMessagesFromSession(session.messages);
+        this.tools = [];
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: "Moved to the selected session point.",
+          prompt: result.editorText ?? null,
+        };
+      }
+
+      case "fork-session": {
+        const userMessage = session.getUserMessagesForForking().find((entry) => entry.entryId === request.entryId);
+        const sessionPath = session.sessionManager.createBranchedSession(request.entryId);
+
+        if (!userMessage || !sessionPath) {
+          throw new Error("Could not fork the selected session entry.");
+        }
+
+        await this.openSessionManager(SessionManager.open(sessionPath), {
+          useConfiguredDefaults: false,
+        });
+        return {
+          message: "Forked a new session from the selected prompt.",
+          prompt: userMessage.text,
+        };
+      }
+    }
   }
 
   async selectRepo(repo: SelectedRepo) {
@@ -46,6 +243,7 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
+    this.mockUsage = createUsageSummary(this.config.piMockMode ? "mock/session" : null, this.config.piMockMode);
     await this.resetSession();
     if (!this.config.piMockMode) {
       await this.restoreSession();
@@ -94,6 +292,30 @@ export class PiAgentService {
     this.emitStatus();
   }
 
+  async startNewSession() {
+    if (!this.currentRepo) {
+      throw new Error("No repository selected for pi session.");
+    }
+
+    this.messages = [];
+    this.tools = [];
+    this.lastError = null;
+    this.activeAssistantMessageId = null;
+    this.mockUsage = createUsageSummary(this.config.piMockMode ? "mock/session" : null, this.config.piMockMode);
+
+    await this.resetSession();
+
+    if (!this.config.piMockMode) {
+      try {
+        await this.createSession(false);
+      } catch (error) {
+        this.recordError(error);
+      }
+    }
+
+    this.emitStatus();
+  }
+
   async dispose() {
     await this.resetSession();
   }
@@ -119,22 +341,77 @@ export class PiAgentService {
       return this.session;
     }
 
+    return this.createSession(true);
+  }
+
+  private async createSession(
+    continueRecent: boolean,
+    options: {
+      preferredModel?: { provider: string; modelId: string } | null;
+      preferredThinkingLevel?: AgentThinkingLevel;
+      useConfiguredDefaults?: boolean;
+    } = {
+      useConfiguredDefaults: true,
+    },
+  ) {
+    if (!this.currentRepo) {
+      throw new Error("No repository selected for pi session.");
+    }
+
+    const sessionManager = continueRecent
+      ? SessionManager.continueRecent(this.currentRepo.absolutePath, this.config.piSessionDir)
+      : SessionManager.create(this.currentRepo.absolutePath, this.config.piSessionDir);
+
+    return this.openSessionManager(sessionManager, options);
+  }
+
+  private resolvePreferredModel(modelRegistry: ModelRegistry, preferredModel: { provider: string; modelId: string } | null | undefined, useConfiguredDefaults: boolean) {
+    if (preferredModel) {
+      const model = modelRegistry.find(preferredModel.provider, preferredModel.modelId);
+
+      if (model) {
+        return model;
+      }
+    }
+
+    return useConfiguredDefaults ? this.resolveConfiguredModel(modelRegistry) : undefined;
+  }
+
+  private async openSessionManager(
+    sessionManager: SessionManager,
+    options: {
+      preferredModel?: { provider: string; modelId: string } | null;
+      preferredThinkingLevel?: AgentThinkingLevel;
+      useConfiguredDefaults?: boolean;
+    },
+  ) {
+    if (!this.currentRepo) {
+      throw new Error("No repository selected for pi session.");
+    }
+
     const authStorage = this.config.piAgentDir ? AuthStorage.create(path.join(this.config.piAgentDir, "auth.json")) : AuthStorage.create();
     const modelRegistry = this.config.piAgentDir ? ModelRegistry.create(authStorage, path.join(this.config.piAgentDir, "models.json")) : ModelRegistry.create(authStorage);
-    const sessionManager = SessionManager.continueRecent(this.currentRepo.absolutePath, this.config.piSessionDir);
-    const configuredModel = this.resolveConfiguredModel(modelRegistry);
+    const model = this.resolvePreferredModel(modelRegistry, options.preferredModel, options.useConfiguredDefaults ?? false);
+    const thinkingLevel = options.preferredThinkingLevel ?? (options.useConfiguredDefaults ? this.config.piThinkingLevel : undefined);
     const { session } = await createAgentSession({
       cwd: this.currentRepo.absolutePath,
       agentDir: this.config.piAgentDir,
       authStorage,
       modelRegistry,
       sessionManager,
-      model: configuredModel,
-      thinkingLevel: this.config.piThinkingLevel,
+      model,
+      thinkingLevel,
     });
+
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    this.session?.dispose();
 
     this.session = session;
     this.messages = hydrateMessagesFromSession(session.messages);
+    this.tools = [];
+    this.lastError = null;
+    this.activeAssistantMessageId = null;
     this.unsubscribe = session.subscribe((event) => {
       this.handleSessionEvent(event);
     });
@@ -310,6 +587,7 @@ export class PiAgentService {
         isStreaming: this.mockStreaming || this.session?.isStreaming || false,
         lastError: this.lastError,
         repo: this.currentRepo,
+        usage: this.getUsageSummary(),
       },
     });
   }
@@ -325,6 +603,105 @@ export class PiAgentService {
     this.unsubscribe = null;
     this.session?.dispose();
     this.session = null;
+  }
+
+  private getUsageSummary(): AgentUsage {
+    if (this.session) {
+      const sessionStats = this.session.getSessionStats();
+      const contextUsage = this.session.getContextUsage();
+      const model = this.session.model;
+
+      return {
+        inputTokens: sessionStats.tokens.input,
+        outputTokens: sessionStats.tokens.output,
+        cacheReadTokens: sessionStats.tokens.cacheRead,
+        cacheWriteTokens: sessionStats.tokens.cacheWrite,
+        totalTokens: sessionStats.tokens.total,
+        totalCost: sessionStats.cost,
+        contextTokens: contextUsage?.tokens ?? null,
+        contextWindow: contextUsage?.contextWindow ?? model?.contextWindow ?? null,
+        contextPercent: contextUsage?.percent ?? null,
+        modelId: model?.id ?? null,
+        usingSubscription: model ? this.session.modelRegistry.isUsingOAuth(model) : false,
+        autoCompactEnabled: this.session.autoCompactionEnabled,
+      };
+    }
+
+    if (this.config.piMockMode) {
+      return this.mockUsage;
+    }
+
+    return {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 0,
+      totalCost: 0,
+      contextTokens: null,
+      contextWindow: null,
+      contextPercent: null,
+      modelId: null,
+      usingSubscription: false,
+      autoCompactEnabled: false,
+    };
+  }
+
+  private getMockCommandState(): AgentCommandState {
+    const userMessages = this.messages.filter((message) => message.role === "user").length;
+    const assistantMessages = this.messages.filter((message) => message.role === "assistant").length;
+
+    return {
+      session: this.currentRepo
+        ? {
+            sessionFile: null,
+            sessionId: null,
+            sessionName: null,
+            userMessages,
+            assistantMessages,
+            toolCalls: 0,
+            toolResults: 0,
+            totalMessages: this.messages.length,
+          }
+        : null,
+      models: [],
+      thinkingLevels: [],
+      autoCompactEnabled: this.mockUsage.autoCompactEnabled,
+      resumeSessions: [],
+      treeEntries: [],
+      forkEntries: [],
+    };
+  }
+
+  private async executeMockCommand(request: AgentCommandRequest): Promise<AgentCommandResponse> {
+    switch (request.command) {
+      case "new-session": {
+        this.messages = [];
+        this.tools = [];
+        this.lastError = null;
+        this.mockUsage = createUsageSummary("mock/session", this.mockUsage.autoCompactEnabled);
+        this.emitStatus();
+        return {
+          message: "Started a new session.",
+          prompt: null,
+        };
+      }
+
+      case "set-auto-compact": {
+        this.mockUsage = {
+          ...this.mockUsage,
+          autoCompactEnabled: request.enabled,
+        };
+        this.emitStatus();
+        return {
+          message: request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.",
+          prompt: null,
+        };
+      }
+
+      default:
+        throw new Error("This command is not available in mock mode.");
+    }
   }
 
   private async promptWithMock(promptText: string) {
@@ -351,6 +728,7 @@ export class PiAgentService {
     this.activeAssistantMessageId = assistantMessage.id;
     this.lastError = null;
     this.mockStreaming = true;
+    this.mockUsage = updateMockUsage(this.mockUsage, { inputDelta: estimateMockTokens(promptText) });
 
     this.broadcast({ type: "chat_message_added", payload: { message: userMessage } });
     this.broadcast({ type: "chat_message_added", payload: { message: assistantMessage } });
@@ -381,11 +759,72 @@ export class PiAgentService {
         this.activeAssistantMessageId = null;
         this.mockReplyTimeout = null;
         this.mockStreaming = false;
+        this.mockUsage = updateMockUsage(this.mockUsage, { outputDelta: estimateMockTokens(replyText) });
         this.emitStatus();
         resolve();
       }, 120);
     });
   }
+}
+
+function createEmptyCommandState(): AgentCommandState {
+  return {
+    session: null,
+    models: [],
+    thinkingLevels: [],
+    autoCompactEnabled: false,
+    resumeSessions: [],
+    treeEntries: [],
+    forkEntries: [],
+  };
+}
+
+function getModelReference(session: AgentSession) {
+  if (!session.model) {
+    return null;
+  }
+
+  return {
+    provider: session.model.provider,
+    modelId: session.model.id,
+  };
+}
+
+function toResumeSession(entry: Awaited<ReturnType<typeof SessionManager.list>>[number], currentSessionFile: string | undefined): AgentResumeSession {
+  return {
+    path: entry.path,
+    id: entry.id,
+    name: entry.name ?? null,
+    modifiedAt: entry.modified.toISOString(),
+    messageCount: entry.messageCount,
+    preview: summarizeText(entry.name ?? entry.firstMessage),
+    isCurrent: currentSessionFile === entry.path,
+  };
+}
+
+function flattenTreeEntries(nodes: ReturnType<SessionManager["getTree"]>, currentLeafId: string | null, depth = 0): AgentTreeEntry[] {
+  return nodes.flatMap((node) => {
+    const children = flattenTreeEntries(node.children, currentLeafId, depth + 1);
+
+    if (node.entry.type !== "message") {
+      return children;
+    }
+
+    if (node.entry.message.role !== "user" && node.entry.message.role !== "assistant") {
+      return children;
+    }
+
+    return [
+      {
+        entryId: node.entry.id,
+        role: node.entry.message.role,
+        depth,
+        preview: summarizeText(flattenMessageText(node.entry.message)),
+        isCurrent: node.entry.id === currentLeafId,
+      },
+      ...children,
+    ];
+  });
 }
 
 function hydrateMessagesFromSession(sessionMessages: readonly unknown[]) {
@@ -412,7 +851,11 @@ function toChatMessage(entry: unknown): ChatMessage | null {
   };
 }
 
-function flattenMessageText(message: { content?: unknown[] }) {
+function flattenMessageText(message: { content?: string | unknown[] }) {
+  if (typeof message.content === "string") {
+    return message.content.trim();
+  }
+
   if (!Array.isArray(message.content)) {
     return "";
   }
@@ -470,6 +913,57 @@ function summarizePayload(payload: unknown) {
 
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown pi runtime error.";
+}
+
+function summarizeText(text: string) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+
+  if (normalized.length === 0) {
+    return "No text";
+  }
+
+  return normalized.slice(0, 120);
+}
+
+function createUsageSummary(modelId: string | null, autoCompactEnabled: boolean): AgentUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    contextTokens: 0,
+    contextWindow: 400000,
+    contextPercent: 0,
+    modelId,
+    usingSubscription: false,
+    autoCompactEnabled,
+  };
+}
+
+function updateMockUsage(usage: AgentUsage, deltas: { inputDelta?: number; outputDelta?: number }) {
+  const inputTokens = usage.inputTokens + (deltas.inputDelta ?? 0);
+  const outputTokens = usage.outputTokens + (deltas.outputDelta ?? 0);
+  const totalTokens = inputTokens + outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+  const contextWindow = usage.contextWindow ?? 400000;
+  const contextPercent = Number(((totalTokens / contextWindow) * 100).toFixed(1));
+  const totalCost = Number(((inputTokens * 0.5 + outputTokens * 1.2) / 1000).toFixed(3));
+
+  return {
+    ...usage,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    totalCost,
+    contextTokens: totalTokens,
+    contextWindow,
+    contextPercent,
+  };
+}
+
+function estimateMockTokens(text: string) {
+  return Math.max(1, Math.ceil(text.trim().length / 4));
 }
 
 function buildMockReply(promptText: string) {

@@ -11,6 +11,9 @@ PiMobile is a mobile-first web cockpit for local Git repositories. It combines f
 
 - Express + TypeScript backend with cookie-based password auth
 - Svelte mobile UI with Chat, Diff, and Editor views
+- VS-Code-like light and dark themes via burger menu
+- chat status surface with explicit ready/running state, model label, and token/cost/context footer
+- mobile-first slash command suggestions for fast `/model`, `/session`, `/compact`, and related commands
 - repository picker for any Git repo below `WORKSPACE_ROOT`
 - websocket updates for agent state and filesystem changes
 - hunk-level revert through reverse `git apply`
@@ -72,11 +75,11 @@ http://localhost:5173
 
 6. Log in with `APP_PASSWORD`.
 
-7. Open `Choose repo`, browse within `/home/zink/dev`, and select `pi-mobile`.
+7. Open the burger menu, choose `Choose repo`, browse within `/home/zink/dev`, and select `pi-mobile`.
 
 8. Use the three main views:
 
-- `Chat`: send prompts to the active repository through the `pi.dev` SDK session
+- `Chat`: send prompts to the active repository through the `pi.dev` SDK session, inspect explicit ready/running state, and use slash suggestions for common commands
 - `Diff`: inspect changed hunks and revert individual hunks
 - `Editor`: browse files, edit them in-place, and save
 
@@ -154,8 +157,11 @@ npm run test:e2e
 What it covers:
 
 - password login
+- burger menu and theme toggle
 - repository picker selection
+- slash command suggestion visibility
 - chat flow against a deterministic mock pi runtime
+- explicit finished state plus usage footer rendering
 - editor save
 - diff view detection
 - hunk revert back to a clean tree

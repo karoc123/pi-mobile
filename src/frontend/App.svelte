@@ -2,7 +2,11 @@
   import { onMount } from 'svelte';
 
   import type {
+    AgentCommandRequest,
+    AgentCommandResponse,
+    AgentCommandState,
     AgentSnapshot,
+    AgentUsage,
     DiffFile,
     FileDocument,
     FileEntry,
@@ -11,13 +15,31 @@
     WebsocketEnvelope,
     WorkspaceEntry
   } from '../shared/contracts.js';
+  import AppMenu, { type ThemeName } from './components/AppMenu.svelte';
   import BottomNav, { type ViewName } from './components/BottomNav.svelte';
   import ChatView from './components/ChatView.svelte';
+  import CommandPalette from './components/CommandPalette.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
   import { apiFetch } from './lib/api.js';
 
   type AsyncViewName = Exclude<ViewName, 'chat'>;
+
+  const themeStorageKey = 'pimobile.theme';
+  const emptyUsage: AgentUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    contextTokens: null,
+    contextWindow: null,
+    contextPercent: null,
+    modelId: null,
+    usingSubscription: false,
+    autoCompactEnabled: false,
+  };
 
   const emptyAgentSnapshot: AgentSnapshot = {
     repo: null,
@@ -25,7 +47,8 @@
     isStreaming: false,
     messages: [],
     tools: [],
-    lastError: null
+    lastError: null,
+    usage: emptyUsage,
   };
 
   let authChecked = false;
@@ -57,14 +80,23 @@
 
   let bannerMessage = '';
   let bannerTone: 'info' | 'success' | 'error' = 'info';
+  let menuOpen = false;
   let lazyViewLoading: AsyncViewName | null = null;
   let lazyViewError = '';
   let diffViewComponent: any = null;
   let editorViewComponent: any = null;
   let diffViewPromise: Promise<void> | null = null;
   let editorViewPromise: Promise<void> | null = null;
+  let theme: ThemeName = 'vscode-dark';
+  let commandPaletteOpen = false;
+  let commandStateLoading = false;
+  let commandBusy = false;
+  let commandState: AgentCommandState | null = null;
+  let composerPrefill = '';
+  let composerPrefillToken = 0;
 
   onMount(() => {
+    initializeTheme();
     void initialize();
 
     return () => {
@@ -97,6 +129,32 @@
       authChecked = true;
       loginError = toErrorMessage(error);
     }
+  }
+
+  function initializeTheme() {
+    const storedTheme = window.localStorage.getItem(themeStorageKey);
+
+    if (storedTheme === 'vscode-dark' || storedTheme === 'vscode-light') {
+      setTheme(storedTheme, false);
+      return;
+    }
+
+    setTheme(window.matchMedia('(prefers-color-scheme: light)').matches ? 'vscode-light' : 'vscode-dark', false);
+  }
+
+  function setTheme(nextTheme: ThemeName, persist = true) {
+    theme = nextTheme;
+    document.documentElement.dataset.theme = nextTheme;
+
+    if (persist) {
+      window.localStorage.setItem(themeStorageKey, nextTheme);
+    }
+  }
+
+  function seedComposer(nextPrompt: string) {
+    composerPrefill = nextPrompt;
+    composerPrefillToken += 1;
+    view = 'chat';
   }
 
   async function bootstrapWorkspace() {
@@ -184,6 +242,9 @@
     await apiFetch('/api/auth/logout', { method: 'POST' });
     authenticated = false;
     currentRepo = null;
+    menuOpen = false;
+    commandPaletteOpen = false;
+    commandState = null;
     workspaceOpen = false;
     workspaceEntries = [];
     diffFiles = [];
@@ -264,6 +325,8 @@
 
     if (event.type === 'repo_selected') {
       currentRepo = event.payload.repo;
+      commandPaletteOpen = false;
+      commandState = null;
       agentSnapshot = {
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
@@ -312,6 +375,7 @@
         method: 'POST',
         body: JSON.stringify({ path })
       });
+      menuOpen = false;
       workspaceOpen = false;
       showBanner('Repository activated.', 'success');
     } catch (error) {
@@ -326,6 +390,32 @@
   async function loadAgentState() {
     agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
     currentRepo = agentSnapshot.repo;
+  }
+
+  async function loadCommandState() {
+    if (!currentRepo) {
+      commandState = null;
+      return;
+    }
+
+    commandStateLoading = true;
+
+    try {
+      commandState = await apiFetch<AgentCommandState>('/api/agent/command-state');
+    } catch (error) {
+      showBanner(toErrorMessage(error), 'error');
+    } finally {
+      commandStateLoading = false;
+    }
+  }
+
+  async function openCommandPalette() {
+    if (!currentRepo) {
+      return;
+    }
+
+    commandPaletteOpen = true;
+    await loadCommandState();
   }
 
   async function loadDiff() {
@@ -419,6 +509,59 @@
     }
   }
 
+  async function executePaletteCommand(request: AgentCommandRequest) {
+    commandBusy = true;
+
+    try {
+      const response = await apiFetch<AgentCommandResponse>('/api/agent/command', {
+        method: 'POST',
+        body: JSON.stringify(request)
+      });
+
+      await loadAgentState();
+
+      if (response.prompt) {
+        seedComposer(response.prompt);
+      }
+
+      if (response.message) {
+        showBanner(response.message, 'success');
+      }
+
+      if (request.command === 'set-model' || request.command === 'set-thinking' || request.command === 'set-auto-compact') {
+        await loadCommandState();
+      } else {
+        commandPaletteOpen = false;
+        commandState = null;
+      }
+    } catch (error) {
+      showBanner(toErrorMessage(error), 'error');
+    } finally {
+      commandBusy = false;
+    }
+  }
+
+  async function copyLastAssistantReply() {
+    const lastAssistantReply = [...agentSnapshot.messages].reverse().find((message) => message.role === 'assistant' && message.text.trim().length > 0);
+
+    if (!lastAssistantReply) {
+      showBanner('No assistant reply to copy yet.', 'info');
+      return;
+    }
+
+    try {
+      if (!navigator.clipboard) {
+        throw new Error('Clipboard is not available in this browser.');
+      }
+
+      await navigator.clipboard.writeText(lastAssistantReply.text);
+      commandPaletteOpen = false;
+      showBanner('Last assistant reply copied.', 'success');
+    } catch (error) {
+      showBanner(toErrorMessage(error), 'error');
+    }
+  }
+
   async function revertHunk(diff: string, hunkId: string) {
     revertingHunkId = hunkId;
 
@@ -466,17 +609,7 @@
   <LoginScreen pending={loginPending} error={loginError} on:submit={(event) => login(event.detail.password)} />
 {:else}
   <main class="app-shell">
-    <div class="top-bar card-panel">
-      <div>
-        <p class="eyebrow">Active repository</p>
-        <h1>{currentRepo ? currentRepo.name : 'No repo selected'}</h1>
-        <p class="subdued">{currentRepo ? currentRepo.relativePath : 'Open the picker and choose a Git repository under your configured workspace root.'}</p>
-      </div>
-      <div class="top-bar-actions">
-        <button class="secondary-button" type="button" on:click={() => (workspaceOpen = true)}>Choose repo</button>
-        <button class="ghost-button" type="button" on:click={logout}>Logout</button>
-      </div>
-    </div>
+    <button class="menu-trigger" type="button" aria-label="Open workspace menu" on:click={() => (menuOpen = true)}>Menu</button>
 
     {#if bannerMessage}
       <div class:success={bannerTone === 'success'} class:error={bannerTone === 'error'} class="notice floating">{bannerMessage}</div>
@@ -489,8 +622,12 @@
           tools={agentSnapshot.tools}
           isStreaming={agentSnapshot.isStreaming}
           lastError={agentSnapshot.lastError}
+          usage={agentSnapshot.usage}
+          prefillPrompt={composerPrefill}
+          prefillToken={composerPrefillToken}
           on:submit={(event) => sendPrompt(event.detail.prompt)}
           on:abort={abortRun}
+          on:openCommands={() => void openCommandPalette()}
         />
       {:else if view === 'diff'}
         {#if diffViewComponent}
@@ -556,6 +693,18 @@
     {/if}
 
     <BottomNav currentView={view} disabled={!currentRepo} on:navigate={(event) => (view = event.detail.view)} />
+    <AppMenu
+      open={menuOpen}
+      currentRepo={currentRepo}
+      theme={theme}
+      on:close={() => (menuOpen = false)}
+      on:chooseRepo={() => {
+        menuOpen = false;
+        workspaceOpen = true;
+      }}
+      on:setTheme={(event) => setTheme(event.detail.value)}
+      on:logout={logout}
+    />
     <WorkspacePicker
       open={workspaceOpen}
       loading={workspaceLoading}
@@ -565,6 +714,17 @@
       on:close={() => (workspaceOpen = false)}
       on:browse={(event) => loadWorkspaces(event.detail.path)}
       on:select={(event) => selectRepo(event.detail.path)}
+    />
+    <CommandPalette
+      open={commandPaletteOpen}
+      loading={commandStateLoading}
+      busy={commandBusy}
+      state={commandState}
+      theme={theme}
+      on:close={() => (commandPaletteOpen = false)}
+      on:copy={copyLastAssistantReply}
+      on:execute={(event) => executePaletteCommand(event.detail.request)}
+      on:setTheme={(event) => setTheme(event.detail.value)}
     />
   </main>
 {/if}
