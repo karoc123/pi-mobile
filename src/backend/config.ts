@@ -17,6 +17,7 @@ const configSchema = z.object({
   PI_PROVIDER: z.string().optional(),
   PI_MODEL: z.string().optional(),
   PI_THINKING_LEVEL: z.enum(thinkingLevels).optional(),
+  PI_MOCK_MODE: z.string().optional(),
 });
 
 export type AppConfig = {
@@ -32,6 +33,7 @@ export type AppConfig = {
   piProvider?: string;
   piModel?: string;
   piThinkingLevel?: (typeof thinkingLevels)[number];
+  piMockMode: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -54,5 +56,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     piProvider: parsed.PI_PROVIDER,
     piModel: parsed.PI_MODEL,
     piThinkingLevel: parsed.PI_THINKING_LEVEL,
+    piMockMode: asBoolean(parsed.PI_MOCK_MODE),
   };
+}
+
+function asBoolean(value: string | undefined) {
+  return value === '1' || value === 'true' || value === 'yes';
 }

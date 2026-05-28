@@ -13,11 +13,11 @@
   } from '../shared/contracts.js';
   import BottomNav, { type ViewName } from './components/BottomNav.svelte';
   import ChatView from './components/ChatView.svelte';
-  import DiffView from './components/DiffView.svelte';
-  import EditorView from './components/EditorView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
   import { apiFetch } from './lib/api.js';
+
+  type AsyncViewName = Exclude<ViewName, 'chat'>;
 
   const emptyAgentSnapshot: AgentSnapshot = {
     repo: null,
@@ -57,6 +57,12 @@
 
   let bannerMessage = '';
   let bannerTone: 'info' | 'success' | 'error' = 'info';
+  let lazyViewLoading: AsyncViewName | null = null;
+  let lazyViewError = '';
+  let diffViewComponent: any = null;
+  let editorViewComponent: any = null;
+  let diffViewPromise: Promise<void> | null = null;
+  let editorViewPromise: Promise<void> | null = null;
 
   onMount(() => {
     void initialize();
@@ -68,6 +74,14 @@
       }
     };
   });
+
+  $: if (currentRepo && view === 'diff') {
+    void ensureDiffViewLoaded();
+  }
+
+  $: if (currentRepo && view === 'editor') {
+    void ensureEditorViewLoaded();
+  }
 
   async function initialize() {
     try {
@@ -94,6 +108,56 @@
     if (currentRepo) {
       await refreshCurrentRepoData();
     }
+  }
+
+  async function ensureDiffViewLoaded() {
+    if (diffViewComponent || diffViewPromise) {
+      return diffViewPromise;
+    }
+
+    lazyViewLoading = 'diff';
+    lazyViewError = '';
+    diffViewPromise = import('./components/DiffView.svelte')
+      .then((module) => {
+        diffViewComponent = module.default;
+      })
+      .catch((error) => {
+        lazyViewError = toErrorMessage(error);
+      })
+      .finally(() => {
+        if (lazyViewLoading === 'diff') {
+          lazyViewLoading = null;
+        }
+
+        diffViewPromise = null;
+      });
+
+    return diffViewPromise;
+  }
+
+  async function ensureEditorViewLoaded() {
+    if (editorViewComponent || editorViewPromise) {
+      return editorViewPromise;
+    }
+
+    lazyViewLoading = 'editor';
+    lazyViewError = '';
+    editorViewPromise = import('./components/EditorView.svelte')
+      .then((module) => {
+        editorViewComponent = module.default;
+      })
+      .catch((error) => {
+        lazyViewError = toErrorMessage(error);
+      })
+      .finally(() => {
+        if (lazyViewLoading === 'editor') {
+          lazyViewLoading = null;
+        }
+
+        editorViewPromise = null;
+      });
+
+    return editorViewPromise;
   }
 
   async function login(password: string) {
@@ -429,24 +493,57 @@
           on:abort={abortRun}
         />
       {:else if view === 'diff'}
-        <DiffView files={diffFiles} loading={diffLoading} revertingHunkId={revertingHunkId} on:revert={(event) => revertHunk(event.detail.diff, event.detail.hunkId)} />
+        {#if diffViewComponent}
+          <svelte:component this={diffViewComponent} files={diffFiles} loading={diffLoading} revertingHunkId={revertingHunkId} on:revert={(event) => revertHunk(event.detail.diff, event.detail.hunkId)} />
+        {:else if lazyViewLoading === 'diff'}
+          <section class="view-shell">
+            <div class="empty-state-card compact">
+              <h2>Loading diff tools...</h2>
+              <p>Diff2Html is being loaded only when you open this view.</p>
+            </div>
+          </section>
+        {:else}
+          <section class="view-shell">
+            <div class="empty-state-card compact">
+              <h2>Could not load diff view</h2>
+              <p>{lazyViewError || 'Unexpected lazy-load error.'}</p>
+            </div>
+          </section>
+        {/if}
       {:else}
-        <EditorView
-          entries={fileEntries}
-          currentPath={filePath}
-          selectedFilePath={selectedDocument?.path ?? ''}
-          content={draftContent}
-          dirty={editorDirty}
-          loading={fileLoading}
-          saving={savingFile}
-          on:browse={(event) => loadFiles(event.detail.path)}
-          on:openFile={(event) => openFile(event.detail.path)}
-          on:save={(event) => saveFile(event.detail.content)}
-          on:change={(event) => {
-            draftContent = event.detail.content;
-            editorDirty = selectedDocument ? event.detail.content !== selectedDocument.content : false;
-          }}
-        />
+        {#if editorViewComponent}
+          <svelte:component
+            this={editorViewComponent}
+            entries={fileEntries}
+            currentPath={filePath}
+            selectedFilePath={selectedDocument?.path ?? ''}
+            content={draftContent}
+            dirty={editorDirty}
+            loading={fileLoading}
+            saving={savingFile}
+            on:browse={(event) => loadFiles(event.detail.path)}
+            on:openFile={(event) => openFile(event.detail.path)}
+            on:save={(event) => saveFile(event.detail.content)}
+            on:change={(event) => {
+              draftContent = event.detail.content;
+              editorDirty = selectedDocument ? event.detail.content !== selectedDocument.content : false;
+            }}
+          />
+        {:else if lazyViewLoading === 'editor'}
+          <section class="view-shell">
+            <div class="empty-state-card compact">
+              <h2>Loading editor...</h2>
+              <p>CodeMirror is loaded only when you open the editor view.</p>
+            </div>
+          </section>
+        {:else}
+          <section class="view-shell">
+            <div class="empty-state-card compact">
+              <h2>Could not load editor view</h2>
+              <p>{lazyViewError || 'Unexpected lazy-load error.'}</p>
+            </div>
+          </section>
+        {/if}
       {/if}
     {:else}
       <section class="view-shell">

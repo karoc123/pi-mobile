@@ -17,6 +17,8 @@ export class PiAgentService {
   private tools: ToolActivity[] = [];
   private lastError: string | null = null;
   private activeAssistantMessageId: string | null = null;
+  private mockReplyTimeout: NodeJS.Timeout | null = null;
+  private mockStreaming = false;
 
   constructor(
     private readonly config: AppConfig,
@@ -27,7 +29,7 @@ export class PiAgentService {
     return {
       repo: this.currentRepo,
       isConfigured: this.currentRepo !== null,
-      isStreaming: this.session?.isStreaming ?? false,
+      isStreaming: this.mockStreaming || this.session?.isStreaming || false,
       messages: this.messages,
       tools: this.tools,
       lastError: this.lastError,
@@ -45,11 +47,18 @@ export class PiAgentService {
     this.lastError = null;
     this.activeAssistantMessageId = null;
     await this.resetSession();
-    await this.restoreSession();
+    if (!this.config.piMockMode) {
+      await this.restoreSession();
+    }
     this.emitStatus();
   }
 
   async prompt(promptText: string) {
+    if (this.config.piMockMode) {
+      await this.promptWithMock(promptText);
+      return;
+    }
+
     const session = await this.ensureSession();
     const accepted = await this.acceptPrompt(session, promptText);
 
@@ -75,6 +84,12 @@ export class PiAgentService {
   }
 
   async abort() {
+    if (this.mockReplyTimeout) {
+      clearTimeout(this.mockReplyTimeout);
+      this.mockReplyTimeout = null;
+      this.mockStreaming = false;
+    }
+
     await this.session?.abort();
     this.emitStatus();
   }
@@ -94,6 +109,10 @@ export class PiAgentService {
   private async ensureSession() {
     if (!this.currentRepo) {
       throw new Error("No repository selected for pi session.");
+    }
+
+    if (this.config.piMockMode) {
+      throw new Error('Mock mode does not create a real pi session.');
     }
 
     if (this.session) {
@@ -288,7 +307,7 @@ export class PiAgentService {
       type: "agent_status",
       payload: {
         isConfigured: this.currentRepo !== null,
-        isStreaming: this.session?.isStreaming ?? false,
+        isStreaming: this.mockStreaming || this.session?.isStreaming || false,
         lastError: this.lastError,
         repo: this.currentRepo,
       },
@@ -296,10 +315,76 @@ export class PiAgentService {
   }
 
   private async resetSession() {
+    if (this.mockReplyTimeout) {
+      clearTimeout(this.mockReplyTimeout);
+      this.mockReplyTimeout = null;
+    }
+
+    this.mockStreaming = false;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.session?.dispose();
     this.session = null;
+  }
+
+  private async promptWithMock(promptText: string) {
+    if (!this.currentRepo) {
+      throw new Error('No repository selected for pi session.');
+    }
+
+    const userMessage: ChatMessage = {
+      id: randomUUID(),
+      role: 'user',
+      text: promptText,
+      status: 'complete',
+      timestamp: new Date().toISOString(),
+    };
+    const assistantMessage: ChatMessage = {
+      id: randomUUID(),
+      role: 'assistant',
+      text: '',
+      status: 'streaming',
+      timestamp: new Date().toISOString(),
+    };
+
+    this.messages = [...this.messages, userMessage, assistantMessage];
+    this.activeAssistantMessageId = assistantMessage.id;
+    this.lastError = null;
+    this.mockStreaming = true;
+
+    this.broadcast({ type: 'chat_message_added', payload: { message: userMessage } });
+    this.broadcast({ type: 'chat_message_added', payload: { message: assistantMessage } });
+    this.emitStatus();
+
+    const replyText = buildMockReply(promptText);
+    await new Promise<void>((resolve) => {
+      this.mockReplyTimeout = setTimeout(() => {
+        const index = this.messages.findIndex((entry) => entry.id === assistantMessage.id);
+
+        if (index >= 0) {
+          const updatedMessage: ChatMessage = {
+            ...assistantMessage,
+            text: replyText,
+            status: 'complete',
+          };
+          this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
+          this.broadcast({
+            type: 'chat_message_updated',
+            payload: {
+              messageId: updatedMessage.id,
+              text: updatedMessage.text,
+              status: updatedMessage.status,
+            },
+          });
+        }
+
+        this.activeAssistantMessageId = null;
+        this.mockReplyTimeout = null;
+        this.mockStreaming = false;
+        this.emitStatus();
+        resolve();
+      }, 120);
+    });
   }
 }
 
@@ -385,4 +470,18 @@ function summarizePayload(payload: unknown) {
 
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown pi runtime error.";
+}
+
+function buildMockReply(promptText: string) {
+  const singleWordMatch = /single word\s+([A-Z0-9_-]+)/i.exec(promptText);
+
+  if (singleWordMatch) {
+    return singleWordMatch[1].toUpperCase();
+  }
+
+  if (/ready/i.test(promptText)) {
+    return 'READY';
+  }
+
+  return `Mock reply: ${promptText.slice(0, 120)}`;
 }

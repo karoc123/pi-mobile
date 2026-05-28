@@ -1,5 +1,3 @@
-import "diff2html/bundles/css/diff2html.min.css";
-
 import { mount } from "svelte";
 
 import App from "./App.svelte";

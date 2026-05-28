@@ -2,7 +2,10 @@
   import { createEventDispatcher } from 'svelte';
 
   import type { FileEntry } from '../../../src/shared/contracts.js';
-  import CodeEditor from './CodeEditor.svelte';
+
+  let codeEditorComponent: any = null;
+  let codeEditorPromise: Promise<void> | null = null;
+  let codeEditorError = '';
 
   export let entries: FileEntry[] = [];
   export let currentPath = '.';
@@ -27,6 +30,30 @@
     const parts = pathValue.split('/').filter(Boolean);
     parts.pop();
     return parts.length === 0 ? '.' : parts.join('/');
+  }
+
+  $: if (selectedFilePath) {
+    void ensureCodeEditorLoaded();
+  }
+
+  async function ensureCodeEditorLoaded() {
+    if (codeEditorComponent || codeEditorPromise) {
+      return codeEditorPromise;
+    }
+
+    codeEditorError = '';
+    codeEditorPromise = import('./CodeEditor.svelte')
+      .then((module) => {
+        codeEditorComponent = module.default;
+      })
+      .catch((error) => {
+        codeEditorError = error instanceof Error ? error.message : 'Unexpected editor load error.';
+      })
+      .finally(() => {
+        codeEditorPromise = null;
+      });
+
+    return codeEditorPromise;
   }
 </script>
 
@@ -73,7 +100,19 @@
 
     <div class="editor-panel card-panel">
       {#if selectedFilePath}
-        <CodeEditor value={content} filePath={selectedFilePath} on:change={(event) => dispatch('change', { content: event.detail.value })} />
+        {#if codeEditorComponent}
+          <svelte:component this={codeEditorComponent} value={content} filePath={selectedFilePath} on:change={(event) => dispatch('change', { content: event.detail.value })} />
+        {:else if codeEditorPromise}
+          <div class="empty-state-card compact">
+            <h3>Loading editor engine...</h3>
+            <p>CodeMirror is loading only when a file is opened.</p>
+          </div>
+        {:else}
+          <div class="empty-state-card compact">
+            <h3>Could not load editor engine</h3>
+            <p>{codeEditorError || 'Unexpected editor load error.'}</p>
+          </div>
+        {/if}
       {:else}
         <div class="empty-state-card compact">
           <h3>No file selected</h3>

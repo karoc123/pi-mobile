@@ -1,4 +1,6 @@
 <script lang="ts">
+  import 'diff2html/bundles/css/diff2html.min.css';
+
   import { createEventDispatcher } from 'svelte';
 
   import type { DiffFile } from '../../../src/shared/contracts.js';

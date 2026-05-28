@@ -135,8 +135,35 @@ npm test
 
 Both commands pass in this workspace.
 
+## Browser end-to-end suite
+
+The manually verified browser flow is available as a Playwright suite.
+
+1. Install the Playwright browser once:
+
+```bash
+npx playwright install chromium
+```
+
+2. Run the suite:
+
+```bash
+npm run test:e2e
+```
+
+What it covers:
+
+- password login
+- repository picker selection
+- chat flow against a deterministic mock pi runtime
+- editor save
+- diff view detection
+- hunk revert back to a clean tree
+
+The suite starts the built app automatically against an isolated workspace under `.playwright/workspace` and does not touch your real repositories.
+
 ## Current limitations
 
-- the frontend currently ships as one large JS chunk because Diff2Html and CodeMirror are loaded eagerly
+- the frontend still has a non-trivial client bundle, but Diff2Html and CodeMirror are now loaded on demand with the Diff and Editor views instead of the initial page load
 - the app tracks one active repository at a time in the UI
 - the chat layer uses the `pi.dev` SDK directly; CLI JSON/RPC fallbacks are not wired yet
