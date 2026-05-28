@@ -1,0 +1,24 @@
+services:
+  pi-mobile-server:
+    build: .
+    container_name: pi-mobile-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      APP_PASSWORD: ${APP_PASSWORD}
+      WORKSPACE_ROOT: /workspace
+      DEFAULT_REPO: ${DEFAULT_REPO:-}
+      PI_AGENT_DIR: /home/node/.pi/agent
+      PI_SESSION_DIR: /home/node/.pi/agent/sessions
+      PI_PROVIDER: ${PI_PROVIDER:-}
+      PI_MODEL: ${PI_MODEL:-}
+      PI_THINKING_LEVEL: ${PI_THINKING_LEVEL:-}
+    volumes:
+      - ${WORKSPACE_HOST_PATH}:/workspace
+      - ${PI_HOME_HOST_PATH}:/home/node/.pi
+      - ${GITCONFIG_HOST_PATH}:/home/node/.gitconfig:ro
+      - ${SSH_HOST_PATH}:/home/node/.ssh:ro

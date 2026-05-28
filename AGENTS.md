@@ -17,7 +17,7 @@
 - **Monorepo Architecture**:
   - Combined Node.js/TypeScript stack.
   - `src/backend/` — Express server, WebSocket management, and Git/Filesystem orchestration.
-  - `src/frontend/` — Mobile-first web interface (Svelte / Vanilla JS + Tailwind CSS).
+  - `src/frontend/` — Mobile-first web interface (Svelte).
 
 ### High-Value Commands
 
