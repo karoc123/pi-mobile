@@ -120,11 +120,14 @@ APP_PASSWORD=your-local-password
 GIT_USER_NAME=Your Name
 GIT_USER_EMAIL=you@example.com
 HOST_PORT=3000
+SESSION_COOKIE_SECURE=false
 WORKSPACE_HOST_PATH=/home/zink/dev
 PI_HOME_HOST_PATH=/home/zink/.pi
 GITCONFIG_HOST_PATH=/home/zink/.gitconfig
 SSH_HOST_PATH=/home/zink/.ssh
 ```
+
+Leave `SESSION_COOKIE_SECURE=false` when you open the Dockerized app over plain `http://...`. Only switch it to `true` if you terminate TLS in front of PiMobile and access it via HTTPS.
 
 If port 3000 is already in use on the host, change `HOST_PORT` to another free port such as `3001`.
 
@@ -141,6 +144,8 @@ http://localhost:HOST_PORT
 ```
 
 4. Pick `pi-mobile` from the repository picker to work on this repository itself.
+
+If login succeeds but the initial workspace bootstrap fails, the UI now returns to the login screen and shows the backend error instead of leaving you in an empty picker state.
 
 The container persists the cost database inside the mounted workspace at `/workspace/.pi-mobile/costs.sqlite`, so the data survives rebuilds as long as `WORKSPACE_HOST_PATH` points to writable host storage. The `.pi-mobile/` directory is git-ignored in this repository.
 

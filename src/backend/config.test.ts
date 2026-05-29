@@ -19,5 +19,23 @@ describe("loadConfig", () => {
     expect(config.piProvider).toBeUndefined();
     expect(config.piModel).toBeUndefined();
     expect(config.piThinkingLevel).toBeUndefined();
+    expect(config.sessionCookieSecure).toBe(false);
+  });
+
+  it("defaults secure cookies only in production and allows overriding them", () => {
+    const productionConfig = loadConfig({
+      APP_PASSWORD: "secret-pass",
+      WORKSPACE_ROOT: "/workspace",
+      NODE_ENV: "production",
+    });
+    const overriddenConfig = loadConfig({
+      APP_PASSWORD: "secret-pass",
+      WORKSPACE_ROOT: "/workspace",
+      NODE_ENV: "production",
+      SESSION_COOKIE_SECURE: "false",
+    });
+
+    expect(productionConfig.sessionCookieSecure).toBe(true);
+    expect(overriddenConfig.sessionCookieSecure).toBe(false);
   });
 });

@@ -15,6 +15,7 @@ const configSchema = z.object({
   COSTS_DB_PATH: optionalEnvString,
   DEFAULT_REPO: optionalEnvString,
   SESSION_COOKIE_NAME: z.string().default("pi_mobile_session"),
+  SESSION_COOKIE_SECURE: optionalEnvString,
   PI_AGENT_DIR: optionalEnvString,
   PI_SESSION_DIR: optionalEnvString,
   PI_PROVIDER: optionalEnvString,
@@ -34,6 +35,7 @@ export type AppConfig = {
   costsDbPath: string;
   defaultRepo?: string;
   sessionCookieName: string;
+  sessionCookieSecure: boolean;
   piAgentDir?: string;
   piSessionDir?: string;
   piProvider?: string;
@@ -64,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     costsDbPath: parsed.COSTS_DB_PATH ? path.resolve(parsed.COSTS_DB_PATH) : path.resolve(parsed.WORKSPACE_ROOT, ".pi-mobile", "costs.sqlite"),
     defaultRepo: parsed.DEFAULT_REPO,
     sessionCookieName: parsed.SESSION_COOKIE_NAME,
+    sessionCookieSecure: parsed.SESSION_COOKIE_SECURE ? asBoolean(parsed.SESSION_COOKIE_SECURE) : parsed.NODE_ENV === "production",
     piAgentDir: parsed.PI_AGENT_DIR ? path.resolve(parsed.PI_AGENT_DIR) : undefined,
     piSessionDir: parsed.PI_SESSION_DIR ? path.resolve(parsed.PI_SESSION_DIR) : undefined,
     piProvider: parsed.PI_PROVIDER,

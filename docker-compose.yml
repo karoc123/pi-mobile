@@ -6,10 +6,11 @@ services:
     ports:
       - "${HOST_PORT:-3000}:3000"
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       HOST: 0.0.0.0
       PORT: 3000
       APP_PASSWORD: ${APP_PASSWORD}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
       WORKSPACE_ROOT: /workspace

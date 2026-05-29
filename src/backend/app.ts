@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import cookieParser from "cookie-parser";
@@ -55,7 +56,7 @@ export function createApp(services: AppServices) {
     response.cookie(services.config.sessionCookieName, token, {
       httpOnly: true,
       sameSite: "lax",
-      secure: services.config.nodeEnv === "production",
+      secure: services.config.sessionCookieSecure,
       path: "/",
     });
     response.json({
@@ -159,11 +160,13 @@ export function createApp(services: AppServices) {
     response.json({ ok: true });
   });
 
-  if (services.config.nodeEnv === "production") {
-    const publicDir = path.resolve(process.cwd(), "dist/public");
+  const publicDir = path.resolve(process.cwd(), "dist/public");
+  const indexFile = path.join(publicDir, "index.html");
+
+  if (services.config.nodeEnv !== "test" && existsSync(indexFile)) {
     app.use(express.static(publicDir));
     app.get(/^(?!\/api).*/, (_request, response) => {
-      response.sendFile(path.join(publicDir, "index.html"));
+      response.sendFile(indexFile);
     });
   }
 

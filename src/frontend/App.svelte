@@ -152,7 +152,16 @@
       authChecked = true;
 
       if (authenticated) {
-        await bootstrapWorkspace();
+        try {
+          await bootstrapWorkspace();
+        } catch (error) {
+          authenticated = false;
+          currentRepo = null;
+          workspaceEntries = [];
+          workspaceOpen = false;
+          agentSnapshot = emptyAgentSnapshot;
+          loginError = toErrorMessage(error);
+        }
       }
     } catch (error) {
       authChecked = true;
@@ -188,12 +197,19 @@
 
   async function bootstrapWorkspace() {
     connectSocket();
-    agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
-    currentRepo = agentSnapshot.repo ?? currentRepo;
-    await loadWorkspaces('.');
 
-    if (currentRepo) {
-      await refreshCurrentRepoData();
+    try {
+      agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
+      currentRepo = agentSnapshot.repo ?? currentRepo;
+      await loadWorkspaces('.');
+
+      if (currentRepo) {
+        await refreshCurrentRepoData();
+      }
+    } catch (error) {
+      socket?.close();
+      socket = null;
+      throw error;
     }
   }
 
@@ -259,7 +275,17 @@
       authenticated = session.authenticated;
       currentRepo = session.repo;
       loginError = '';
-      await bootstrapWorkspace();
+
+      try {
+        await bootstrapWorkspace();
+      } catch (error) {
+        authenticated = false;
+        currentRepo = null;
+        workspaceEntries = [];
+        workspaceOpen = false;
+        agentSnapshot = emptyAgentSnapshot;
+        loginError = toErrorMessage(error);
+      }
     } catch (error) {
       loginError = toErrorMessage(error);
     } finally {

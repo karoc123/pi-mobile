@@ -41,6 +41,7 @@ describe("createApp", () => {
       workspaceRoot: tempDir,
       costsDbPath: path.join(tempDir, ".pi-mobile", "costs.sqlite"),
       sessionCookieName: "pi_mobile_session",
+      sessionCookieSecure: false,
     };
     const authService = new AuthService(config.appPassword);
     const workspaceService = new WorkspaceService(tempDir);
@@ -136,6 +137,7 @@ describe("createApp", () => {
 
     expect(login.status).toBe(200);
     expect(login.headers["set-cookie"]).toBeDefined();
+    expect(login.headers["set-cookie"][0]).not.toContain("Secure");
 
     const cookie = login.headers["set-cookie"];
     const authorized = await request(app).get("/api/workspaces/browse").set("Cookie", cookie);
