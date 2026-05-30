@@ -16,6 +16,7 @@ import type {
 } from "../../shared/contracts.js";
 
 import type { AppConfig } from "../config.js";
+import { PiAgentBroadcaster } from "./pi-agent-broadcaster.js";
 import { CostService } from "./cost-service.js";
 import { flattenMessageText, hydrateMessagesFromSession, summarizePayload, summarizeText, upsertTool } from "./pi-agent-hydrator.js";
 import { PiAgentMockAdapter } from "./pi-agent-mock-adapter.js";
@@ -30,6 +31,7 @@ export class PiAgentService {
   private tools: ToolActivity[] = [];
   private lastError: string | null = null;
   private activeAssistantMessageId: string | null = null;
+  private readonly broadcaster: PiAgentBroadcaster;
   private readonly mockAdapter = new PiAgentMockAdapter();
   private readonly sessionAdapter: PiAgentSessionAdapter;
   private activeCostSessionKey: string | null = null;
@@ -38,11 +40,12 @@ export class PiAgentService {
 
   constructor(
     private readonly config: AppConfig,
-    private readonly broadcast: Broadcast,
+    broadcast: Broadcast,
     private readonly costService: CostService,
     logger?: LogChannel,
   ) {
     this.logger = logger ?? createNoopLogger();
+    this.broadcaster = new PiAgentBroadcaster(broadcast);
     this.sessionAdapter = new PiAgentSessionAdapter(this.config, this.logger, (event) => {
       this.handleSessionEvent(event);
     });
@@ -99,7 +102,9 @@ export class PiAgentService {
         setActiveAssistantMessageId: (messageId) => {
           this.activeAssistantMessageId = messageId;
         },
-        broadcast: this.broadcast,
+        broadcast: (event) => {
+          this.broadcaster.emit(event);
+        },
         emitStatus: () => {
           this.emitStatus();
         },
@@ -364,7 +369,9 @@ export class PiAgentService {
         setActiveAssistantMessageId: (messageId) => {
           this.activeAssistantMessageId = messageId;
         },
-        broadcast: this.broadcast,
+        broadcast: (event) => {
+          this.broadcaster.emit(event);
+        },
         emitStatus: () => {
           this.emitStatus();
         },
@@ -388,10 +395,7 @@ export class PiAgentService {
     };
 
     this.messages = [...this.messages, userMessage];
-    this.broadcast({
-      type: "chat_message_added",
-      payload: { message: userMessage },
-    });
+    this.broadcaster.chatMessageAdded(userMessage);
     this.lastError = null;
     this.emitStatus();
   }
@@ -539,10 +543,7 @@ export class PiAgentService {
 
       this.activeAssistantMessageId = message.id;
       this.messages = [...this.messages, message];
-      this.broadcast({
-        type: "chat_message_added",
-        payload: { message },
-      });
+      this.broadcaster.chatMessageAdded(message);
       this.emitStatus();
       return;
     }
@@ -565,14 +566,7 @@ export class PiAgentService {
         status: "streaming",
       };
       this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
-      this.broadcast({
-        type: "chat_message_updated",
-        payload: {
-          messageId: updatedMessage.id,
-          text: updatedMessage.text,
-          status: updatedMessage.status,
-        },
-      });
+      this.broadcaster.chatMessageUpdated(updatedMessage.id, updatedMessage.text, updatedMessage.status);
       return;
     }
 
@@ -596,14 +590,7 @@ export class PiAgentService {
       };
       this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
       this.activeAssistantMessageId = null;
-      this.broadcast({
-        type: "chat_message_updated",
-        payload: {
-          messageId: updatedMessage.id,
-          text: updatedMessage.text,
-          status: updatedMessage.status,
-        },
-      });
+      this.broadcaster.chatMessageUpdated(updatedMessage.id, updatedMessage.text, updatedMessage.status);
       this.emitStatus();
       return;
     }
@@ -617,10 +604,7 @@ export class PiAgentService {
       };
 
       this.tools = upsertTool(this.tools, tool);
-      this.broadcast({
-        type: "tool_activity",
-        payload: { tool },
-      });
+      this.broadcaster.toolActivity(tool);
       this.emitStatus();
       return;
     }
@@ -650,10 +634,7 @@ export class PiAgentService {
       },
     });
     this.lastError = message;
-    this.broadcast({
-      type: "agent_error",
-      payload: { message },
-    });
+    this.broadcaster.agentError(message);
     this.emitStatus();
   }
 
@@ -661,15 +642,12 @@ export class PiAgentService {
     const runtimeState = this.getRuntimeState();
 
     this.persistCostSnapshot();
-    this.broadcast({
-      type: "agent_status",
-      payload: {
-        isConfigured: this.currentRepo !== null,
-        ...runtimeState,
-        lastError: this.lastError,
-        repo: this.currentRepo,
-        usage: this.getUsageSummary(),
-      },
+    this.broadcaster.agentStatus({
+      isConfigured: this.currentRepo !== null,
+      ...runtimeState,
+      lastError: this.lastError,
+      repo: this.currentRepo,
+      usage: this.getUsageSummary(),
     });
   }
 

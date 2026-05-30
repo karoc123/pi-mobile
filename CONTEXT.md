@@ -15,3 +15,7 @@ _Avoid_: fake chat, demo thread
 **Repository runtime selection**:
 The transition that binds watcher state and agent session state to a selected repository path.
 _Avoid_: repo switch event, workspace flip
+
+**Agent broadcaster**:
+The module that translates agent runtime updates into websocket envelopes for chat, tool activity, status, and error streams.
+_Avoid_: event util, ws helper
