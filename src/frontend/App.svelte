@@ -8,6 +8,7 @@
     AgentSnapshot,
     AgentUsage,
     BackendHealthResponse,
+    BackendResourceCheck,
     BackendLogEntry,
     BackendLogLevel,
     BackendLogQueryResponse,
@@ -16,6 +17,7 @@
     GitCommitResult,
     FileDocument,
     FileEntry,
+    GitSyncResult,
     SelectedRepo,
     SessionResponse,
     WebsocketEnvelope,
@@ -99,6 +101,8 @@
   let diffFiles: DiffFile[] = [];
   let revertingHunkId: string | null = null;
   let committing = false;
+  let pulling = false;
+  let pushing = false;
 
   let fileLoading = false;
   let filePath = '.';
@@ -118,6 +122,8 @@
   let backendStatus: BackendStatus = 'unknown';
   let backendLastSeen: string | null = null;
   let backendUptimeSeconds: number | null = null;
+  let backendResourceChecks: BackendResourceCheck[] = [];
+  let backendResourcesAccessible = false;
   let backendHealthTimer: number | null = null;
 
   let bannerMessage = '';
@@ -158,6 +164,9 @@
   let logEventSource: EventSource | null = null;
   let logStreamRetryTimer: number | null = null;
   let activeLogStreamUrl = '';
+  let clearingLogs = false;
+
+  let systemStatusVisible = false;
 
   onMount(() => {
     initializeTheme();
@@ -837,6 +846,48 @@
     }
   }
 
+  async function pullChanges() {
+    if (!currentRepo) {
+      showBanner('Select a repository before pulling.', 'error');
+      return;
+    }
+
+    pulling = true;
+
+    try {
+      const response = await apiFetch<GitSyncResult>('/api/git/pull', {
+        method: 'POST'
+      });
+      await loadDiff();
+      showBanner(response.summary || 'Pull completed.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      pulling = false;
+    }
+  }
+
+  async function pushChanges() {
+    if (!currentRepo) {
+      showBanner('Select a repository before pushing.', 'error');
+      return;
+    }
+
+    pushing = true;
+
+    try {
+      const response = await apiFetch<GitSyncResult>('/api/git/push', {
+        method: 'POST'
+      });
+      await loadDiff();
+      showBanner(response.summary || 'Push completed.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      pushing = false;
+    }
+  }
+
   async function revertHunk(diff: string, hunkId: string) {
     revertingHunkId = hunkId;
 
@@ -908,6 +959,34 @@
     }
 
     await loadLogs(false);
+  }
+
+  async function clearAllLogs() {
+    if (clearingLogs) {
+      return;
+    }
+
+    if (!window.confirm('Delete in-memory and persisted backend logs?')) {
+      return;
+    }
+
+    clearingLogs = true;
+
+    try {
+      await apiFetch('/api/logs', {
+        method: 'DELETE'
+      });
+      logEntries = [];
+      logKnownSources = [];
+      logHasMore = false;
+      logViewError = '';
+      await loadLogs(true);
+      showBanner('Backend log deleted.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      clearingLogs = false;
+    }
   }
 
   function setLogLevel(value: BackendLogLevel | '') {
@@ -1067,8 +1146,12 @@
       backendStatus = health.status;
       backendLastSeen = health.serverTime;
       backendUptimeSeconds = health.uptimeSeconds;
+      backendResourceChecks = health.resources.checks;
+      backendResourcesAccessible = health.resources.allRequiredAccessible;
     } catch {
       backendStatus = 'unreachable';
+      backendResourceChecks = [];
+      backendResourcesAccessible = false;
     }
   }
 
@@ -1130,6 +1213,8 @@
     closeSocket();
     stopBackendHealthPolling();
     socketReconnectAttempt = 0;
+    backendResourceChecks = [];
+    backendResourcesAccessible = false;
     loginError = message;
   }
 
@@ -1183,29 +1268,49 @@
   <LoginScreen pending={loginPending} error={loginError} on:submit={(event) => login(event.detail.password)} />
 {:else}
   <main class="app-shell">
-    <button
-      class="menu-trigger"
-      type="button"
-      aria-expanded={menuOpen}
-      aria-label={menuOpen ? 'Close workspace menu' : 'Open workspace menu'}
-      on:click={() => (menuOpen = !menuOpen)}
-    >
-      Menu
-    </button>
+    <div class="app-chrome-actions">
+      <button
+        class="status-trigger"
+        type="button"
+        aria-expanded={systemStatusVisible}
+        aria-label={systemStatusVisible ? 'Hide system status' : 'Show system status'}
+        on:click={() => (systemStatusVisible = !systemStatusVisible)}
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+          <path
+            fill="currentColor"
+            d="M13.4 2.2l-.8 2.1c-.4.1-.7.3-1.1.5L9.4 3.9L7.3 6l.9 2.1c-.2.3-.4.7-.5 1.1l-2.2.8v3l2.2.8c.1.4.3.7.5 1.1l-.9 2.1l2.1 2.1l2.1-.9c.3.2.7.4 1.1.5l.8 2.2h3l.8-2.2c.4-.1.7-.3 1.1-.5l2.1.9l2.1-2.1l-.9-2.1c.2-.3.4-.7.5-1.1l2.2-.8v-3l-2.2-.8c-.1-.4-.3-.7-.5-1.1l.9-2.1l-2.1-2.1l-2.1.9c-.3-.2-.7-.4-1.1-.5l-.8-2.1zm.1 6.1a4 4 0 1 1 0 8a4 4 0 0 1 0-8z"
+          />
+        </svg>
+      </button>
+      <button
+        class="menu-trigger"
+        type="button"
+        aria-expanded={menuOpen}
+        aria-label={menuOpen ? 'Close workspace menu' : 'Open workspace menu'}
+        on:click={() => (menuOpen = !menuOpen)}
+      >
+        Menu
+      </button>
+    </div>
 
     {#if bannerMessage}
       <div class:success={bannerTone === 'success'} class:error={bannerTone === 'error'} class="notice floating">{bannerMessage}</div>
     {/if}
 
-    <SystemStatusBar
-      authStatus="authenticated"
-      socketStatus={socketStatus}
-      reconnectAttempt={socketReconnectAttempt}
-      backendStatus={backendStatus}
-      backendLastSeen={backendLastSeen}
-      backendUptimeSeconds={backendUptimeSeconds}
-      logStreamLive={view === 'logs' && logLive && logStreamConnected}
-    />
+    {#if systemStatusVisible}
+      <SystemStatusBar
+        authStatus="authenticated"
+        socketStatus={socketStatus}
+        reconnectAttempt={socketReconnectAttempt}
+        backendStatus={backendStatus}
+        backendLastSeen={backendLastSeen}
+        backendUptimeSeconds={backendUptimeSeconds}
+        logStreamLive={view === 'logs' && logLive && logStreamConnected}
+        resourcesAccessible={backendResourcesAccessible}
+        resourceChecks={backendResourceChecks}
+      />
+    {/if}
 
     {#if view === 'costs'}
       <CostView
@@ -1228,6 +1333,7 @@
         entries={logEntries}
         loading={logLoading}
         loadingMore={logLoadingMore}
+        clearing={clearingLogs}
         hasMore={logHasMore}
         live={logLive}
         streamConnected={logStreamConnected}
@@ -1238,6 +1344,7 @@
         lastError={logViewError}
         on:refresh={() => void loadLogs(true)}
         on:loadMore={() => void loadOlderLogs()}
+        on:clearAll={() => void clearAllLogs()}
         on:toggleLive={(event) => toggleLogLive(event.detail.value)}
         on:setLevel={(event) => setLogLevel(event.detail.value)}
         on:setSource={(event) => setLogSource(event.detail.value)}
@@ -1266,7 +1373,11 @@
             loading={diffLoading}
             revertingHunkId={revertingHunkId}
             committing={committing}
+            pulling={pulling}
+            pushing={pushing}
             on:commit={requestCommit}
+            on:pull={() => void pullChanges()}
+            on:push={() => void pushChanges()}
             on:revert={(event) => revertHunk(event.detail.diff, event.detail.hunkId)}
           />
         {:else if lazyViewLoading === 'diff'}

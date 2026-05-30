@@ -72,7 +72,7 @@ To minimize memory footprint and execution latency on the Raspberry Pi, the fron
 - **Technology:** Svelte (compiled down to vanilla JS chunks).
 - **Navigation:** Bottom-anchored navigation drawer featuring three unified thumb views:
   1. **Chat (`/chat`):** Feeds interactions directly into the active `pi` execution process. Utilizes modular Markdown text parsing with responsive fullscreen viewports for generated code blocks.
-  2. **Git Diff (`/diff`):** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap file and hunk manipulation.
+  2. **Git Diff (`/diff`):** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap hunk manipulation plus header-level `pull` / `push` / `commit` actions.
   3. **Editor (`/editor`):** A touch-first text editing surface implemented with **CodeMirror 6**, ensuring fluid virtual keyboard integration and real-time syntax highlighting.
 
 ### 2.3 Backend & Tool-Wrapper
@@ -91,7 +91,7 @@ To reduce silent failures and make incidents reproducible directly from mobile d
 - **Dual Log Storage:** Logs are persisted to rotating files under `.pi-mobile/logs` while a bounded in-memory buffer powers fast UI retrieval.
 - **Request Correlation:** Every HTTP response includes `x-request-id`; API failures return a structured error payload with the same request ID.
 - **Live Log Streaming:** `GET /api/logs/stream` (SSE) pushes new backend events in real time, while `GET /api/logs` supports paged history queries.
-- **Client Status Strip:** The frontend app shell exposes explicit auth, WebSocket, backend health, and log-stream states.
+- **Client Status Panel:** A tool-icon toggle in the app chrome shows/hides runtime status chips. The panel exposes auth, WebSocket, backend health, log-stream state, and required resource-access checks (workspace/cost-db/log-dir/pi-session paths).
 
 ---
 
@@ -130,6 +130,7 @@ When backend behavior is unclear, the mobile client can inspect runtime activity
 2. The frontend fetches recent entries through `GET /api/logs` with optional filters (level/source/search).
 3. The frontend attaches to `GET /api/logs/stream` to receive new entries in real time.
 4. Every displayed error includes request-correlation metadata, so API failures can be traced to server-side records quickly.
+5. The log view can trigger `DELETE /api/logs` to clear in-memory entries and persisted backend log files (`backend.log` + rotated files).
 
 ### 3.3 Start a Fresh Agent Session (Context + Cost Reset)
 
@@ -185,8 +186,10 @@ services:
     environment:
       - NODE_ENV=production
       - WORKSPACE_ROOT=/workspace
+      - COSTS_DB_PATH=/workspace/pi-mobile/.pi-mobile/costs.sqlite
+      - LOGS_DIR=/workspace/pi-mobile/.pi-mobile/logs
       - PI_AGENT_DIR=/home/node/.pi/agent
-      - PI_SESSION_DIR=/home/node/.pi/agent/sessions
+      - PI_SESSION_DIR=/workspace/pi-mobile/.pi-mobile/sessions
       # Password protection gate for mobile access
       - APP_PASSWORD=DeinSicheresPasswortHier # Change this value before deployment
     volumes:

@@ -23,25 +23,15 @@ export class GitService {
   }
 
   async getDiff(repo: SelectedRepo) {
-    const { stdout } = await this.runGit(repo, [
-      "diff",
-      "--no-ext-diff",
-      "--patch",
-      "--unified=3",
-      "--no-color",
-    ]);
+    const { stdout } = await this.runGit(repo, ["diff", "--no-ext-diff", "--patch", "--unified=3", "--no-color"]);
     return parseUnifiedDiff(stdout);
   }
 
   async revertHunk(repo: SelectedRepo, diff: string) {
     const normalizedDiff = diff.endsWith("\n") ? diff : `${diff}\n`;
-    await this.runGit(
-      repo,
-      ["apply", "-R", "--recount", "--whitespace=nowarn", "-"],
-      {
-        input: normalizedDiff,
-      },
-    );
+    await this.runGit(repo, ["apply", "-R", "--recount", "--whitespace=nowarn", "-"], {
+      input: normalizedDiff,
+    });
   }
 
   async commit(repo: SelectedRepo, message: string) {
@@ -62,9 +52,7 @@ export class GitService {
       await this.runGit(repo, ["commit", "-m", trimmed]);
     } catch (error) {
       if (isMissingIdentityError(error)) {
-        throw new Error(
-          "Git author identity is missing. Set GIT_USER_NAME and GIT_USER_EMAIL in your environment or configure the repository's git config.",
-        );
+        throw new Error("Git author identity is missing. Set GIT_USER_NAME and GIT_USER_EMAIL in your environment or configure the repository's git config.");
       }
 
       throw error;
@@ -75,15 +63,21 @@ export class GitService {
     return commitSha.trim();
   }
 
+  async pull(repo: SelectedRepo) {
+    const result = await this.runGit(repo, ["pull"]);
+    return summarizeSyncOutput("Pull completed.", result.stdout, result.stderr);
+  }
+
+  async push(repo: SelectedRepo) {
+    const result = await this.runGit(repo, ["push"]);
+    return summarizeSyncOutput("Push completed.", result.stdout, result.stderr);
+  }
+
   private runGit(repo: SelectedRepo, args: string[], options: { input?: string } = {}) {
-    return runCommand(
-      "git",
-      ["-C", repo.absolutePath, ...args],
-      {
-        ...options,
-        env: this.gitEnv,
-      },
-    );
+    return runCommand("git", ["-C", repo.absolutePath, ...args], {
+      ...options,
+      env: this.gitEnv,
+    });
   }
 }
 
@@ -94,6 +88,21 @@ function isMissingIdentityError(error: unknown) {
 
   const message = error.message.toLowerCase();
   return message.includes("please tell me who you are") || message.includes("unable to auto-detect email address");
+}
+
+function summarizeSyncOutput(fallback: string, stdout: string, stderr: string) {
+  const output = `${stdout}\n${stderr}`.trim();
+
+  if (!output) {
+    return fallback;
+  }
+
+  const lines = output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines.at(-1) ?? fallback;
 }
 
 export function parseUnifiedDiff(input: string): DiffFile[] {

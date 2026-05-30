@@ -45,6 +45,10 @@ export type GitCommitResult = {
   commitSha: string;
 };
 
+export type GitSyncResult = {
+  summary: string;
+};
+
 export type ChatRole = "user" | "assistant" | "system";
 
 export type ChatMessage = {
@@ -138,12 +142,25 @@ export type CostReport = {
 
 export type BackendHealthStatus = "healthy" | "degraded";
 
+export type BackendResourceCheck = {
+  key: "workspace_root" | "costs_db" | "logs_dir" | "pi_agent_dir" | "pi_session_dir";
+  label: string;
+  path: string;
+  required: boolean;
+  ok: boolean;
+  detail: string | null;
+};
+
 export type BackendHealthResponse = {
   ok: true;
   status: BackendHealthStatus;
   serverTime: string;
   startedAt: string;
   uptimeSeconds: number;
+  resources: {
+    allRequiredAccessible: boolean;
+    checks: BackendResourceCheck[];
+  };
 };
 
 export type BackendLogLevel = "debug" | "info" | "warn" | "error";

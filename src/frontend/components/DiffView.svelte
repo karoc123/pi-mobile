@@ -10,9 +10,13 @@
   export let loading = false;
   export let revertingHunkId: string | null = null;
   export let committing = false;
+  export let pulling = false;
+  export let pushing = false;
 
   const dispatch = createEventDispatcher<{
     revert: { diff: string; hunkId: string };
+    pull: void;
+    push: void;
     commit: void;
   }>();
 </script>
@@ -25,7 +29,13 @@
     </div>
     <div class="header-actions">
       <span class="status-pill">{files.length} file{files.length === 1 ? '' : 's'}</span>
-      <button class="primary-button" type="button" disabled={loading || files.length === 0 || committing} on:click={() => dispatch('commit')}>
+      <button class="secondary-button" type="button" disabled={loading || pulling || pushing || committing} on:click={() => dispatch('pull')}>
+        {pulling ? 'Pulling…' : 'Pull'}
+      </button>
+      <button class="secondary-button" type="button" disabled={loading || pulling || pushing || committing} on:click={() => dispatch('push')}>
+        {pushing ? 'Pushing…' : 'Push'}
+      </button>
+      <button class="primary-button" type="button" disabled={loading || files.length === 0 || committing || pulling || pushing} on:click={() => dispatch('commit')}>
         {committing ? 'Committing…' : 'Commit changes'}
       </button>
     </div>

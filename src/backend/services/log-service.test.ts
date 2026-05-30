@@ -2,7 +2,7 @@
 
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -52,5 +52,26 @@ describe("LogService", () => {
 
     const redacted = all.entries[0].details as { authToken?: string };
     expect(redacted.authToken).toBe("[REDACTED]");
+  });
+
+  it("clears in-memory and persisted log files", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-log-service-"));
+    const logDirPath = path.join(tempDir, "logs");
+
+    const service = new LogService({
+      logDirPath,
+      minLevel: "debug",
+    });
+
+    service.info("Entry before clear.", { source: "test" });
+    await service.flush();
+
+    await service.clear();
+
+    const remainingEntries = service.queryLogs({ limit: 50 }).entries;
+    const persistedFiles = await readdir(logDirPath);
+
+    expect(remainingEntries).toHaveLength(0);
+    expect(persistedFiles.filter((name) => name === "backend.log" || /^backend-\d+\.log$/.test(name))).toHaveLength(0);
   });
 });

@@ -104,6 +104,21 @@ describe("createApp", () => {
         models: [{ value: "anthropic/claude-sonnet-4", label: "anthropic/claude-sonnet-4" }],
       },
     }));
+    const getResourceHealth = vi.fn(async () => ({
+      allRequiredAccessible: true,
+      checks: [
+        {
+          key: "workspace_root",
+          label: "Workspace root",
+          path: tempDir,
+          required: true,
+          ok: true,
+          detail: null,
+        },
+      ],
+    }));
+    const gitPull = vi.fn(async () => "Already up to date.");
+    const gitPush = vi.fn(async () => "Everything up-to-date");
 
     const app = createApp({
       config,
@@ -120,10 +135,15 @@ describe("createApp", () => {
       } as never,
       gitService: {
         getDiff: vi.fn(async () => []),
+        pull: gitPull,
+        push: gitPush,
         revertHunk: vi.fn(async () => undefined),
       } as never,
       costService: {
         getReport: getCostReport,
+      } as never,
+      resourceHealthService: {
+        check: getResourceHealth,
       } as never,
       piAgentService: {
         getSnapshot: vi.fn(() => ({ repo: workspaceService.getCurrentRepo(), isConfigured: true, isStreaming: false, messages: [], tools: [], lastError: null })),
@@ -153,6 +173,10 @@ describe("createApp", () => {
     const commandExecuteResponse = await request(app).post("/api/agent/command").set("Cookie", cookie).send({ command: "new-session" });
     const costResponse = await request(app).get("/api/costs?repo=repo-a&model=anthropic%2Fclaude-sonnet-4&from=2026-05-01T00%3A00%3A00.000Z&to=2026-05-02T00%3A00%3A00.000Z").set("Cookie", cookie);
     const logsResponse = await request(app).get("/api/logs?limit=50").set("Cookie", cookie);
+    const healthResponse = await request(app).get("/api/health").set("Cookie", cookie);
+    const pullResponse = await request(app).post("/api/git/pull").set("Cookie", cookie);
+    const pushResponse = await request(app).post("/api/git/push").set("Cookie", cookie);
+    const clearLogsResponse = await request(app).delete("/api/logs").set("Cookie", cookie);
 
     expect(authorized.status).toBe(200);
     expect(authorized.body.entries).toEqual([]);
@@ -187,6 +211,17 @@ describe("createApp", () => {
     expect(logsResponse.body.entries.length).toBeGreaterThan(0);
     expect(logsResponse.body.entries[0]).toHaveProperty("requestId");
     expect(typeof logsResponse.headers["x-request-id"]).toBe("string");
+    expect(healthResponse.status).toBe(200);
+    expect(healthResponse.body.status).toBe("healthy");
+    expect(healthResponse.body.resources.allRequiredAccessible).toBe(true);
+    expect(getResourceHealth).toHaveBeenCalledTimes(1);
+    expect(pullResponse.status).toBe(200);
+    expect(pullResponse.body.summary).toBe("Already up to date.");
+    expect(gitPull).toHaveBeenCalledTimes(1);
+    expect(pushResponse.status).toBe(200);
+    expect(pushResponse.body.summary).toBe("Everything up-to-date");
+    expect(gitPush).toHaveBeenCalledTimes(1);
+    expect(clearLogsResponse.status).toBe(204);
 
     await logService.flush();
   });

@@ -1,4 +1,4 @@
-import { appendFile, mkdir, rename, stat } from "node:fs/promises";
+import { appendFile, mkdir, readdir, rename, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import type { BackendLogEntry, BackendLogLevel, BackendLogQuery, BackendLogQueryResponse } from "../../shared/contracts.js";
@@ -126,6 +126,27 @@ export class LogService {
     await this.writeQueue;
   }
 
+  async clear() {
+    this.entries.splice(0, this.entries.length);
+    this.sequence = 0;
+
+    const clearTask = this.writeQueue.then(async () => {
+      const fileNames = await this.listPersistedLogFiles();
+
+      await Promise.all(
+        fileNames.map(async (fileName) => {
+          await unlink(path.join(this.options.logDirPath, fileName));
+        }),
+      );
+    });
+
+    this.writeQueue = clearTask.catch((error) => {
+      this.emitPersistenceError(error);
+    });
+
+    await clearTask;
+  }
+
   private log(level: BackendLogLevel, message: string, metadata: LogMetadata) {
     if (levelPriority[level] < levelPriority[this.minLevel]) {
       return;
@@ -245,6 +266,20 @@ export class LogService {
     }
 
     await appendFile(this.logFilePath, `${JSON.stringify(entry)}\n`, "utf8");
+  }
+
+  private async listPersistedLogFiles() {
+    try {
+      const entries = await readdir(this.options.logDirPath, { withFileTypes: true });
+
+      return entries.filter((entry) => entry.isFile() && (entry.name === "backend.log" || /^backend-\d+\.log$/.test(entry.name))).map((entry) => entry.name);
+    } catch (error) {
+      if (isMissingFile(error)) {
+        return [];
+      }
+
+      throw error;
+    }
   }
 }
 

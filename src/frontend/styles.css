@@ -135,7 +135,7 @@ code {
 
 .app-shell {
   min-height: 100vh;
-  padding: 4.5rem 1rem 6.5rem;
+  padding: 1.25rem 1rem 6.5rem;
   display: grid;
   gap: 1rem;
   align-content: start;
@@ -183,16 +183,38 @@ code {
   line-height: 0.96;
 }
 
-.menu-trigger {
+.app-chrome-actions {
   position: fixed;
   top: 0.9rem;
   right: 0.9rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.menu-trigger,
+.status-trigger {
   z-index: 20;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
   border-radius: 0.5rem;
   padding: 0.65rem 0.9rem;
+}
+
+.status-trigger {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.status-trigger svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .eyebrow {
@@ -927,6 +949,18 @@ code {
   gap: 0.55rem;
 }
 
+.system-status-failures {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.system-status-failures p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--terminal-shell-muted);
+  overflow-wrap: anywhere;
+}
+
 .status-chip {
   border: 1px solid var(--terminal-panel-border);
   border-radius: 999px;
@@ -1197,6 +1231,7 @@ code {
 }
 
 .menu-trigger,
+.status-trigger,
 .menu-panel,
 .menu-panel button,
 .bottom-nav,
@@ -1208,6 +1243,15 @@ code {
 }
 
 .menu-trigger {
+  background: var(--terminal-panel);
+  border-color: var(--terminal-panel-border);
+  color: var(--terminal-ink);
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.status-trigger {
   background: var(--terminal-panel);
   border-color: var(--terminal-panel-border);
   color: var(--terminal-ink);
@@ -1275,7 +1319,8 @@ code {
 .menu-panel .secondary-button:hover,
 .menu-panel .ghost-button:hover,
 .menu-panel .theme-toggle:hover,
-.menu-trigger:hover {
+.menu-trigger:hover,
+.status-trigger:hover {
   background: var(--terminal-panel-subtle);
 }
 

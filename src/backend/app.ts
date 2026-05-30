@@ -5,7 +5,7 @@ import path from "node:path";
 import cookieParser from "cookie-parser";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import type { AgentCommandRequest, ApiErrorResponse, BackendHealthResponse, BackendLogLevel, BackendLogQuery, BackendLogQueryResponse } from "../shared/contracts.js";
+import type { AgentCommandRequest, ApiErrorResponse, BackendHealthResponse, BackendLogLevel, BackendLogQuery, BackendLogQueryResponse, GitSyncResult } from "../shared/contracts.js";
 
 import type { AppConfig } from "./config.js";
 import { AuthService } from "./services/auth-service.js";
@@ -15,6 +15,7 @@ import { LogService } from "./services/log-service.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { RepositoryRuntimeService } from "./services/repository-runtime-service.js";
 import { CostService } from "./services/cost-service.js";
+import { ResourceHealthService } from "./services/resource-health-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
 import { HttpError, isHttpError } from "./utils/http-error.js";
 
@@ -27,6 +28,7 @@ type AppServices = {
   fileService: FileService;
   gitService: GitService;
   costService: CostService;
+  resourceHealthService: ResourceHealthService;
   piAgentService: PiAgentService;
   serverStartedAt: Date;
 };
@@ -49,17 +51,24 @@ export function createApp(services: AppServices) {
   app.use((request, response, next) => {
     const requestStartedAt = Date.now();
     const requestId = getRequestId(response);
+    const suppressRequestLogs = request.method === "DELETE" && request.path === "/api/logs";
 
-    httpLog.info("Request started.", {
-      event: "request_start",
-      requestId,
-      details: {
-        method: request.method,
-        path: request.path,
-      },
-    });
+    if (!suppressRequestLogs) {
+      httpLog.info("Request started.", {
+        event: "request_start",
+        requestId,
+        details: {
+          method: request.method,
+          path: request.path,
+        },
+      });
+    }
 
     response.on("finish", () => {
+      if (suppressRequestLogs) {
+        return;
+      }
+
       const durationMs = Date.now() - requestStartedAt;
       const level: BackendLogLevel = response.statusCode >= 500 ? "error" : response.statusCode >= 400 ? "warn" : "info";
       services.logService[level]("Request completed.", {
@@ -78,13 +87,16 @@ export function createApp(services: AppServices) {
     next();
   });
 
-  app.get("/api/health", (_request, response) => {
+  app.get("/api/health", async (_request, response) => {
+    const resourceReport = await services.resourceHealthService.check();
+
     response.json({
       ok: true,
-      status: "healthy",
+      status: resourceReport.allRequiredAccessible ? "healthy" : "degraded",
       serverTime: new Date().toISOString(),
       startedAt: services.serverStartedAt.toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
+      resources: resourceReport,
     } satisfies BackendHealthResponse);
   });
 
@@ -168,6 +180,20 @@ export function createApp(services: AppServices) {
     response.json({ commitSha });
   });
 
+  app.post("/api/git/pull", requireAuth(services), async (_request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    response.json({
+      summary: await services.gitService.pull(repo),
+    } satisfies GitSyncResult);
+  });
+
+  app.post("/api/git/push", requireAuth(services), async (_request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    response.json({
+      summary: await services.gitService.push(repo),
+    } satisfies GitSyncResult);
+  });
+
   app.get("/api/costs", requireAuth(services), (request, response) => {
     response.json(
       services.costService.getReport({
@@ -188,6 +214,11 @@ export function createApp(services: AppServices) {
   app.get("/api/logs", requireAuth(services), (request, response) => {
     const query = parseLogQuery(request);
     response.json(services.logService.queryLogs(query) satisfies BackendLogQueryResponse);
+  });
+
+  app.delete("/api/logs", requireAuth(services), async (_request, response) => {
+    await services.logService.clear();
+    response.status(204).end();
   });
 
   app.get("/api/logs/stream", requireAuth(services), (request, response) => {

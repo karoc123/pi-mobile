@@ -125,4 +125,69 @@ describe("GitService", () => {
 
     await expect(service.commit(repo, "No-op")).rejects.toThrow("No changes to commit.");
   });
+
+  it("pulls remote changes into the current repository", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-git-"));
+    const { remoteDir, primaryDir, secondaryDir } = await createRemoteFixture(tempDir);
+
+    const notesPath = path.join(primaryDir, "notes.txt");
+    await writeFile(notesPath, "line a\nline b\n", "utf8");
+    await runCommand("git", ["add", "notes.txt"], { cwd: primaryDir });
+    await runCommand("git", ["commit", "-m", "update from primary"], { cwd: primaryDir });
+    await runCommand("git", ["push", "origin", "HEAD"], { cwd: primaryDir });
+
+    const service = new GitService();
+    const repo = { name: "secondary", relativePath: ".", absolutePath: secondaryDir };
+
+    const summary = await service.pull(repo);
+    const pulledContent = await readFile(path.join(secondaryDir, "notes.txt"), "utf8");
+
+    expect(summary.length).toBeGreaterThan(0);
+    expect(pulledContent).toContain("line b");
+
+    // Keep the bare remote path referenced so fixture variables remain explicit for readability.
+    expect(remoteDir).toContain("remote.git");
+  });
+
+  it("pushes local commits to the configured remote", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-git-"));
+    const { primaryDir, secondaryDir } = await createRemoteFixture(tempDir);
+
+    await writeFile(path.join(secondaryDir, "notes.txt"), "line a\nline pushed\n", "utf8");
+    await runCommand("git", ["add", "notes.txt"], { cwd: secondaryDir });
+    await runCommand("git", ["commit", "-m", "commit from secondary"], { cwd: secondaryDir });
+
+    const service = new GitService();
+    const repo = { name: "secondary", relativePath: ".", absolutePath: secondaryDir };
+
+    const summary = await service.push(repo);
+
+    await runCommand("git", ["pull", "origin", "HEAD"], { cwd: primaryDir });
+    const primaryContent = await readFile(path.join(primaryDir, "notes.txt"), "utf8");
+
+    expect(summary.length).toBeGreaterThan(0);
+    expect(primaryContent).toContain("line pushed");
+  });
 });
+
+async function createRemoteFixture(baseDir: string) {
+  const remoteDir = path.join(baseDir, "remote.git");
+  const primaryDir = path.join(baseDir, "primary");
+  const secondaryDir = path.join(baseDir, "secondary");
+
+  await runCommand("git", ["init", "--bare", remoteDir]);
+  await runCommand("git", ["clone", remoteDir, primaryDir]);
+  await runCommand("git", ["config", "user.email", "test@example.com"], { cwd: primaryDir });
+  await runCommand("git", ["config", "user.name", "PiMobile Test"], { cwd: primaryDir });
+
+  await writeFile(path.join(primaryDir, "notes.txt"), "line a\n", "utf8");
+  await runCommand("git", ["add", "notes.txt"], { cwd: primaryDir });
+  await runCommand("git", ["commit", "-m", "initial"], { cwd: primaryDir });
+  await runCommand("git", ["push", "origin", "HEAD"], { cwd: primaryDir });
+
+  await runCommand("git", ["clone", remoteDir, secondaryDir]);
+  await runCommand("git", ["config", "user.email", "test@example.com"], { cwd: secondaryDir });
+  await runCommand("git", ["config", "user.name", "PiMobile Test"], { cwd: secondaryDir });
+
+  return { remoteDir, primaryDir, secondaryDir };
+}

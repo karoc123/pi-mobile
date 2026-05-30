@@ -10,6 +10,7 @@ import { FileService } from "./services/file-service.js";
 import { GitService } from "./services/git-service.js";
 import { LogService } from "./services/log-service.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
+import { ResourceHealthService } from "./services/resource-health-service.js";
 import { RepositoryRuntimeService } from "./services/repository-runtime-service.js";
 import { WatcherService } from "./services/watcher-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
@@ -25,6 +26,7 @@ const bootstrapLog = logService.child({ source: "bootstrap" });
 const authService = new AuthService(config.appPassword);
 const workspaceService = new WorkspaceService(config.workspaceRoot, config.defaultRepo);
 const costService = new CostService(config.costsDbPath);
+const resourceHealthService = new ResourceHealthService(config);
 const gitIdentity = config.gitUserName && config.gitUserEmail ? { name: config.gitUserName, email: config.gitUserEmail } : undefined;
 const gitService = new GitService(gitIdentity);
 
@@ -67,6 +69,7 @@ const app = createApp({
   fileService: new FileService(),
   gitService,
   costService,
+  resourceHealthService,
   piAgentService,
   serverStartedAt,
 });

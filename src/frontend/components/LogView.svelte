@@ -6,6 +6,7 @@
   export let entries: BackendLogEntry[] = [];
   export let loading = false;
   export let loadingMore = false;
+  export let clearing = false;
   export let hasMore = false;
   export let live = true;
   export let streamConnected = false;
@@ -18,6 +19,7 @@
   const dispatch = createEventDispatcher<{
     refresh: void;
     loadMore: void;
+    clearAll: void;
     toggleLive: { value: boolean };
     setLevel: { value: BackendLogLevel | "" };
     setSource: { value: string };
@@ -72,6 +74,9 @@
       <button class="secondary-button compact" type="button" on:click={() => dispatch("refresh")} disabled={loading}>Refresh</button>
       <button class:selected={live} class="secondary-button compact" type="button" on:click={() => dispatch("toggleLive", { value: !live })}>
         {live ? "Pause live" : "Resume live"}
+      </button>
+      <button class="ghost-button compact danger-button" type="button" on:click={() => dispatch("clearAll")} disabled={clearing}>
+        {clearing ? "Deleting log..." : "Delete complete log"}
       </button>
     </div>
   </div>

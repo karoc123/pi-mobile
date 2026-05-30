@@ -16,11 +16,12 @@ PiMobile is a mobile-first web cockpit for local Git repositories. It combines f
 - menu-driven backend log view with live streaming and filters for level, source, and search text
 - VS-Code-like light and dark themes via burger menu
 - chat status surface with explicit ready/running state, model label, and token/cost/context footer
-- global system status strip showing auth state, socket connectivity, backend health, and live-log link state
+- toggleable system status panel (tool icon beside menu) with auth/socket/backend/log-stream state and required resource-access checks
 - mobile-first slash command suggestions for fast `/model`, `/session`, `/compact`, and related commands
 - repository picker for any Git repo below `WORKSPACE_ROOT`
 - websocket updates for agent state and filesystem changes
 - hunk-level revert through reverse `git apply`
+- one-tap Git `pull` and `push` actions directly in the Diff header
 - CodeMirror editor with save flow
 - SQLite-backed cost persistence under `.pi-mobile/costs.sqlite` by default
 - Docker and local run paths
@@ -97,6 +98,8 @@ http://localhost:5173
 
 10. Open `Menu -> Open log` to inspect the full backend runtime stream. The log view supports live streaming, request-id correlation, and paging older entries for incident analysis.
 
+11. In the log view, use `Delete complete log` to clear the in-memory log buffer and persisted backend log files.
+
 ## Production-style local run
 
 If you want to test the built server instead of Vite dev mode:
@@ -155,7 +158,13 @@ http://localhost:HOST_PORT
 
 If login succeeds but the initial workspace bootstrap fails, the UI now returns to the login screen and shows the backend error instead of leaving you in an empty picker state.
 
-The container stores the cost database and backend logs under `/tmp/pi-mobile/` (`costs.sqlite` + `logs/`). This avoids startup failures when mounted host paths are read-only. Note: `/tmp` is container-local, so costs/logs are reset when the container is recreated.
+By default, Docker now stores cost DB, backend logs, and Pi session files in the project folder under `/workspace/pi-mobile/.pi-mobile/` so data persists across container recreates:
+
+- `/workspace/pi-mobile/.pi-mobile/costs.sqlite`
+- `/workspace/pi-mobile/.pi-mobile/logs/`
+- `/workspace/pi-mobile/.pi-mobile/sessions/`
+
+You can still override each path with `COSTS_DB_PATH`, `LOGS_DIR`, and `PI_SESSION_DIR` in `.env`.
 
 ## Verification run in this workspace
 
