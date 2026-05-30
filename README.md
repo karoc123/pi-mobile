@@ -155,7 +155,7 @@ http://localhost:HOST_PORT
 
 If login succeeds but the initial workspace bootstrap fails, the UI now returns to the login screen and shows the backend error instead of leaving you in an empty picker state.
 
-The container persists the cost database inside the mounted workspace at `/workspace/.pi-mobile/costs.sqlite`, so the data survives rebuilds as long as `WORKSPACE_HOST_PATH` points to writable host storage. The `.pi-mobile/` directory is git-ignored in this repository.
+The container stores the cost database and backend logs under `/tmp/pi-mobile/` (`costs.sqlite` + `logs/`). This avoids startup failures when mounted host paths are read-only. Note: `/tmp` is container-local, so costs/logs are reset when the container is recreated.
 
 ## Verification run in this workspace
 

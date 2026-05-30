@@ -15,7 +15,8 @@ services:
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
       WORKSPACE_ROOT: /workspace
-      COSTS_DB_PATH: /workspace/.pi-mobile/costs.sqlite
+      COSTS_DB_PATH: ${COSTS_DB_PATH:-/tmp/pi-mobile/costs.sqlite}
+      LOGS_DIR: ${LOGS_DIR:-/tmp/pi-mobile/logs}
       DEFAULT_REPO: ${DEFAULT_REPO:-}
       PI_AGENT_DIR: /home/node/.pi/agent
       PI_SESSION_DIR: /home/node/.pi/agent/sessions
