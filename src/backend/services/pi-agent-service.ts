@@ -1,19 +1,13 @@
-import path from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 import type {
   AgentCommandRequest,
   AgentCommandResponse,
   AgentCommandState,
-  AgentQueueMode,
-  AgentResumeSession,
-  AgentRuntimePhase,
-  AgentSlashCommand,
   AgentSnapshot,
   AgentThinkingLevel,
-  AgentTreeEntry,
   AgentUsage,
   ChatMessage,
   SelectedRepo,
@@ -23,30 +17,23 @@ import type {
 
 import type { AppConfig } from "../config.js";
 import { CostService } from "./cost-service.js";
+import { flattenMessageText, hydrateMessagesFromSession, summarizePayload, summarizeText, upsertTool } from "./pi-agent-hydrator.js";
+import { PiAgentMockAdapter } from "./pi-agent-mock-adapter.js";
+import { PiAgentSessionAdapter, type SessionOpenOptions } from "./pi-agent-session-adapter.js";
 import type { LogChannel } from "./log-service.js";
 
 type Broadcast = (event: WebsocketEnvelope) => void;
 
 export class PiAgentService {
   private currentRepo: SelectedRepo | null = null;
-  private session: AgentSession | null = null;
-  private unsubscribe: (() => void) | null = null;
   private messages: ChatMessage[] = [];
   private tools: ToolActivity[] = [];
   private lastError: string | null = null;
   private activeAssistantMessageId: string | null = null;
-  private mockReplyTimeout: NodeJS.Timeout | null = null;
-  private mockStreaming = false;
-  private mockSteeringMode: AgentQueueMode = "all";
-  private mockFollowUpMode: AgentQueueMode = "one-at-a-time";
-  private mockAutoRetryEnabled = false;
-  private mockIsRetrying = false;
-  private mockIsBashRunning = false;
-  private mockSessionName: string | null = null;
-  private mockUsage: AgentUsage = createUsageSummary("mock/session", true);
+  private readonly mockAdapter = new PiAgentMockAdapter();
+  private readonly sessionAdapter: PiAgentSessionAdapter;
   private activeCostSessionKey: string | null = null;
   private activeCostSessionStartedAt: string | null = null;
-  private mockSessionId: string | null = null;
   private readonly logger: LogChannel;
 
   constructor(
@@ -56,6 +43,13 @@ export class PiAgentService {
     logger?: LogChannel,
   ) {
     this.logger = logger ?? createNoopLogger();
+    this.sessionAdapter = new PiAgentSessionAdapter(this.config, this.logger, (event) => {
+      this.handleSessionEvent(event);
+    });
+  }
+
+  private get session() {
+    return this.sessionAdapter.getSession();
   }
 
   getSnapshot(): AgentSnapshot {
@@ -78,69 +72,10 @@ export class PiAgentService {
     }
 
     if (this.config.piMockMode) {
-      return this.getMockCommandState();
+      return this.mockAdapter.getCommandState(this.currentRepo, this.messages);
     }
 
-    const session = await this.ensureSession();
-    const sessionStats = session.getSessionStats();
-    const currentModel = session.model;
-    const currentSessionFile = session.sessionFile;
-    const resumeSessions = await SessionManager.list(this.currentRepo.absolutePath, this.config.piSessionDir);
-    const availableCommands = this.getAvailableSlashCommands(session);
-
-    return {
-      session: {
-        sessionFile: sessionStats.sessionFile ?? null,
-        sessionId: sessionStats.sessionId,
-        sessionName: session.sessionName ?? null,
-        userMessages: sessionStats.userMessages,
-        assistantMessages: sessionStats.assistantMessages,
-        toolCalls: sessionStats.toolCalls,
-        toolResults: sessionStats.toolResults,
-        totalMessages: sessionStats.totalMessages,
-      },
-      models: session.modelRegistry
-        .getAll()
-        .map((model) => ({
-          provider: model.provider,
-          modelId: model.id,
-          name: model.name,
-          available: session.modelRegistry.hasConfiguredAuth(model),
-          isCurrent: currentModel?.provider === model.provider && currentModel.id === model.id,
-          usingSubscription: session.modelRegistry.isUsingOAuth(model),
-        }))
-        .filter((model) => model.available || model.isCurrent)
-        .sort((left, right) => {
-          if (left.isCurrent !== right.isCurrent) {
-            return left.isCurrent ? -1 : 1;
-          }
-
-          if (left.available !== right.available) {
-            return left.available ? -1 : 1;
-          }
-
-          return `${left.provider}/${left.modelId}`.localeCompare(`${right.provider}/${right.modelId}`);
-        }),
-      thinkingLevels: session.getAvailableThinkingLevels().map((level) => ({
-        value: level as AgentThinkingLevel,
-        isCurrent: session.thinkingLevel === level,
-      })),
-      steeringMode: session.steeringMode,
-      followUpMode: session.followUpMode,
-      autoCompactEnabled: session.autoCompactionEnabled,
-      autoRetryEnabled: session.autoRetryEnabled,
-      isRetrying: session.isRetrying,
-      isCompacting: session.isCompacting,
-      isBashRunning: session.isBashRunning,
-      pendingMessageCount: session.pendingMessageCount,
-      availableCommands,
-      resumeSessions: resumeSessions.sort((left, right) => right.modified.getTime() - left.modified.getTime()).map((entry) => toResumeSession(entry, currentSessionFile)),
-      treeEntries: flattenTreeEntries(session.sessionManager.getTree(), session.sessionManager.getLeafId()),
-      forkEntries: session.getUserMessagesForForking().map((entry) => ({
-        entryId: entry.entryId,
-        preview: summarizeText(entry.text),
-      })),
-    };
+    return this.sessionAdapter.getCommandState(this.currentRepo);
   }
 
   async executeCommand(request: AgentCommandRequest): Promise<AgentCommandResponse> {
@@ -149,7 +84,26 @@ export class PiAgentService {
     }
 
     if (this.config.piMockMode) {
-      return this.executeMockCommand(request);
+      return this.mockAdapter.executeCommand(request, {
+        getCurrentRepo: () => this.currentRepo,
+        getMessages: () => this.messages,
+        setMessages: (messages) => {
+          this.messages = messages;
+        },
+        setTools: (tools) => {
+          this.tools = tools;
+        },
+        setLastError: (message) => {
+          this.lastError = message;
+        },
+        setActiveAssistantMessageId: (messageId) => {
+          this.activeAssistantMessageId = messageId;
+        },
+        broadcast: this.broadcast,
+        emitStatus: () => {
+          this.emitStatus();
+        },
+      });
     }
 
     const session = await this.ensureSession();
@@ -319,7 +273,7 @@ export class PiAgentService {
       }
 
       case "resume-session": {
-        await this.openSessionManager(SessionManager.open(request.sessionPath), {
+        await this.openSessionPath(request.sessionPath, {
           useConfiguredDefaults: false,
         });
         return {
@@ -356,7 +310,7 @@ export class PiAgentService {
           throw new Error("Could not fork the selected session entry.");
         }
 
-        await this.openSessionManager(SessionManager.open(sessionPath), {
+        await this.openSessionPath(sessionPath, {
           useConfiguredDefaults: false,
         });
         return {
@@ -377,22 +331,44 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
-    this.mockSessionName = null;
-    this.mockIsRetrying = false;
-    this.mockIsBashRunning = false;
-    this.mockUsage = createUsageSummary(this.config.piMockMode ? "mock/session" : null, this.config.piMockMode);
+
+    if (this.config.piMockMode) {
+      this.mockAdapter.resetForRepoSelection();
+    }
+
     await this.resetSession();
+
     if (!this.config.piMockMode) {
       await this.restoreSession();
     } else {
       this.beginMockSession();
     }
+
     this.emitStatus();
   }
 
   async prompt(promptText: string) {
     if (this.config.piMockMode) {
-      await this.promptWithMock(promptText);
+      await this.mockAdapter.prompt(promptText, {
+        getCurrentRepo: () => this.currentRepo,
+        getMessages: () => this.messages,
+        setMessages: (messages) => {
+          this.messages = messages;
+        },
+        setTools: (tools) => {
+          this.tools = tools;
+        },
+        setLastError: (message) => {
+          this.lastError = message;
+        },
+        setActiveAssistantMessageId: (messageId) => {
+          this.activeAssistantMessageId = messageId;
+        },
+        broadcast: this.broadcast,
+        emitStatus: () => {
+          this.emitStatus();
+        },
+      });
       return;
     }
 
@@ -421,10 +397,8 @@ export class PiAgentService {
   }
 
   async abort() {
-    if (this.mockReplyTimeout) {
-      clearTimeout(this.mockReplyTimeout);
-      this.mockReplyTimeout = null;
-      this.mockStreaming = false;
+    if (this.config.piMockMode) {
+      this.mockAdapter.abort();
     }
 
     await this.session?.abort();
@@ -440,10 +414,10 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
-    this.mockSessionName = null;
-    this.mockIsRetrying = false;
-    this.mockIsBashRunning = false;
-    this.mockUsage = createUsageSummary(this.config.piMockMode ? "mock/session" : null, this.config.piMockMode);
+
+    if (this.config.piMockMode) {
+      this.mockAdapter.resetForNewSession();
+    }
 
     await this.resetSession();
 
@@ -481,20 +455,12 @@ export class PiAgentService {
       throw new Error("Mock mode does not create a real pi session.");
     }
 
-    if (this.session) {
-      return this.session;
-    }
-
-    return this.createSession(true);
+    return this.sessionAdapter.ensureSession(this.currentRepo);
   }
 
   private async createSession(
     continueRecent: boolean,
-    options: {
-      preferredModel?: { provider: string; modelId: string } | null;
-      preferredThinkingLevel?: AgentThinkingLevel;
-      useConfiguredDefaults?: boolean;
-    } = {
+    options: SessionOpenOptions = {
       useConfiguredDefaults: true,
     },
   ) {
@@ -502,82 +468,31 @@ export class PiAgentService {
       throw new Error("No repository selected for pi session.");
     }
 
-    const sessionManager = continueRecent
-      ? SessionManager.continueRecent(this.currentRepo.absolutePath, this.config.piSessionDir)
-      : SessionManager.create(this.currentRepo.absolutePath, this.config.piSessionDir);
-
-    return this.openSessionManager(sessionManager, options);
+    this.finalizeTrackedSession();
+    const session = await this.sessionAdapter.createSession(this.currentRepo, continueRecent, options);
+    this.ensureTrackedSessionReference(new Date().toISOString());
+    this.syncFromSession(session);
+    this.emitStatus();
+    return session;
   }
 
-  private resolvePreferredModel(modelRegistry: ModelRegistry, preferredModel: { provider: string; modelId: string } | null | undefined, useConfiguredDefaults: boolean) {
-    if (preferredModel) {
-      const model = modelRegistry.find(preferredModel.provider, preferredModel.modelId);
-
-      if (model) {
-        return model;
-      }
-    }
-
-    return useConfiguredDefaults ? this.resolveConfiguredModel(modelRegistry) : undefined;
-  }
-
-  private async openSessionManager(
-    sessionManager: SessionManager,
-    options: {
-      preferredModel?: { provider: string; modelId: string } | null;
-      preferredThinkingLevel?: AgentThinkingLevel;
-      useConfiguredDefaults?: boolean;
-    },
-  ) {
+  private async openSessionPath(sessionPath: string, options: SessionOpenOptions) {
     if (!this.currentRepo) {
       throw new Error("No repository selected for pi session.");
     }
 
-    const authStorage = this.config.piAgentDir ? AuthStorage.create(path.join(this.config.piAgentDir, "auth.json")) : AuthStorage.create();
-    const modelRegistry = this.config.piAgentDir ? ModelRegistry.create(authStorage, path.join(this.config.piAgentDir, "models.json")) : ModelRegistry.create(authStorage);
-    const model = this.resolvePreferredModel(modelRegistry, options.preferredModel, options.useConfiguredDefaults ?? false);
-    const thinkingLevel = options.preferredThinkingLevel ?? (options.useConfiguredDefaults ? this.config.piThinkingLevel : undefined);
-    const { session } = await createAgentSession({
-      cwd: this.currentRepo.absolutePath,
-      agentDir: this.config.piAgentDir,
-      authStorage,
-      modelRegistry,
-      sessionManager,
-      model,
-      thinkingLevel,
-    });
-
     this.finalizeTrackedSession();
-    this.unsubscribe?.();
-    this.unsubscribe = null;
-    this.session?.dispose();
-
-    this.session = session;
+    const session = await this.sessionAdapter.openSessionPath(this.currentRepo, sessionPath, options);
     this.ensureTrackedSessionReference(new Date().toISOString());
+    this.syncFromSession(session);
+    this.emitStatus();
+  }
+
+  private syncFromSession(session: AgentSession) {
     this.messages = hydrateMessagesFromSession(session.messages);
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
-    this.unsubscribe = session.subscribe((event) => {
-      this.handleSessionEvent(event);
-    });
-    this.emitStatus();
-
-    return session;
-  }
-
-  private resolveConfiguredModel(modelRegistry: ModelRegistry) {
-    if (!this.config.piProvider || !this.config.piModel) {
-      return undefined;
-    }
-
-    const model = modelRegistry.find(this.config.piProvider, this.config.piModel);
-
-    if (!model) {
-      throw new Error(`Configured pi model ${this.config.piProvider}/${this.config.piModel} was not found.`);
-    }
-
-    return model;
   }
 
   private async acceptPrompt(session: AgentSession, promptText: string) {
@@ -759,84 +674,22 @@ export class PiAgentService {
   }
 
   private getRuntimeState() {
-    const isStreaming = this.config.piMockMode ? this.mockStreaming : this.session?.isStreaming || false;
-    const isCompacting = this.config.piMockMode ? false : this.session?.isCompacting || false;
-    const isRetrying = this.config.piMockMode ? this.mockIsRetrying : this.session?.isRetrying || false;
-    const isBashRunning = this.config.piMockMode ? this.mockIsBashRunning : this.session?.isBashRunning || false;
-    const pendingMessageCount = this.config.piMockMode ? 0 : this.session?.pendingMessageCount || 0;
-
-    return {
-      isStreaming,
-      runtimePhase: deriveRuntimePhase({ isStreaming, isCompacting, isRetrying, isBashRunning, pendingMessageCount }),
-      pendingMessageCount,
-      isCompacting,
-      isRetrying,
-      isBashRunning,
-    } satisfies {
-      isStreaming: boolean;
-      runtimePhase: AgentRuntimePhase;
-      pendingMessageCount: number;
-      isCompacting: boolean;
-      isRetrying: boolean;
-      isBashRunning: boolean;
-    };
-  }
-
-  private getAvailableSlashCommands(session: AgentSession): AgentSlashCommand[] {
-    try {
-      const extensionCommands: AgentSlashCommand[] = session.extensionRunner.getRegisteredCommands().map((command) => ({
-        name: command.invocationName,
-        description: command.description ?? null,
-        source: "extension",
-      }));
-
-      const promptCommands: AgentSlashCommand[] = session.promptTemplates.map((template) => ({
-        name: template.name,
-        description: template.description ?? null,
-        source: "prompt",
-      }));
-
-      const skillCommands: AgentSlashCommand[] = session.resourceLoader.getSkills().skills.map((skill) => ({
-        name: `skill:${skill.name}`,
-        description: skill.description ?? null,
-        source: "skill",
-      }));
-
-      return [...extensionCommands, ...promptCommands, ...skillCommands].sort((left, right) => left.name.localeCompare(right.name));
-    } catch (error) {
-      this.logger.warn("Could not resolve slash commands for command palette.", {
-        event: "slash_commands_unavailable",
-        repo: this.currentRepo?.absolutePath ?? null,
-        details: {
-          message: error instanceof Error ? error.message : String(error),
-        },
-      });
-
-      return [];
+    if (this.config.piMockMode) {
+      return this.mockAdapter.getRuntimeState();
     }
+
+    return this.sessionAdapter.getRuntimeState();
   }
 
   private async resetSession() {
     this.finalizeTrackedSession();
 
-    if (this.mockReplyTimeout) {
-      clearTimeout(this.mockReplyTimeout);
-      this.mockReplyTimeout = null;
-    }
-
-    this.mockStreaming = false;
-    this.mockIsRetrying = false;
-    this.mockIsBashRunning = false;
-    this.mockSessionName = null;
-    this.unsubscribe?.();
-    this.unsubscribe = null;
-    this.session?.dispose();
-    this.session = null;
-    this.mockSessionId = null;
+    this.mockAdapter.dispose();
+    await this.sessionAdapter.reset();
   }
 
   private beginMockSession() {
-    this.mockSessionId = randomUUID();
+    this.mockAdapter.beginSession();
     this.ensureTrackedSessionReference(new Date().toISOString());
   }
 
@@ -846,11 +699,8 @@ export class PiAgentService {
     }
 
     if (this.config.piMockMode) {
-      if (!this.mockSessionId) {
-        this.mockSessionId = randomUUID();
-      }
-
-      return this.registerTrackedSession(`mock:${this.currentRepo.absolutePath}:${this.mockSessionId}`, startedAt, this.mockSessionId, null);
+      const session = this.mockAdapter.ensureSessionReference(this.currentRepo.absolutePath);
+      return this.registerTrackedSession(session.sessionKey, startedAt, session.sessionId, session.sessionFile);
     }
 
     if (!this.session) {
@@ -953,29 +803,14 @@ export class PiAgentService {
   }
 
   private getUsageSummary(): AgentUsage {
-    if (this.session) {
-      const sessionStats = this.session.getSessionStats();
-      const contextUsage = this.session.getContextUsage();
-      const model = this.session.model;
+    const realUsage = this.sessionAdapter.getUsageSummary();
 
-      return {
-        inputTokens: sessionStats.tokens.input,
-        outputTokens: sessionStats.tokens.output,
-        cacheReadTokens: sessionStats.tokens.cacheRead,
-        cacheWriteTokens: sessionStats.tokens.cacheWrite,
-        totalTokens: sessionStats.tokens.total,
-        totalCost: sessionStats.cost,
-        contextTokens: contextUsage?.tokens ?? null,
-        contextWindow: contextUsage?.contextWindow ?? model?.contextWindow ?? null,
-        contextPercent: contextUsage?.percent ?? null,
-        modelId: model?.id ?? null,
-        usingSubscription: model ? this.session.modelRegistry.isUsingOAuth(model) : false,
-        autoCompactEnabled: this.session.autoCompactionEnabled,
-      };
+    if (realUsage) {
+      return realUsage;
     }
 
     if (this.config.piMockMode) {
-      return this.mockUsage;
+      return this.mockAdapter.getUsageSummary();
     }
 
     return {
@@ -992,231 +827,6 @@ export class PiAgentService {
       usingSubscription: false,
       autoCompactEnabled: false,
     };
-  }
-
-  private getMockCommandState(): AgentCommandState {
-    const userMessages = this.messages.filter((message) => message.role === "user").length;
-    const assistantMessages = this.messages.filter((message) => message.role === "assistant").length;
-
-    return {
-      session: this.currentRepo
-        ? {
-            sessionFile: null,
-            sessionId: null,
-            sessionName: this.mockSessionName,
-            userMessages,
-            assistantMessages,
-            toolCalls: 0,
-            toolResults: 0,
-            totalMessages: this.messages.length,
-          }
-        : null,
-      models: [],
-      thinkingLevels: [],
-      steeringMode: this.mockSteeringMode,
-      followUpMode: this.mockFollowUpMode,
-      autoCompactEnabled: this.mockUsage.autoCompactEnabled,
-      autoRetryEnabled: this.mockAutoRetryEnabled,
-      isRetrying: this.mockIsRetrying,
-      isCompacting: false,
-      isBashRunning: this.mockIsBashRunning,
-      pendingMessageCount: 0,
-      availableCommands: [],
-      resumeSessions: [],
-      treeEntries: [],
-      forkEntries: [],
-    };
-  }
-
-  private async executeMockCommand(request: AgentCommandRequest): Promise<AgentCommandResponse> {
-    switch (request.command) {
-      case "new-session": {
-        this.messages = [];
-        this.tools = [];
-        this.lastError = null;
-        this.mockSessionName = null;
-        this.mockIsRetrying = false;
-        this.mockIsBashRunning = false;
-        this.mockUsage = createUsageSummary("mock/session", this.mockUsage.autoCompactEnabled);
-        this.emitStatus();
-        return {
-          message: "Started a new session.",
-          prompt: null,
-        };
-      }
-
-      case "set-auto-compact": {
-        this.mockUsage = {
-          ...this.mockUsage,
-          autoCompactEnabled: request.enabled,
-        };
-        this.emitStatus();
-        return {
-          message: request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.",
-          prompt: null,
-        };
-      }
-
-      case "set-steering-mode": {
-        this.mockSteeringMode = request.mode;
-        this.emitStatus();
-        return {
-          message: `Steering mode set to ${request.mode}.`,
-          prompt: null,
-        };
-      }
-
-      case "set-follow-up-mode": {
-        this.mockFollowUpMode = request.mode;
-        this.emitStatus();
-        return {
-          message: `Follow-up mode set to ${request.mode}.`,
-          prompt: null,
-        };
-      }
-
-      case "set-auto-retry": {
-        this.mockAutoRetryEnabled = request.enabled;
-        this.emitStatus();
-        return {
-          message: request.enabled ? "Auto retry enabled." : "Auto retry disabled.",
-          prompt: null,
-        };
-      }
-
-      case "abort-retry": {
-        this.mockIsRetrying = false;
-        this.emitStatus();
-        return {
-          message: "Retry aborted.",
-          prompt: null,
-        };
-      }
-
-      case "compact": {
-        this.emitStatus();
-        return {
-          message: "Context compacted.",
-          prompt: null,
-        };
-      }
-
-      case "run-bash": {
-        const commandText = request.commandText.trim();
-
-        if (commandText.length === 0) {
-          throw new Error("Bash command cannot be empty.");
-        }
-
-        this.mockIsBashRunning = true;
-        this.emitStatus();
-
-        this.mockIsBashRunning = false;
-        this.emitStatus();
-
-        return {
-          message: "Mock bash completed (exit code 0).",
-          prompt: null,
-        };
-      }
-
-      case "abort-bash": {
-        this.mockIsBashRunning = false;
-        this.emitStatus();
-        return {
-          message: "Bash command aborted.",
-          prompt: null,
-        };
-      }
-
-      case "set-session-name": {
-        const nextName = request.name.trim();
-
-        if (nextName.length === 0) {
-          throw new Error("Session name cannot be empty.");
-        }
-
-        this.mockSessionName = nextName;
-        this.emitStatus();
-        return {
-          message: `Session renamed to \"${nextName}\".`,
-          prompt: null,
-        };
-      }
-
-      case "export-session": {
-        this.emitStatus();
-        return {
-          message: `Session exported to mock-session.${request.format === "html" ? "html" : "jsonl"}.`,
-          prompt: null,
-        };
-      }
-
-      default:
-        throw new Error("This command is not available in mock mode.");
-    }
-  }
-
-  private async promptWithMock(promptText: string) {
-    if (!this.currentRepo) {
-      throw new Error("No repository selected for pi session.");
-    }
-
-    const userMessage: ChatMessage = {
-      id: randomUUID(),
-      role: "user",
-      text: promptText,
-      status: "complete",
-      timestamp: new Date().toISOString(),
-    };
-    const assistantMessage: ChatMessage = {
-      id: randomUUID(),
-      role: "assistant",
-      text: "",
-      status: "streaming",
-      timestamp: new Date().toISOString(),
-    };
-
-    this.messages = [...this.messages, userMessage, assistantMessage];
-    this.activeAssistantMessageId = assistantMessage.id;
-    this.lastError = null;
-    this.mockStreaming = true;
-    this.mockUsage = updateMockUsage(this.mockUsage, { inputDelta: estimateMockTokens(promptText) });
-
-    this.broadcast({ type: "chat_message_added", payload: { message: userMessage } });
-    this.broadcast({ type: "chat_message_added", payload: { message: assistantMessage } });
-    this.emitStatus();
-
-    const replyText = buildMockReply(promptText);
-    await new Promise<void>((resolve) => {
-      this.mockReplyTimeout = setTimeout(() => {
-        const index = this.messages.findIndex((entry) => entry.id === assistantMessage.id);
-
-        if (index >= 0) {
-          const updatedMessage: ChatMessage = {
-            ...assistantMessage,
-            text: replyText,
-            status: "complete",
-          };
-          this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
-          this.broadcast({
-            type: "chat_message_updated",
-            payload: {
-              messageId: updatedMessage.id,
-              text: updatedMessage.text,
-              status: updatedMessage.status,
-            },
-          });
-        }
-
-        this.activeAssistantMessageId = null;
-        this.mockReplyTimeout = null;
-        this.mockStreaming = false;
-        this.mockUsage = updateMockUsage(this.mockUsage, { outputDelta: estimateMockTokens(replyText) });
-        this.emitStatus();
-        resolve();
-      }, 120);
-    });
   }
 }
 
@@ -1251,179 +861,8 @@ function getModelReference(session: AgentSession) {
   };
 }
 
-function toResumeSession(entry: Awaited<ReturnType<typeof SessionManager.list>>[number], currentSessionFile: string | undefined): AgentResumeSession {
-  return {
-    path: entry.path,
-    id: entry.id,
-    name: entry.name ?? null,
-    modifiedAt: entry.modified.toISOString(),
-    messageCount: entry.messageCount,
-    preview: summarizeText(entry.name ?? entry.firstMessage),
-    isCurrent: currentSessionFile === entry.path,
-  };
-}
-
-function flattenTreeEntries(nodes: ReturnType<SessionManager["getTree"]>, currentLeafId: string | null, depth = 0): AgentTreeEntry[] {
-  return nodes.flatMap((node) => {
-    const children = flattenTreeEntries(node.children, currentLeafId, depth + 1);
-
-    if (node.entry.type !== "message") {
-      return children;
-    }
-
-    if (node.entry.message.role !== "user" && node.entry.message.role !== "assistant") {
-      return children;
-    }
-
-    return [
-      {
-        entryId: node.entry.id,
-        role: node.entry.message.role,
-        depth,
-        preview: summarizeText(flattenMessageText(node.entry.message)),
-        isCurrent: node.entry.id === currentLeafId,
-      },
-      ...children,
-    ];
-  });
-}
-
-function hydrateMessagesFromSession(sessionMessages: readonly unknown[]) {
-  return sessionMessages.map((entry) => toChatMessage(entry)).filter((entry): entry is ChatMessage => entry !== null);
-}
-
-function toChatMessage(entry: unknown): ChatMessage | null {
-  if (!entry || typeof entry !== "object" || !("role" in entry)) {
-    return null;
-  }
-
-  const candidate = entry as { role?: string; createdAt?: string; content?: unknown[] };
-
-  if (candidate.role !== "user" && candidate.role !== "assistant") {
-    return null;
-  }
-
-  return {
-    id: randomUUID(),
-    role: candidate.role,
-    text: flattenMessageText(candidate),
-    status: "complete",
-    timestamp: candidate.createdAt ?? new Date().toISOString(),
-  };
-}
-
-function flattenMessageText(message: { content?: string | unknown[] }) {
-  if (typeof message.content === "string") {
-    return message.content.trim();
-  }
-
-  if (!Array.isArray(message.content)) {
-    return "";
-  }
-
-  return message.content
-    .map((chunk) => {
-      if (typeof chunk === "string") {
-        return chunk;
-      }
-
-      if (!chunk || typeof chunk !== "object") {
-        return "";
-      }
-
-      const typedChunk = chunk as {
-        type?: string;
-        text?: string;
-        toolName?: string;
-        name?: string;
-        result?: unknown;
-        arguments?: unknown;
-        args?: unknown;
-      };
-      const type = typedChunk.type ?? "";
-
-      if (type === "text") {
-        return typedChunk.text ?? "";
-      }
-
-      if (type === "thinking" || type === "hidden" || type === "reasoning") {
-        return "";
-      }
-
-      if (type === "tool-call" || type === "toolCall" || type === "tool_call") {
-        const toolName = typedChunk.toolName ?? typedChunk.name ?? "unknown";
-        const toolArgs = typedChunk.arguments ?? typedChunk.args;
-        const argsSummary = toolArgs ? summarizePayload(toolArgs) : "";
-        return `\n[tool:${toolName}]${argsSummary ? ` ${argsSummary}` : ""}`;
-      }
-
-      if (type === "tool-result" || type === "toolResult" || type === "tool_result") {
-        return `\n${summarizePayload(typedChunk.result)}`;
-      }
-
-      return typedChunk.text ?? "";
-    })
-    .join("")
-    .trim();
-}
-
-function upsertTool(tools: ToolActivity[], tool: ToolActivity) {
-  const remainder = tools.filter((entry) => entry.id !== tool.id);
-  return [tool, ...remainder].slice(0, 12);
-}
-
-function summarizePayload(payload: unknown) {
-  if (typeof payload === "string") {
-    return payload.slice(0, 240);
-  }
-
-  if (payload === null || payload === undefined) {
-    return "";
-  }
-
-  try {
-    return JSON.stringify(payload).slice(0, 240);
-  } catch {
-    return String(payload).slice(0, 240);
-  }
-}
-
 function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown pi runtime error.";
-}
-
-function summarizeText(text: string) {
-  const normalized = text.replace(/\s+/g, " ").trim();
-
-  if (normalized.length === 0) {
-    return "No text";
-  }
-
-  return normalized.slice(0, 120);
-}
-
-function deriveRuntimePhase(input: { isStreaming: boolean; isCompacting: boolean; isRetrying: boolean; isBashRunning: boolean; pendingMessageCount: number }): AgentRuntimePhase {
-  if (input.isRetrying) {
-    return "retrying";
-  }
-
-  if (input.isCompacting) {
-    return "compacting";
-  }
-
-  if (input.isBashRunning) {
-    return "bash-running";
-  }
-
-  if (input.isStreaming) {
-    return "streaming";
-  }
-
-  if (input.pendingMessageCount > 0) {
-    return "queued";
-  }
-
-  return "idle";
 }
 
 function formatBashResultMessage(exitCode: number | undefined, cancelled: boolean, truncated: boolean) {
@@ -1435,61 +874,6 @@ function formatBashResultMessage(exitCode: number | undefined, cancelled: boolea
   }
 
   return `Bash run finished with exit ${exitLabel}.${suffix}`;
-}
-
-function createUsageSummary(modelId: string | null, autoCompactEnabled: boolean): AgentUsage {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-    totalTokens: 0,
-    totalCost: 0,
-    contextTokens: 0,
-    contextWindow: 400000,
-    contextPercent: 0,
-    modelId,
-    usingSubscription: false,
-    autoCompactEnabled,
-  };
-}
-
-function updateMockUsage(usage: AgentUsage, deltas: { inputDelta?: number; outputDelta?: number }) {
-  const inputTokens = usage.inputTokens + (deltas.inputDelta ?? 0);
-  const outputTokens = usage.outputTokens + (deltas.outputDelta ?? 0);
-  const totalTokens = inputTokens + outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
-  const contextWindow = usage.contextWindow ?? 400000;
-  const contextPercent = Number(((totalTokens / contextWindow) * 100).toFixed(1));
-  const totalCost = Number(((inputTokens * 0.5 + outputTokens * 1.2) / 1000).toFixed(3));
-
-  return {
-    ...usage,
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    totalCost,
-    contextTokens: totalTokens,
-    contextWindow,
-    contextPercent,
-  };
-}
-
-function estimateMockTokens(text: string) {
-  return Math.max(1, Math.ceil(text.trim().length / 4));
-}
-
-function buildMockReply(promptText: string) {
-  const singleWordMatch = /single word\s+([A-Z0-9_-]+)/i.exec(promptText);
-
-  if (singleWordMatch) {
-    return singleWordMatch[1].toUpperCase();
-  }
-
-  if (/ready/i.test(promptText)) {
-    return "READY";
-  }
-
-  return `Mock reply: ${promptText.slice(0, 120)}`;
 }
 
 function createNoopLogger(): LogChannel {

@@ -61,4 +61,52 @@ describe("PiAgentService", () => {
     expect(report.sessions.every((session) => session.totalTokens > 0)).toBe(true);
     expect(report.sessions.every((session) => session.endedAt !== null)).toBe(true);
   });
+
+  it("wires mock prompt and command-state through the mock adapter seam", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-agent-wiring-"));
+
+    const events: string[] = [];
+    const costService = new CostService(path.join(tempDir, ".pi-mobile", "costs.sqlite"));
+    const service = new PiAgentService(
+      {
+        nodeEnv: "test",
+        host: "127.0.0.1",
+        port: 3000,
+        appPassword: "secret-pass",
+        workspaceRoot: tempDir,
+        costsDbPath: path.join(tempDir, ".pi-mobile", "costs.sqlite"),
+        logsDirPath: path.join(tempDir, ".pi-mobile", "logs"),
+        logLevel: "debug",
+        sessionCookieName: "pi_mobile_session",
+        sessionCookieSecure: false,
+        piMockMode: true,
+      },
+      (event) => {
+        events.push(event.type);
+      },
+      costService,
+    );
+
+    await service.selectRepo({
+      name: "repo-b",
+      relativePath: "repo-b",
+      absolutePath: path.join(tempDir, "repo-b"),
+    });
+
+    await service.prompt("single word done");
+
+    const stateAfterPrompt = await service.getCommandState();
+    const snapshotAfterPrompt = service.getSnapshot();
+
+    expect(stateAfterPrompt.session?.totalMessages).toBe(2);
+    expect(snapshotAfterPrompt.messages.at(-1)?.text).toBe("DONE");
+    expect(snapshotAfterPrompt.messages.at(-1)?.status).toBe("complete");
+    expect(events.filter((type) => type === "chat_message_added").length).toBe(2);
+    expect(events.includes("chat_message_updated")).toBe(true);
+
+    await service.executeCommand({ command: "new-session" });
+
+    const stateAfterReset = await service.getCommandState();
+    expect(stateAfterReset.session?.totalMessages).toBe(0);
+  });
 });

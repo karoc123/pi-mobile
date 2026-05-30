@@ -138,24 +138,6 @@
 </script>
 
 <section class="view-shell chat-view">
-  <section class="chat-status-card card-panel">
-    <div class="chat-status-main">
-      <span class:ready={statusTone === 'ready'} class:error={statusTone === 'error'} class:running={statusTone === 'running'} class="live-dot"></span>
-      <div>
-        <p class="eyebrow">CLI session</p>
-        <h2>{statusTitle}</h2>
-        <p class="subdued">{statusDetail}</p>
-      </div>
-    </div>
-    <div class="chat-status-actions">
-      <div class="usage-summary" title={formatUsageSummary(usage)}>{formatUsageSummary(usage)}</div>
-      <div class="model-summary" title={formatModelLabel(usage.modelId)}>{formatModelLabel(usage.modelId)}</div>
-      <button class="ghost-button" type="button" on:click={() => dispatch('abort')} disabled={!canAbort}>
-        Stop run
-      </button>
-    </div>
-  </section>
-
   {#if lastError}
     <div class="notice error">{lastError}</div>
   {/if}
@@ -209,6 +191,26 @@
   </div>
 
   <div class="composer">
+    <div class="composer-session-meta">
+      <div class="composer-session-main">
+        <span class:ready={statusTone === 'ready'} class:error={statusTone === 'error'} class:running={statusTone === 'running'} class="live-dot"></span>
+        <div class="composer-session-copy">
+          <p class="eyebrow">CLI session</p>
+          <h2>{statusTitle}</h2>
+          <p class="subdued">{statusDetail}</p>
+        </div>
+      </div>
+      <div class="composer-session-tags">
+        <div class="usage-summary" title={formatUsageSummary(usage)}>{formatUsageSummary(usage)}</div>
+        <div class="model-summary" title={formatModelLabel(usage.modelId)}>{formatModelLabel(usage.modelId)}</div>
+        {#if canAbort}
+          <button class="ghost-button compact" type="button" on:click={() => dispatch('abort')}>
+            Stop run
+          </button>
+        {/if}
+      </div>
+    </div>
+
     <label class="composer-terminal-input">
       <span class="composer-prefix">$</span>
       <textarea
@@ -224,7 +226,6 @@
         <button class="secondary-button compact" type="button" on:click={() => dispatch('openCommands')} disabled={runtimePhase !== 'idle'}>
           CMD
         </button>
-        <span class="subdued">{formatModelLabel(usage.modelId)} {formatUsageSummary(usage)}</span>
       </div>
       <button class="primary-button" type="button" on:click={submit} disabled={prompt.trim().length === 0}>
         {runtimePhase !== 'idle' ? 'Send follow-up' : 'Send prompt'}

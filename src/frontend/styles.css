@@ -380,7 +380,6 @@ code {
   font-family: "IBM Plex Mono", "Consolas", "Liberation Mono", monospace;
 }
 
-.chat-view .chat-status-card,
 .chat-view .activity-panel,
 .chat-view .chat-log,
 .chat-view .composer {
@@ -415,18 +414,13 @@ code {
   text-transform: uppercase;
 }
 
-.chat-view .chat-status-card {
-  padding: 0.9rem;
-}
-
-.chat-view .chat-status-card h2,
+.chat-view .composer-session-copy h2,
 .chat-view .activity-header strong,
-.chat-view .composer-actions .subdued,
 .chat-view .ghost-button {
   color: var(--terminal-shell-text);
 }
 
-.chat-view .chat-status-card h2,
+.chat-view .composer-session-copy h2,
 .chat-view .empty-state-card h3,
 .diff-view .section-header h2,
 .diff-view .diff-card h3,
@@ -434,10 +428,9 @@ code {
   color: var(--terminal-shell-heading, var(--terminal-shell-text));
 }
 
-.chat-view .chat-status-card .eyebrow,
-.chat-view .chat-status-card .subdued,
-.chat-view .activity-header .subdued,
-.chat-view .composer-actions .subdued {
+.chat-view .composer-session-copy .eyebrow,
+.chat-view .composer-session-copy .subdued,
+.chat-view .activity-header .subdued {
   color: var(--terminal-shell-muted);
 }
 
@@ -608,6 +601,51 @@ code {
 
 .chat-view .composer {
   gap: 0.75rem;
+}
+
+.chat-view .composer-session-meta {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--terminal-panel-border);
+  border-radius: 0.22rem;
+  background: var(--cli-panel);
+  color: var(--cli-ink);
+  padding: 0.9rem;
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.chat-view .composer-session-main {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+}
+
+.chat-view .composer-session-copy {
+  min-width: 0;
+}
+
+.chat-view .composer-session-copy h2 {
+  margin: 0.18rem 0 0.35rem;
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.chat-view .composer-session-copy .subdued {
+  margin: 0;
+  font-size: 0.84rem;
+  overflow-wrap: anywhere;
+}
+
+.chat-view .composer-session-tags {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chat-view .composer-session-tags .ghost-button {
+  justify-self: start;
 }
 
 .chat-view .composer-terminal-input {
@@ -1628,22 +1666,6 @@ code {
   font-size: 0.92rem;
 }
 
-.chat-status-card {
-  display: grid;
-  gap: 1rem;
-}
-
-.chat-status-main {
-  display: flex;
-  gap: 0.85rem;
-  align-items: flex-start;
-}
-
-.chat-status-actions {
-  display: grid;
-  gap: 0.65rem;
-}
-
 .live-dot {
   width: 0.8rem;
   height: 0.8rem;
@@ -1793,13 +1815,13 @@ code {
     grid-template-columns: 20rem minmax(0, 1fr);
   }
 
-  .chat-status-card {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
+  .chat-view .composer-session-tags {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    align-items: stretch;
   }
 
-  .chat-status-actions {
-    min-width: 17rem;
+  .chat-view .composer-session-tags .ghost-button {
+    justify-self: stretch;
   }
 
   .command-layout {
