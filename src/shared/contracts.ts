@@ -81,10 +81,17 @@ export type AgentUsage = {
   autoCompactEnabled: boolean;
 };
 
+export type AgentRuntimePhase = "idle" | "streaming" | "queued" | "compacting" | "retrying" | "bash-running";
+
 export type AgentSnapshot = {
   repo: SelectedRepo | null;
   isConfigured: boolean;
   isStreaming: boolean;
+  runtimePhase: AgentRuntimePhase;
+  pendingMessageCount: number;
+  isCompacting: boolean;
+  isRetrying: boolean;
+  isBashRunning: boolean;
   messages: ChatMessage[];
   tools: ToolActivity[];
   lastError: string | null;
@@ -220,6 +227,14 @@ export type AgentThinkingLevelOption = {
   isCurrent: boolean;
 };
 
+export type AgentQueueMode = "all" | "one-at-a-time";
+
+export type AgentSlashCommand = {
+  name: string;
+  description: string | null;
+  source: "extension" | "prompt" | "skill";
+};
+
 export type AgentSessionSummary = {
   sessionFile: string | null;
   sessionId: string | null;
@@ -258,7 +273,15 @@ export type AgentCommandState = {
   session: AgentSessionSummary | null;
   models: AgentModelOption[];
   thinkingLevels: AgentThinkingLevelOption[];
+  steeringMode: AgentQueueMode;
+  followUpMode: AgentQueueMode;
   autoCompactEnabled: boolean;
+  autoRetryEnabled: boolean;
+  isRetrying: boolean;
+  isCompacting: boolean;
+  isBashRunning: boolean;
+  pendingMessageCount: number;
+  availableCommands: AgentSlashCommand[];
   resumeSessions: AgentResumeSession[];
   treeEntries: AgentTreeEntry[];
   forkEntries: AgentForkEntry[];
@@ -279,8 +302,40 @@ export type AgentCommandRequest =
       enabled: boolean;
     }
   | {
+      command: "set-steering-mode";
+      mode: AgentQueueMode;
+    }
+  | {
+      command: "set-follow-up-mode";
+      mode: AgentQueueMode;
+    }
+  | {
+      command: "set-auto-retry";
+      enabled: boolean;
+    }
+  | {
+      command: "abort-retry";
+    }
+  | {
       command: "compact";
       customInstructions?: string;
+    }
+  | {
+      command: "run-bash";
+      commandText: string;
+      excludeFromContext?: boolean;
+    }
+  | {
+      command: "abort-bash";
+    }
+  | {
+      command: "set-session-name";
+      name: string;
+    }
+  | {
+      command: "export-session";
+      format: "html" | "jsonl";
+      outputPath?: string;
     }
   | {
       command: "new-session";
@@ -310,7 +365,7 @@ export type WebsocketEnvelope =
     }
   | {
       type: "agent_status";
-      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "lastError" | "repo" | "usage">;
+      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "runtimePhase" | "pendingMessageCount" | "isCompacting" | "isRetrying" | "isBashRunning" | "lastError" | "repo" | "usage">;
     }
   | {
       type: "chat_message_added";

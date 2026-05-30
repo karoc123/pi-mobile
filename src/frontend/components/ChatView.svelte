@@ -1,13 +1,15 @@
 <script lang="ts">
   import { createEventDispatcher, tick } from 'svelte';
 
-  import type { AgentUsage, ChatMessage, ToolActivity } from '../../../src/shared/contracts.js';
+  import type { AgentRuntimePhase, AgentUsage, ChatMessage, ToolActivity } from '../../../src/shared/contracts.js';
   import { formatModelLabel, formatUsageSummary } from '../lib/agent-usage.js';
   import { renderMarkdown } from '../lib/markdown.js';
 
   export let messages: ChatMessage[] = [];
   export let tools: ToolActivity[] = [];
-  export let isStreaming = false;
+  export let runtimePhase: AgentRuntimePhase = 'idle';
+  export let pendingMessageCount = 0;
+  export let canAbort = false;
   export let lastError: string | null = null;
   export let usage: AgentUsage;
   export let prefillPrompt = '';
@@ -26,19 +28,35 @@
 
   $: statusTitle = lastError
     ? 'Agent needs attention'
-    : isStreaming
+    : runtimePhase === 'streaming'
       ? 'Pi is working'
+      : runtimePhase === 'queued'
+        ? 'Pi has queued work'
+        : runtimePhase === 'compacting'
+          ? 'Pi is compacting context'
+          : runtimePhase === 'retrying'
+            ? 'Pi is retrying'
+            : runtimePhase === 'bash-running'
+              ? 'Pi is running bash'
       : messages.length > 0
         ? 'Agent finished'
         : 'Ready for your first prompt';
   $: statusDetail = lastError
     ? lastError
-    : isStreaming
+    : runtimePhase === 'streaming'
       ? 'Streaming response and tool activity live.'
+      : runtimePhase === 'queued'
+        ? `Pending follow-ups: ${pendingMessageCount}.`
+        : runtimePhase === 'compacting'
+          ? 'Compacting context before continuing.'
+          : runtimePhase === 'retrying'
+            ? 'Retry flow in progress after a transient failure.'
+            : runtimePhase === 'bash-running'
+              ? 'Executing a direct bash command.'
       : messages.length > 0
         ? 'Response complete. Ready for the next prompt.'
         : 'Type a prompt and use CMD for Pi actions.';
-  $: statusTone = lastError ? 'error' : isStreaming ? 'running' : 'ready';
+  $: statusTone = lastError ? 'error' : runtimePhase === 'idle' ? 'ready' : 'running';
 
   $: if (prefillToken !== handledPrefillToken) {
     handledPrefillToken = prefillToken;
@@ -132,7 +150,7 @@
     <div class="chat-status-actions">
       <div class="usage-summary" title={formatUsageSummary(usage)}>{formatUsageSummary(usage)}</div>
       <div class="model-summary" title={formatModelLabel(usage.modelId)}>{formatModelLabel(usage.modelId)}</div>
-      <button class="ghost-button" type="button" on:click={() => dispatch('abort')} disabled={!isStreaming}>
+      <button class="ghost-button" type="button" on:click={() => dispatch('abort')} disabled={!canAbort}>
         Stop run
       </button>
     </div>
@@ -203,13 +221,13 @@
     </label>
     <div class="composer-footer">
       <div class="composer-actions">
-        <button class="secondary-button compact" type="button" on:click={() => dispatch('openCommands')} disabled={isStreaming}>
+        <button class="secondary-button compact" type="button" on:click={() => dispatch('openCommands')} disabled={runtimePhase !== 'idle'}>
           CMD
         </button>
         <span class="subdued">{formatModelLabel(usage.modelId)} {formatUsageSummary(usage)}</span>
       </div>
       <button class="primary-button" type="button" on:click={submit} disabled={prompt.trim().length === 0}>
-        {isStreaming ? 'Send follow-up' : 'Send prompt'}
+        {runtimePhase !== 'idle' ? 'Send follow-up' : 'Send prompt'}
       </button>
     </div>
   </div>

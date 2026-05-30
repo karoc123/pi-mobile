@@ -82,6 +82,8 @@ Written in TypeScript running on Node.js, the backend acts as a high-fidelity ro
 - **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process, while `~/.pi/agent` from the host is mounted into the container so the runtime inherits existing pi.dev logins and model configuration. CLI JSON/RPC modes remain possible fallbacks, but are not the primary kickoff integration.
 - **`GitService`:** Parses the standard stream of `git diff -U3` into structural JSON objects, making raw line offsets and hunk chunks readable for the frontend.
 - **`FileService`:** Directs file writing from the mobile editor and monitors directory workspaces dynamically using `chokidar` for seamless change synchronization.
+- **`Watcher Guardrails`:** Internal runtime directories (`.pi-mobile`, `.pi`) plus configured logs/session paths are ignored by the filesystem watcher so backend artifacts cannot trigger feedback loops (for example repeated diff reload cascades).
+- **`Runtime Phase Contract`:** Agent status is no longer modeled as a single boolean. The backend now exposes a phase model (`idle`, `streaming`, `queued`, `compacting`, `retrying`, `bash-running`) together with queue depth and retry/bash flags for richer mobile state rendering.
 
 ### 2.4 Observability & Failure Diagnostics
 
@@ -104,7 +106,8 @@ When a file is manually modified via the integrated touchscreen editor:
 1. The frontend dispatches the updated contents to `POST /api/files/write`.
 2. The backend commits the raw string directly into the targeted file within the `/workspace` directory.
 3. The filesystem watcher (`chokidar`) catches the write event and instantly broadcasts a global WebSocket notification to the client: `{ "type": "workspace_changed", "payload": { ... } }`.
-4. The frontend fetches the updated diff context. Because Git remains the _Single Source of Truth_, your manual touch-ups instantly populate the diff view alongside the agent's work.
+4. The frontend schedules a debounced diff refresh and only reloads diff data while the diff view is active, preventing burst traffic during rapid file writes.
+5. Because Git remains the _Single Source of Truth_, your manual touch-ups instantly populate the diff view alongside the agent's work.
 
 ### 3.2 Granular Code-Block Invalidation (Hunk-Level Revert)
 
@@ -139,6 +142,15 @@ To avoid carrying forward long-running conversation context, the chat UI exposes
 1. The frontend calls `POST /api/agent/new-session`.
 2. The backend disposes the active `AgentSession`, clears in-memory chat/tool state, and creates a brand-new SDK session via `SessionManager.create(...)` for the current repository.
 3. The frontend refreshes `/api/agent/state`, so messages/tool activity become empty and usage/cost counters restart from zero for the new session.
+
+### 3.5 Agent Status & Command Resilience
+
+To keep runtime status accurate even when WebSocket delivery is delayed, status synchronization combines push and pull paths:
+
+1. The backend emits `agent_status` envelopes for streaming, queue, compaction, retry, bash, and idle transitions.
+2. The frontend consumes `runtimePhase` and related fields to render precise labels instead of a coarse "working" state.
+3. If WebSocket is disconnected or the runtime is non-idle, the client starts fallback polling of `GET /api/agent/state` until stable idle conditions return.
+4. `GET /api/agent/command-state` now includes discovered slash commands (extension, prompt, skill sources) plus queue/retry/bash indicators used by the command palette.
 
 ---
 

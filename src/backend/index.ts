@@ -49,6 +49,9 @@ const watcherService = new WatcherService(
     } satisfies WebsocketEnvelope);
   },
   logService.child({ source: "watcher" }),
+  {
+    ignoredAbsolutePaths: [config.logsDirPath, config.piSessionDir].filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0),
+  },
 );
 
 const repositoryRuntimeService = new RepositoryRuntimeService(workspaceService, watcherService, piAgentService, (repo) => {

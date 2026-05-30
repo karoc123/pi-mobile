@@ -20,12 +20,19 @@
 
   let selectedCommand = SLASH_COMMANDS[0]?.command ?? '/model';
   let availableModels: AgentModelOption[] = [];
+  let sessionNameDraft = '';
+  let bashCommandDraft = 'git status --short';
+  let bashExcludeFromContext = false;
 
   $: if (open && !SLASH_COMMANDS.some((entry) => entry.command === selectedCommand)) {
     selectedCommand = SLASH_COMMANDS[0]?.command ?? '/model';
   }
 
   $: availableModels = state?.models.filter((model) => model.available || model.isCurrent) ?? [];
+
+  $: if (open && selectedCommand === '/name' && sessionNameDraft.trim().length === 0) {
+    sessionNameDraft = state?.session?.sessionName ?? '';
+  }
 
   function formatTimestamp(value: string) {
     return new Date(value).toLocaleString([], {
@@ -123,6 +130,19 @@
                     <strong>Session file</strong>
                     <span>{state.session.sessionFile ?? 'No persisted session file yet'}</span>
                   </article>
+                  <article class="command-summary-card">
+                    <strong>Session name</strong>
+                    <span>{state.session.sessionName ?? 'No custom session name set'}</span>
+                  </article>
+                  <article class="command-summary-card">
+                    <strong>Runtime status</strong>
+                    <span>
+                      {state.isCompacting ? 'Compacting' : state.isRetrying ? 'Retrying' : state.isBashRunning ? 'Running bash' : 'Idle'}
+                      {#if state.pendingMessageCount > 0}
+                        · queue {state.pendingMessageCount}
+                      {/if}
+                    </span>
+                  </article>
                 {:else}
                   <p class="empty-state small">No active session metadata is available yet.</p>
                 {/if}
@@ -169,12 +189,140 @@
                   </button>
                 </section>
               </div>
+            {:else if selectedCommand === '/queue'}
+              <div class="command-stack">
+                <p class="subdued">Control how queued steering and follow-up messages are delivered.</p>
+                <article class="command-summary-card">
+                  <strong>Pending queue</strong>
+                  <span>{state.pendingMessageCount} message{state.pendingMessageCount === 1 ? '' : 's'}</span>
+                </article>
+                <section class="menu-section">
+                  <p class="eyebrow">Steering mode</p>
+                  <div class="theme-toggle-group" role="group" aria-label="Steering mode">
+                    <button
+                      class:selected={state.steeringMode === 'all'}
+                      class="theme-toggle"
+                      type="button"
+                      disabled={busy || state.steeringMode === 'all'}
+                      on:click={() => dispatch('execute', { request: { command: 'set-steering-mode', mode: 'all' } })}
+                    >
+                      all
+                    </button>
+                    <button
+                      class:selected={state.steeringMode === 'one-at-a-time'}
+                      class="theme-toggle"
+                      type="button"
+                      disabled={busy || state.steeringMode === 'one-at-a-time'}
+                      on:click={() => dispatch('execute', { request: { command: 'set-steering-mode', mode: 'one-at-a-time' } })}
+                    >
+                      one-at-a-time
+                    </button>
+                  </div>
+                </section>
+                <section class="menu-section">
+                  <p class="eyebrow">Follow-up mode</p>
+                  <div class="theme-toggle-group" role="group" aria-label="Follow-up mode">
+                    <button
+                      class:selected={state.followUpMode === 'all'}
+                      class="theme-toggle"
+                      type="button"
+                      disabled={busy || state.followUpMode === 'all'}
+                      on:click={() => dispatch('execute', { request: { command: 'set-follow-up-mode', mode: 'all' } })}
+                    >
+                      all
+                    </button>
+                    <button
+                      class:selected={state.followUpMode === 'one-at-a-time'}
+                      class="theme-toggle"
+                      type="button"
+                      disabled={busy || state.followUpMode === 'one-at-a-time'}
+                      on:click={() => dispatch('execute', { request: { command: 'set-follow-up-mode', mode: 'one-at-a-time' } })}
+                    >
+                      one-at-a-time
+                    </button>
+                  </div>
+                </section>
+              </div>
+            {:else if selectedCommand === '/retry'}
+              <div class="command-stack">
+                <p class="subdued">Control automatic retries after transient failures.</p>
+                <article class="command-summary-card">
+                  <strong>Retry status</strong>
+                  <span>{state.isRetrying ? 'Retry in progress' : 'No retry active'}</span>
+                </article>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  disabled={busy}
+                  on:click={() => dispatch('execute', { request: { command: 'set-auto-retry', enabled: !state.autoRetryEnabled } })}
+                >
+                  {state.autoRetryEnabled ? 'Disable auto retry' : 'Enable auto retry'}
+                </button>
+                <button class="ghost-button" type="button" disabled={busy || !state.isRetrying} on:click={() => dispatch('execute', { request: { command: 'abort-retry' } })}>
+                  Abort retry
+                </button>
+              </div>
             {:else if selectedCommand === '/compact'}
               <div class="command-stack">
                 <p class="subdued">Run a manual context compaction for the current session.</p>
                 <button class="primary-button" type="button" disabled={busy} on:click={() => dispatch('execute', { request: { command: 'compact' } })}>
                   Compact now
                 </button>
+              </div>
+            {:else if selectedCommand === '/bash'}
+              <div class="command-stack">
+                <p class="subdued">Run a direct bash command inside the active repository.</p>
+                <label class="field-label" for="command-bash-input">Command</label>
+                <input id="command-bash-input" class="text-input" type="text" bind:value={bashCommandDraft} placeholder="git status --short" />
+                <label class="subdued">
+                  <input type="checkbox" bind:checked={bashExcludeFromContext} />
+                  Exclude command output from next prompt context
+                </label>
+                <div class="theme-toggle-group" role="group" aria-label="Bash actions">
+                  <button
+                    class="primary-button"
+                    type="button"
+                    disabled={busy || bashCommandDraft.trim().length === 0}
+                    on:click={() => dispatch('execute', {
+                      request: {
+                        command: 'run-bash',
+                        commandText: bashCommandDraft,
+                        excludeFromContext: bashExcludeFromContext,
+                      },
+                    })}
+                  >
+                    Run bash
+                  </button>
+                  <button class="secondary-button" type="button" disabled={busy || !state.isBashRunning} on:click={() => dispatch('execute', { request: { command: 'abort-bash' } })}>
+                    Abort bash
+                  </button>
+                </div>
+              </div>
+            {:else if selectedCommand === '/name'}
+              <div class="command-stack">
+                <p class="subdued">Set a custom display name for the current session.</p>
+                <label class="field-label" for="session-name-input">Session name</label>
+                <input id="session-name-input" class="text-input" type="text" bind:value={sessionNameDraft} placeholder="Feature planning" />
+                <button
+                  class="primary-button"
+                  type="button"
+                  disabled={busy || sessionNameDraft.trim().length === 0}
+                  on:click={() => dispatch('execute', { request: { command: 'set-session-name', name: sessionNameDraft } })}
+                >
+                  Save session name
+                </button>
+              </div>
+            {:else if selectedCommand === '/export'}
+              <div class="command-stack">
+                <p class="subdued">Export the current session branch for sharing or archival.</p>
+                <div class="theme-toggle-group" role="group" aria-label="Export session">
+                  <button class="primary-button" type="button" disabled={busy} on:click={() => dispatch('execute', { request: { command: 'export-session', format: 'html' } })}>
+                    Export HTML
+                  </button>
+                  <button class="secondary-button" type="button" disabled={busy} on:click={() => dispatch('execute', { request: { command: 'export-session', format: 'jsonl' } })}>
+                    Export JSONL
+                  </button>
+                </div>
               </div>
             {:else if selectedCommand === '/resume'}
               <div class="command-stack">
@@ -256,6 +404,20 @@
                       </div>
                       <span class="command-meta">Fork</span>
                     </button>
+                  {/each}
+                {/if}
+              </div>
+            {:else if selectedCommand === '/commands'}
+              <div class="command-stack">
+                <p class="subdued">Runtime slash commands discovered from extensions, prompts, and skills.</p>
+                {#if state.availableCommands.length === 0}
+                  <p class="empty-state small">No runtime slash commands discovered for this repository yet.</p>
+                {:else}
+                  {#each state.availableCommands as command}
+                    <article class="command-summary-card">
+                      <strong>/{command.name}</strong>
+                      <span>{command.description ?? 'No description available'} · {command.source}</span>
+                    </article>
                   {/each}
                 {/if}
               </div>

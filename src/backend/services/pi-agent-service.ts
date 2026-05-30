@@ -7,7 +7,10 @@ import type {
   AgentCommandRequest,
   AgentCommandResponse,
   AgentCommandState,
+  AgentQueueMode,
   AgentResumeSession,
+  AgentRuntimePhase,
+  AgentSlashCommand,
   AgentSnapshot,
   AgentThinkingLevel,
   AgentTreeEntry,
@@ -34,6 +37,12 @@ export class PiAgentService {
   private activeAssistantMessageId: string | null = null;
   private mockReplyTimeout: NodeJS.Timeout | null = null;
   private mockStreaming = false;
+  private mockSteeringMode: AgentQueueMode = "all";
+  private mockFollowUpMode: AgentQueueMode = "one-at-a-time";
+  private mockAutoRetryEnabled = false;
+  private mockIsRetrying = false;
+  private mockIsBashRunning = false;
+  private mockSessionName: string | null = null;
   private mockUsage: AgentUsage = createUsageSummary("mock/session", true);
   private activeCostSessionKey: string | null = null;
   private activeCostSessionStartedAt: string | null = null;
@@ -50,10 +59,12 @@ export class PiAgentService {
   }
 
   getSnapshot(): AgentSnapshot {
+    const runtimeState = this.getRuntimeState();
+
     return {
       repo: this.currentRepo,
       isConfigured: this.currentRepo !== null,
-      isStreaming: this.mockStreaming || this.session?.isStreaming || false,
+      ...runtimeState,
       messages: this.messages,
       tools: this.tools,
       lastError: this.lastError,
@@ -75,6 +86,7 @@ export class PiAgentService {
     const currentModel = session.model;
     const currentSessionFile = session.sessionFile;
     const resumeSessions = await SessionManager.list(this.currentRepo.absolutePath, this.config.piSessionDir);
+    const availableCommands = this.getAvailableSlashCommands(session);
 
     return {
       session: {
@@ -113,7 +125,15 @@ export class PiAgentService {
         value: level as AgentThinkingLevel,
         isCurrent: session.thinkingLevel === level,
       })),
+      steeringMode: session.steeringMode,
+      followUpMode: session.followUpMode,
       autoCompactEnabled: session.autoCompactionEnabled,
+      autoRetryEnabled: session.autoRetryEnabled,
+      isRetrying: session.isRetrying,
+      isCompacting: session.isCompacting,
+      isBashRunning: session.isBashRunning,
+      pendingMessageCount: session.pendingMessageCount,
+      availableCommands,
       resumeSessions: resumeSessions.sort((left, right) => right.modified.getTime() - left.modified.getTime()).map((entry) => toResumeSession(entry, currentSessionFile)),
       treeEntries: flattenTreeEntries(session.sessionManager.getTree(), session.sessionManager.getLeafId()),
       forkEntries: session.getUserMessagesForForking().map((entry) => ({
@@ -171,6 +191,46 @@ export class PiAgentService {
         };
       }
 
+      case "set-steering-mode": {
+        session.setSteeringMode(request.mode);
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: `Steering mode set to ${request.mode}.`,
+          prompt: null,
+        };
+      }
+
+      case "set-follow-up-mode": {
+        session.setFollowUpMode(request.mode);
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: `Follow-up mode set to ${request.mode}.`,
+          prompt: null,
+        };
+      }
+
+      case "set-auto-retry": {
+        session.setAutoRetryEnabled(request.enabled);
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: request.enabled ? "Auto retry enabled." : "Auto retry disabled.",
+          prompt: null,
+        };
+      }
+
+      case "abort-retry": {
+        session.abortRetry();
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: "Retry aborted.",
+          prompt: null,
+        };
+      }
+
       case "compact": {
         const customInstructions = typeof request.customInstructions === "string" && request.customInstructions.trim().length > 0 ? request.customInstructions.trim() : undefined;
         await session.compact(customInstructions);
@@ -179,6 +239,69 @@ export class PiAgentService {
         this.emitStatus();
         return {
           message: "Context compacted.",
+          prompt: null,
+        };
+      }
+
+      case "run-bash": {
+        const commandText = request.commandText.trim();
+
+        if (commandText.length === 0) {
+          throw new Error("Bash command cannot be empty.");
+        }
+
+        const runPromise = session.executeBash(commandText, undefined, {
+          excludeFromContext: request.excludeFromContext,
+        });
+
+        this.lastError = null;
+        this.emitStatus();
+
+        const result = await runPromise;
+        this.messages = hydrateMessagesFromSession(session.messages);
+        this.emitStatus();
+
+        return {
+          message: formatBashResultMessage(result.exitCode, result.cancelled, result.truncated),
+          prompt: null,
+        };
+      }
+
+      case "abort-bash": {
+        session.abortBash();
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: "Bash command aborted.",
+          prompt: null,
+        };
+      }
+
+      case "set-session-name": {
+        const nextName = request.name.trim();
+
+        if (nextName.length === 0) {
+          throw new Error("Session name cannot be empty.");
+        }
+
+        session.setSessionName(nextName);
+        this.lastError = null;
+        this.emitStatus();
+        return {
+          message: `Session renamed to \"${nextName}\".`,
+          prompt: null,
+        };
+      }
+
+      case "export-session": {
+        const outputPath = typeof request.outputPath === "string" && request.outputPath.trim().length > 0 ? request.outputPath.trim() : undefined;
+        const exportedPath = request.format === "html" ? await session.exportToHtml(outputPath) : session.exportToJsonl(outputPath);
+
+        this.lastError = null;
+        this.emitStatus();
+
+        return {
+          message: `Session exported to ${exportedPath}.`,
           prompt: null,
         };
       }
@@ -254,6 +377,9 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
+    this.mockSessionName = null;
+    this.mockIsRetrying = false;
+    this.mockIsBashRunning = false;
     this.mockUsage = createUsageSummary(this.config.piMockMode ? "mock/session" : null, this.config.piMockMode);
     await this.resetSession();
     if (!this.config.piMockMode) {
@@ -314,6 +440,9 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
+    this.mockSessionName = null;
+    this.mockIsRetrying = false;
+    this.mockIsBashRunning = false;
     this.mockUsage = createUsageSummary(this.config.piMockMode ? "mock/session" : null, this.config.piMockMode);
 
     await this.resetSession();
@@ -581,7 +710,17 @@ export class PiAgentService {
       return;
     }
 
-    if (event.type === "agent_end" || event.type === "turn_end") {
+    if (
+      event.type === "agent_start" ||
+      event.type === "turn_start" ||
+      event.type === "agent_end" ||
+      event.type === "turn_end" ||
+      event.type === "queue_update" ||
+      event.type === "compaction_start" ||
+      event.type === "compaction_end" ||
+      event.type === "auto_retry_start" ||
+      event.type === "auto_retry_end"
+    ) {
       this.emitStatus();
     }
   }
@@ -604,17 +743,77 @@ export class PiAgentService {
   }
 
   private emitStatus() {
+    const runtimeState = this.getRuntimeState();
+
     this.persistCostSnapshot();
     this.broadcast({
       type: "agent_status",
       payload: {
         isConfigured: this.currentRepo !== null,
-        isStreaming: this.mockStreaming || this.session?.isStreaming || false,
+        ...runtimeState,
         lastError: this.lastError,
         repo: this.currentRepo,
         usage: this.getUsageSummary(),
       },
     });
+  }
+
+  private getRuntimeState() {
+    const isStreaming = this.config.piMockMode ? this.mockStreaming : this.session?.isStreaming || false;
+    const isCompacting = this.config.piMockMode ? false : this.session?.isCompacting || false;
+    const isRetrying = this.config.piMockMode ? this.mockIsRetrying : this.session?.isRetrying || false;
+    const isBashRunning = this.config.piMockMode ? this.mockIsBashRunning : this.session?.isBashRunning || false;
+    const pendingMessageCount = this.config.piMockMode ? 0 : this.session?.pendingMessageCount || 0;
+
+    return {
+      isStreaming,
+      runtimePhase: deriveRuntimePhase({ isStreaming, isCompacting, isRetrying, isBashRunning, pendingMessageCount }),
+      pendingMessageCount,
+      isCompacting,
+      isRetrying,
+      isBashRunning,
+    } satisfies {
+      isStreaming: boolean;
+      runtimePhase: AgentRuntimePhase;
+      pendingMessageCount: number;
+      isCompacting: boolean;
+      isRetrying: boolean;
+      isBashRunning: boolean;
+    };
+  }
+
+  private getAvailableSlashCommands(session: AgentSession): AgentSlashCommand[] {
+    try {
+      const extensionCommands: AgentSlashCommand[] = session.extensionRunner.getRegisteredCommands().map((command) => ({
+        name: command.invocationName,
+        description: command.description ?? null,
+        source: "extension",
+      }));
+
+      const promptCommands: AgentSlashCommand[] = session.promptTemplates.map((template) => ({
+        name: template.name,
+        description: template.description ?? null,
+        source: "prompt",
+      }));
+
+      const skillCommands: AgentSlashCommand[] = session.resourceLoader.getSkills().skills.map((skill) => ({
+        name: `skill:${skill.name}`,
+        description: skill.description ?? null,
+        source: "skill",
+      }));
+
+      return [...extensionCommands, ...promptCommands, ...skillCommands].sort((left, right) => left.name.localeCompare(right.name));
+    } catch (error) {
+      this.logger.warn("Could not resolve slash commands for command palette.", {
+        event: "slash_commands_unavailable",
+        repo: this.currentRepo?.absolutePath ?? null,
+        details: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+
+      return [];
+    }
   }
 
   private async resetSession() {
@@ -626,6 +825,9 @@ export class PiAgentService {
     }
 
     this.mockStreaming = false;
+    this.mockIsRetrying = false;
+    this.mockIsBashRunning = false;
+    this.mockSessionName = null;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.session?.dispose();
@@ -801,7 +1003,7 @@ export class PiAgentService {
         ? {
             sessionFile: null,
             sessionId: null,
-            sessionName: null,
+            sessionName: this.mockSessionName,
             userMessages,
             assistantMessages,
             toolCalls: 0,
@@ -811,7 +1013,15 @@ export class PiAgentService {
         : null,
       models: [],
       thinkingLevels: [],
+      steeringMode: this.mockSteeringMode,
+      followUpMode: this.mockFollowUpMode,
       autoCompactEnabled: this.mockUsage.autoCompactEnabled,
+      autoRetryEnabled: this.mockAutoRetryEnabled,
+      isRetrying: this.mockIsRetrying,
+      isCompacting: false,
+      isBashRunning: this.mockIsBashRunning,
+      pendingMessageCount: 0,
+      availableCommands: [],
       resumeSessions: [],
       treeEntries: [],
       forkEntries: [],
@@ -824,6 +1034,9 @@ export class PiAgentService {
         this.messages = [];
         this.tools = [];
         this.lastError = null;
+        this.mockSessionName = null;
+        this.mockIsRetrying = false;
+        this.mockIsBashRunning = false;
         this.mockUsage = createUsageSummary("mock/session", this.mockUsage.autoCompactEnabled);
         this.emitStatus();
         return {
@@ -840,6 +1053,101 @@ export class PiAgentService {
         this.emitStatus();
         return {
           message: request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.",
+          prompt: null,
+        };
+      }
+
+      case "set-steering-mode": {
+        this.mockSteeringMode = request.mode;
+        this.emitStatus();
+        return {
+          message: `Steering mode set to ${request.mode}.`,
+          prompt: null,
+        };
+      }
+
+      case "set-follow-up-mode": {
+        this.mockFollowUpMode = request.mode;
+        this.emitStatus();
+        return {
+          message: `Follow-up mode set to ${request.mode}.`,
+          prompt: null,
+        };
+      }
+
+      case "set-auto-retry": {
+        this.mockAutoRetryEnabled = request.enabled;
+        this.emitStatus();
+        return {
+          message: request.enabled ? "Auto retry enabled." : "Auto retry disabled.",
+          prompt: null,
+        };
+      }
+
+      case "abort-retry": {
+        this.mockIsRetrying = false;
+        this.emitStatus();
+        return {
+          message: "Retry aborted.",
+          prompt: null,
+        };
+      }
+
+      case "compact": {
+        this.emitStatus();
+        return {
+          message: "Context compacted.",
+          prompt: null,
+        };
+      }
+
+      case "run-bash": {
+        const commandText = request.commandText.trim();
+
+        if (commandText.length === 0) {
+          throw new Error("Bash command cannot be empty.");
+        }
+
+        this.mockIsBashRunning = true;
+        this.emitStatus();
+
+        this.mockIsBashRunning = false;
+        this.emitStatus();
+
+        return {
+          message: "Mock bash completed (exit code 0).",
+          prompt: null,
+        };
+      }
+
+      case "abort-bash": {
+        this.mockIsBashRunning = false;
+        this.emitStatus();
+        return {
+          message: "Bash command aborted.",
+          prompt: null,
+        };
+      }
+
+      case "set-session-name": {
+        const nextName = request.name.trim();
+
+        if (nextName.length === 0) {
+          throw new Error("Session name cannot be empty.");
+        }
+
+        this.mockSessionName = nextName;
+        this.emitStatus();
+        return {
+          message: `Session renamed to \"${nextName}\".`,
+          prompt: null,
+        };
+      }
+
+      case "export-session": {
+        this.emitStatus();
+        return {
+          message: `Session exported to mock-session.${request.format === "html" ? "html" : "jsonl"}.`,
           prompt: null,
         };
       }
@@ -917,7 +1225,15 @@ function createEmptyCommandState(): AgentCommandState {
     session: null,
     models: [],
     thinkingLevels: [],
+    steeringMode: "all",
+    followUpMode: "one-at-a-time",
     autoCompactEnabled: false,
+    autoRetryEnabled: false,
+    isRetrying: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    availableCommands: [],
     resumeSessions: [],
     treeEntries: [],
     forkEntries: [],
@@ -1084,6 +1400,41 @@ function summarizeText(text: string) {
   }
 
   return normalized.slice(0, 120);
+}
+
+function deriveRuntimePhase(input: { isStreaming: boolean; isCompacting: boolean; isRetrying: boolean; isBashRunning: boolean; pendingMessageCount: number }): AgentRuntimePhase {
+  if (input.isRetrying) {
+    return "retrying";
+  }
+
+  if (input.isCompacting) {
+    return "compacting";
+  }
+
+  if (input.isBashRunning) {
+    return "bash-running";
+  }
+
+  if (input.isStreaming) {
+    return "streaming";
+  }
+
+  if (input.pendingMessageCount > 0) {
+    return "queued";
+  }
+
+  return "idle";
+}
+
+function formatBashResultMessage(exitCode: number | undefined, cancelled: boolean, truncated: boolean) {
+  const exitLabel = typeof exitCode === "number" ? String(exitCode) : "n/a";
+  const suffix = truncated ? " Output was truncated." : "";
+
+  if (cancelled) {
+    return `Bash run cancelled (exit ${exitLabel}).${suffix}`;
+  }
+
+  return `Bash run finished with exit ${exitLabel}.${suffix}`;
 }
 
 function createUsageSummary(modelId: string | null, autoCompactEnabled: boolean): AgentUsage {

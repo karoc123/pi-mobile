@@ -41,6 +41,8 @@
 
   const themeStorageKey = 'pimobile.theme';
   const backendHealthPollIntervalMs = 10_000;
+  const agentStatePollIntervalMs = 7_000;
+  const diffRefreshDebounceMs = 450;
   const logStreamRetryDelayMs = 1_500;
   const maxVisibleLogEntries = 600;
 
@@ -63,6 +65,11 @@
     repo: null,
     isConfigured: false,
     isStreaming: false,
+    runtimePhase: 'idle',
+    pendingMessageCount: 0,
+    isCompacting: false,
+    isRetrying: false,
+    isBashRunning: false,
     messages: [],
     tools: [],
     lastError: null,
@@ -99,6 +106,8 @@
 
   let diffLoading = false;
   let diffFiles: DiffFile[] = [];
+  let diffRefreshPending = false;
+  let diffReloadTimer: number | null = null;
   let revertingHunkId: string | null = null;
   let committing = false;
   let pulling = false;
@@ -125,6 +134,7 @@
   let backendResourceChecks: BackendResourceCheck[] = [];
   let backendResourcesAccessible = false;
   let backendHealthTimer: number | null = null;
+  let agentStatePollTimer: number | null = null;
 
   let bannerMessage = '';
   let bannerTone: 'info' | 'success' | 'error' = 'info';
@@ -173,9 +183,15 @@
     void initialize();
 
     return () => {
+      stopAgentStatePolling();
       closeSocket();
       stopBackendHealthPolling();
       stopLogStream();
+
+      if (diffReloadTimer !== null) {
+        window.clearTimeout(diffReloadTimer);
+        diffReloadTimer = null;
+      }
     };
   });
 
@@ -183,8 +199,22 @@
     void ensureDiffViewLoaded();
   }
 
+  $: if (currentRepo && view === 'diff' && diffRefreshPending) {
+    scheduleDiffReload();
+  }
+
   $: if (currentRepo && view === 'editor') {
     void ensureEditorViewLoaded();
+  }
+
+  $: {
+    const shouldPollAgentState = authenticated && !!currentRepo && (socketStatus !== 'connected' || agentSnapshot.runtimePhase !== 'idle');
+
+    if (shouldPollAgentState) {
+      startAgentStatePolling();
+    } else {
+      stopAgentStatePolling();
+    }
   }
 
   $: if (authenticated && view === 'logs' && logLive) {
@@ -468,7 +498,7 @@
     }
 
     if (event.type === 'workspace_changed') {
-      void loadDiff();
+      scheduleDiffReload();
       if (selectedDocument && !editorDirty && selectedDocument.path === event.payload.path) {
         void openFile(selectedDocument.path);
       }
@@ -487,6 +517,7 @@
       selectedDocument = null;
       draftContent = '';
       editorDirty = false;
+      diffRefreshPending = false;
       filePath = '.';
       view = view === 'costs' || view === 'logs' ? view : 'chat';
       void refreshCurrentRepoData();
@@ -624,12 +655,14 @@
     void loadCosts();
   }
 
-  async function loadAgentState() {
+  async function loadAgentState(options: { silent?: boolean } = {}) {
     try {
       agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
       currentRepo = agentSnapshot.repo;
     } catch (error) {
-      handleApiFailure(error);
+      if (!options.silent) {
+        handleApiFailure(error);
+      }
     }
   }
 
@@ -659,9 +692,32 @@
     await loadCommandState();
   }
 
+  function scheduleDiffReload(force = false) {
+    if (!currentRepo) {
+      return;
+    }
+
+    if (!force && view !== 'diff') {
+      diffRefreshPending = true;
+      return;
+    }
+
+    diffRefreshPending = false;
+
+    if (diffReloadTimer !== null) {
+      window.clearTimeout(diffReloadTimer);
+    }
+
+    diffReloadTimer = window.setTimeout(() => {
+      diffReloadTimer = null;
+      void loadDiff();
+    }, diffRefreshDebounceMs);
+  }
+
   async function loadDiff() {
     if (!currentRepo) {
       diffFiles = [];
+      diffRefreshPending = false;
       return;
     }
 
@@ -670,6 +726,7 @@
     try {
       const response = await apiFetch<{ files: DiffFile[] }>('/api/git/diff');
       diffFiles = response.files;
+      diffRefreshPending = false;
     } catch (error) {
       handleApiFailure(error);
     } finally {
@@ -769,9 +826,31 @@
         showBanner(response.message, 'success');
       }
 
-      if (request.command === 'set-model' || request.command === 'set-thinking' || request.command === 'set-auto-compact') {
+      const refreshStateCommands: AgentCommandRequest['command'][] = [
+        'set-model',
+        'set-thinking',
+        'set-auto-compact',
+        'set-steering-mode',
+        'set-follow-up-mode',
+        'set-auto-retry',
+        'abort-retry',
+        'run-bash',
+        'abort-bash',
+        'set-session-name',
+      ];
+      const closePaletteCommands: AgentCommandRequest['command'][] = [
+        'new-session',
+        'resume-session',
+        'navigate-tree',
+        'fork-session',
+        'export-session',
+      ];
+
+      if (refreshStateCommands.includes(request.command)) {
         await loadCommandState();
-      } else {
+      }
+
+      if (closePaletteCommands.includes(request.command)) {
         commandPaletteOpen = false;
         commandState = null;
       }
@@ -1140,6 +1219,25 @@
     }
   }
 
+  function startAgentStatePolling() {
+    if (agentStatePollTimer !== null) {
+      return;
+    }
+
+    void loadAgentState({ silent: true });
+
+    agentStatePollTimer = window.setInterval(() => {
+      void loadAgentState({ silent: true });
+    }, agentStatePollIntervalMs);
+  }
+
+  function stopAgentStatePolling() {
+    if (agentStatePollTimer !== null) {
+      window.clearInterval(agentStatePollTimer);
+      agentStatePollTimer = null;
+    }
+  }
+
   async function checkBackendHealth() {
     try {
       const health = await apiFetch<BackendHealthResponse>('/api/health');
@@ -1193,6 +1291,13 @@
     workspaceEntries = [];
     workspacePath = '.';
     diffFiles = [];
+    diffRefreshPending = false;
+
+    if (diffReloadTimer !== null) {
+      window.clearTimeout(diffReloadTimer);
+      diffReloadTimer = null;
+    }
+
     fileEntries = [];
     filePath = '.';
     selectedDocument = null;
@@ -1212,6 +1317,7 @@
     stopLogStream();
     closeSocket();
     stopBackendHealthPolling();
+    stopAgentStatePolling();
     socketReconnectAttempt = 0;
     backendResourceChecks = [];
     backendResourcesAccessible = false;
@@ -1356,7 +1462,9 @@
         <ChatView
           messages={agentSnapshot.messages}
           tools={agentSnapshot.tools}
-          isStreaming={agentSnapshot.isStreaming}
+          runtimePhase={agentSnapshot.runtimePhase}
+          pendingMessageCount={agentSnapshot.pendingMessageCount}
+          canAbort={agentSnapshot.runtimePhase !== 'idle'}
           lastError={agentSnapshot.lastError}
           usage={agentSnapshot.usage}
           prefillPrompt={composerPrefill}

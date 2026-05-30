@@ -7,12 +7,18 @@ export const SLASH_COMMANDS: SlashCommandSuggestion[] = [
   { command: "/model", description: "Switch models" },
   { command: "/session", description: "Show session info and stats" },
   { command: "/settings", description: "Adjust theme and thinking" },
+  { command: "/queue", description: "Control steer/follow-up queue" },
+  { command: "/retry", description: "Manage automatic retries" },
   { command: "/compact", description: "Compact the current context" },
+  { command: "/bash", description: "Run direct bash commands" },
+  { command: "/name", description: "Rename the active session" },
+  { command: "/export", description: "Export current session" },
   { command: "/resume", description: "Open a previous session" },
   { command: "/new", description: "Start a fresh session" },
   { command: "/copy", description: "Copy the last assistant reply" },
   { command: "/tree", description: "Jump within the session tree" },
   { command: "/fork", description: "Continue from an earlier prompt" },
+  { command: "/commands", description: "List runtime slash commands" },
 ];
 
 export type SlashCommandQuery = {
