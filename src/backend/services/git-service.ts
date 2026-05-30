@@ -7,6 +7,8 @@ type GitIdentity = {
   email: string;
 };
 
+const DIFF_ARGS = ["--no-ext-diff", "--patch", "--unified=3", "--no-color"];
+
 export class GitService {
   private readonly gitEnv?: NodeJS.ProcessEnv;
 
@@ -23,8 +25,8 @@ export class GitService {
   }
 
   async getDiff(repo: SelectedRepo) {
-    const { stdout } = await this.runGit(repo, ["diff", "--no-ext-diff", "--patch", "--unified=3", "--no-color"]);
-    return parseUnifiedDiff(stdout);
+    const [trackedDiff, untrackedDiff] = await Promise.all([this.getTrackedDiff(repo), this.getUntrackedDiff(repo)]);
+    return parseUnifiedDiff([trackedDiff, untrackedDiff].filter(Boolean).join("\n"));
   }
 
   async revertHunk(repo: SelectedRepo, diff: string) {
@@ -73,7 +75,57 @@ export class GitService {
     return summarizeSyncOutput("Push completed.", result.stdout, result.stderr);
   }
 
-  private runGit(repo: SelectedRepo, args: string[], options: { input?: string } = {}) {
+  private async getTrackedDiff(repo: SelectedRepo) {
+    const hasHead = await this.hasHeadCommit(repo);
+
+    if (hasHead) {
+      const { stdout } = await this.runGit(repo, ["diff", ...DIFF_ARGS, "HEAD"]);
+      return stdout;
+    }
+
+    const [unstaged, staged] = await Promise.all([
+      this.runGit(repo, ["diff", ...DIFF_ARGS]),
+      this.runGit(repo, ["diff", "--cached", ...DIFF_ARGS]),
+    ]);
+
+    return `${unstaged.stdout}\n${staged.stdout}`;
+  }
+
+  private async getUntrackedDiff(repo: SelectedRepo) {
+    const { stdout } = await this.runGit(repo, ["ls-files", "--others", "--exclude-standard", "-z"]);
+    const untrackedPaths = stdout
+      .split("\0")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    if (untrackedPaths.length === 0) {
+      return "";
+    }
+
+    const diffs = await Promise.all(
+      untrackedPaths.map(async (relativePath) => {
+        const result = await this.runGit(
+          repo,
+          ["diff", ...DIFF_ARGS, "--", "/dev/null", relativePath],
+          { allowedExitCodes: [0, 1] },
+        );
+        return result.stdout;
+      }),
+    );
+
+    return diffs.join("\n");
+  }
+
+  private async hasHeadCommit(repo: SelectedRepo) {
+    try {
+      await this.runGit(repo, ["rev-parse", "--verify", "HEAD"]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private runGit(repo: SelectedRepo, args: string[], options: { input?: string; allowedExitCodes?: number[] } = {}) {
     return runCommand("git", ["-C", repo.absolutePath, ...args], {
       ...options,
       env: this.gitEnv,

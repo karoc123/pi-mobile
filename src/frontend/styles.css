@@ -1402,6 +1402,33 @@ code {
   align-items: end;
 }
 
+.diff-view .diff-actions {
+  position: relative;
+}
+
+.diff-view .diff-actions-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.45rem);
+  z-index: 4;
+  min-width: 11.5rem;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.45rem;
+  border: 1px solid var(--terminal-panel-border);
+  border-radius: 0.35rem;
+  background: var(--terminal-shell);
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.diff-view .diff-actions-menu .primary-button,
+.diff-view .diff-actions-menu .secondary-button {
+  width: 100%;
+  text-align: left;
+}
+
 .diff-view .status-pill,
 .diff-view .primary-button,
 .diff-view .secondary-button {

@@ -8,7 +8,7 @@ export type CommandResult = {
 export async function runCommand(
   command: string,
   args: string[],
-  options: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv } = {},
+  options: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv; allowedExitCodes?: number[] } = {},
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -33,12 +33,15 @@ export async function runCommand(
     });
 
     child.on("close", (code) => {
-      if (code === 0) {
+      const allowedExitCodes = options.allowedExitCodes ?? [0];
+      const exitCode = code ?? 1;
+
+      if (allowedExitCodes.includes(exitCode)) {
         resolve({ stdout, stderr });
         return;
       }
 
-      reject(new Error(stderr.trim() || stdout.trim() || `Command exited with code ${code ?? 1}.`));
+      reject(new Error(stderr.trim() || stdout.trim() || `Command exited with code ${exitCode}.`));
     });
 
     if (options.input) {

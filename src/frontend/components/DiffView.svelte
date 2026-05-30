@@ -19,7 +19,47 @@
     push: void;
     commit: void;
   }>();
+
+  let actionsOpen = false;
+
+  $: actionsBusy = loading || pulling || pushing || committing;
+
+  function triggerPull() {
+    actionsOpen = false;
+    dispatch('pull');
+  }
+
+  function triggerPush() {
+    actionsOpen = false;
+    dispatch('push');
+  }
+
+  function triggerCommit() {
+    actionsOpen = false;
+    dispatch('commit');
+  }
+
+  function handleWindowClick(event: MouseEvent) {
+    if (!actionsOpen) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest('.diff-actions')) {
+      return;
+    }
+
+    actionsOpen = false;
+  }
+
+  function handleWindowKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      actionsOpen = false;
+    }
+  }
 </script>
+
+<svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
 
 <section class="view-shell diff-view">
   <div class="section-header">
@@ -29,15 +69,32 @@
     </div>
     <div class="header-actions">
       <span class="status-pill">{files.length} file{files.length === 1 ? '' : 's'}</span>
-      <button class="secondary-button" type="button" disabled={loading || pulling || pushing || committing} on:click={() => dispatch('pull')}>
-        {pulling ? 'Pulling…' : 'Pull'}
-      </button>
-      <button class="secondary-button" type="button" disabled={loading || pulling || pushing || committing} on:click={() => dispatch('push')}>
-        {pushing ? 'Pushing…' : 'Push'}
-      </button>
-      <button class="primary-button" type="button" disabled={loading || files.length === 0 || committing || pulling || pushing} on:click={() => dispatch('commit')}>
-        {committing ? 'Committing…' : 'Commit changes'}
-      </button>
+      <div class="diff-actions">
+        <button
+          class="primary-button"
+          type="button"
+          aria-expanded={actionsOpen}
+          aria-label="Open git actions"
+          disabled={actionsBusy}
+          on:click={() => (actionsOpen = !actionsOpen)}
+        >
+          Actions
+        </button>
+
+        {#if actionsOpen}
+          <div class="diff-actions-menu" role="menu" aria-label="Git actions">
+            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPull}>
+              {pulling ? 'Pulling…' : 'Pull'}
+            </button>
+            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPush}>
+              {pushing ? 'Pushing…' : 'Push'}
+            </button>
+            <button class="primary-button" type="button" role="menuitem" disabled={actionsBusy || files.length === 0} on:click={triggerCommit}>
+              {committing ? 'Committing…' : 'Commit changes'}
+            </button>
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
 

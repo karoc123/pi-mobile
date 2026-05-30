@@ -51,6 +51,29 @@ describe("GitService", () => {
     expect(updatedContent).toContain("lambda-changed");
   });
 
+  it("includes untracked files in the diff payload", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-git-"));
+
+    await runCommand("git", ["init"], { cwd: tempDir });
+    await runCommand("git", ["config", "user.email", "test@example.com"], { cwd: tempDir });
+    await runCommand("git", ["config", "user.name", "PiMobile Test"], { cwd: tempDir });
+
+    await writeFile(path.join(tempDir, "tracked.txt"), "tracked\n", "utf8");
+    await runCommand("git", ["add", "tracked.txt"], { cwd: tempDir });
+    await runCommand("git", ["commit", "-m", "initial"], { cwd: tempDir });
+
+    await writeFile(path.join(tempDir, "new-note.md"), "# note\n", "utf8");
+
+    const service = new GitService();
+    const repo = { name: "repo", relativePath: ".", absolutePath: tempDir };
+    const diffFiles = await service.getDiff(repo);
+
+    expect(diffFiles).toHaveLength(1);
+    expect(diffFiles[0].path).toBe("new-note.md");
+    expect(diffFiles[0].status).toBe("added");
+    expect(diffFiles[0].hunks.length).toBeGreaterThan(0);
+  });
+
   it("commits all working tree changes with the provided message", async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-git-"));
 
