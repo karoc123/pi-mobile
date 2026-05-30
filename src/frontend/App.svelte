@@ -7,6 +7,10 @@
     AgentCommandState,
     AgentSnapshot,
     AgentUsage,
+    BackendHealthResponse,
+    BackendLogEntry,
+    BackendLogLevel,
+    BackendLogQueryResponse,
     CostReport,
     DiffFile,
     GitCommitResult,
@@ -22,14 +26,22 @@
   import ChatView from './components/ChatView.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
   import CostView, { type CostRangePreset } from './components/CostView.svelte';
+  import LogView from './components/LogView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
+  import SystemStatusBar from './components/SystemStatusBar.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
-  import { apiFetch } from './lib/api.js';
+  import { ApiRequestError, apiFetch } from './lib/api.js';
 
-  type AppViewName = ViewName | 'costs';
+  type AppViewName = ViewName | 'costs' | 'logs';
   type AsyncViewName = Exclude<ViewName, 'chat'>;
+  type SocketStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
+  type BackendStatus = 'healthy' | 'degraded' | 'unreachable' | 'unknown';
 
   const themeStorageKey = 'pimobile.theme';
+  const backendHealthPollIntervalMs = 10_000;
+  const logStreamRetryDelayMs = 1_500;
+  const maxVisibleLogEntries = 600;
+
   const emptyUsage: AgentUsage = {
     inputTokens: 0,
     outputTokens: 0,
@@ -99,6 +111,14 @@
   let agentSnapshot: AgentSnapshot = emptyAgentSnapshot;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
+  let socketManualClose = false;
+  let socketStatus: SocketStatus = 'offline';
+  let socketReconnectAttempt = 0;
+
+  let backendStatus: BackendStatus = 'unknown';
+  let backendLastSeen: string | null = null;
+  let backendUptimeSeconds: number | null = null;
+  let backendHealthTimer: number | null = null;
 
   let bannerMessage = '';
   let bannerTone: 'info' | 'success' | 'error' = 'info';
@@ -124,15 +144,29 @@
   let costToDate = '';
   let costPreset: CostRangePreset = 'all';
 
+  let logEntries: BackendLogEntry[] = [];
+  let logLoading = false;
+  let logLoadingMore = false;
+  let logHasMore = false;
+  let logViewError = '';
+  let logLive = true;
+  let logStreamConnected = false;
+  let logLevelFilter: BackendLogLevel | '' = '';
+  let logSourceFilter = '';
+  let logSearchFilter = '';
+  let logKnownSources: string[] = [];
+  let logEventSource: EventSource | null = null;
+  let logStreamRetryTimer: number | null = null;
+  let activeLogStreamUrl = '';
+
   onMount(() => {
     initializeTheme();
     void initialize();
 
     return () => {
-      socket?.close();
-      if (reconnectTimer !== null) {
-        window.clearTimeout(reconnectTimer);
-      }
+      closeSocket();
+      stopBackendHealthPolling();
+      stopLogStream();
     };
   });
 
@@ -142,6 +176,12 @@
 
   $: if (currentRepo && view === 'editor') {
     void ensureEditorViewLoaded();
+  }
+
+  $: if (authenticated && view === 'logs' && logLive) {
+    startLogStream();
+  } else {
+    stopLogStream();
   }
 
   async function initialize() {
@@ -155,12 +195,7 @@
         try {
           await bootstrapWorkspace();
         } catch (error) {
-          authenticated = false;
-          currentRepo = null;
-          workspaceEntries = [];
-          workspaceOpen = false;
-          agentSnapshot = emptyAgentSnapshot;
-          loginError = toErrorMessage(error);
+          resetAuthenticatedState(toErrorMessage(error));
         }
       }
     } catch (error) {
@@ -197,6 +232,8 @@
 
   async function bootstrapWorkspace() {
     connectSocket();
+    startBackendHealthPolling();
+    await checkBackendHealth();
 
     try {
       agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
@@ -207,8 +244,7 @@
         await refreshCurrentRepoData();
       }
     } catch (error) {
-      socket?.close();
-      socket = null;
+      closeSocket();
       throw error;
     }
   }
@@ -279,12 +315,7 @@
       try {
         await bootstrapWorkspace();
       } catch (error) {
-        authenticated = false;
-        currentRepo = null;
-        workspaceEntries = [];
-        workspaceOpen = false;
-        agentSnapshot = emptyAgentSnapshot;
-        loginError = toErrorMessage(error);
+        resetAuthenticatedState(toErrorMessage(error));
       }
     } catch (error) {
       loginError = toErrorMessage(error);
@@ -294,48 +325,98 @@
   }
 
   async function logout() {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
-    authenticated = false;
-    currentRepo = null;
-    view = 'chat';
-    menuOpen = false;
-    commandPaletteOpen = false;
-    commandState = null;
-    workspaceOpen = false;
-    workspaceEntries = [];
-    diffFiles = [];
-    fileEntries = [];
-    selectedDocument = null;
-    draftContent = '';
-    editorDirty = false;
-    agentSnapshot = emptyAgentSnapshot;
-    costReport = emptyCostReport;
-    costRepoFilter = '';
-    costModelFilter = '';
-    costFromDate = '';
-    costToDate = '';
-    costPreset = 'all';
-    socket?.close();
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } catch (error) {
+      if (!(error instanceof ApiRequestError && error.status === 401)) {
+        showBanner(toErrorMessage(error), 'error');
+      }
+    } finally {
+      resetAuthenticatedState('');
+    }
   }
 
   function connectSocket() {
+    if (reconnectTimer !== null) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    socketManualClose = true;
     socket?.close();
+    socketManualClose = false;
+
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
-    socket.onmessage = (event) => handleSocketMessage(JSON.parse(event.data) as WebsocketEnvelope);
-    socket.onclose = () => {
-      if (authenticated) {
-        reconnectTimer = window.setTimeout(() => {
-          connectSocket();
-        }, 1200);
+    const nextSocket = new WebSocket(`${protocol}://${window.location.host}/ws`);
+    socket = nextSocket;
+    socketStatus = socketReconnectAttempt > 0 ? 'reconnecting' : 'connecting';
+
+    nextSocket.onopen = () => {
+      if (socket !== nextSocket) {
+        return;
+      }
+
+      socketStatus = 'connected';
+      socketReconnectAttempt = 0;
+    };
+
+    nextSocket.onmessage = (event) => {
+      handleSocketMessage(JSON.parse(event.data) as WebsocketEnvelope);
+    };
+
+    nextSocket.onerror = () => {
+      if (socket !== nextSocket) {
+        return;
+      }
+
+      if (socketStatus !== 'connected') {
+        socketStatus = 'reconnecting';
       }
     };
+
+    nextSocket.onclose = () => {
+      if (socket !== nextSocket) {
+        return;
+      }
+
+      socket = null;
+
+      if (!authenticated || socketManualClose) {
+        socketStatus = 'offline';
+        return;
+      }
+
+      socketStatus = 'reconnecting';
+      socketReconnectAttempt += 1;
+      const retryDelay = Math.min(10_000, 1_200 * Math.max(1, socketReconnectAttempt));
+      reconnectTimer = window.setTimeout(() => {
+        connectSocket();
+      }, retryDelay);
+      void ensureSessionStillValid();
+    };
+  }
+
+  function closeSocket() {
+    if (reconnectTimer !== null) {
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    if (socket) {
+      socketManualClose = true;
+      socket.close();
+      socketManualClose = false;
+      socket = null;
+    }
+
+    socketStatus = 'offline';
   }
 
   function handleSocketMessage(event: WebsocketEnvelope) {
     if (event.type === 'connected') {
       agentSnapshot = event.payload;
       currentRepo = event.payload.repo;
+      socketStatus = 'connected';
       return;
     }
 
@@ -398,7 +479,7 @@
       draftContent = '';
       editorDirty = false;
       filePath = '.';
-      view = view === 'costs' ? 'costs' : 'chat';
+      view = view === 'costs' || view === 'logs' ? view : 'chat';
       void refreshCurrentRepoData();
       return;
     }
@@ -425,7 +506,7 @@
       workspaceEntries = response.entries;
       currentRepo = response.currentRepo ?? currentRepo;
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       workspaceLoading = false;
     }
@@ -441,7 +522,7 @@
       workspaceOpen = false;
       showBanner('Repository activated.', 'success');
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     }
   }
 
@@ -453,6 +534,12 @@
     menuOpen = false;
     view = 'costs';
     await loadCosts();
+  }
+
+  async function openLogView() {
+    menuOpen = false;
+    view = 'logs';
+    await loadLogs(true);
   }
 
   async function loadCosts() {
@@ -480,7 +567,7 @@
       const suffix = query.size > 0 ? `?${query.toString()}` : '';
       costReport = await apiFetch<CostReport>(`/api/costs${suffix}`);
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       costLoading = false;
     }
@@ -529,8 +616,12 @@
   }
 
   async function loadAgentState() {
-    agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
-    currentRepo = agentSnapshot.repo;
+    try {
+      agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
+      currentRepo = agentSnapshot.repo;
+    } catch (error) {
+      handleApiFailure(error);
+    }
   }
 
   async function loadCommandState() {
@@ -544,7 +635,7 @@
     try {
       commandState = await apiFetch<AgentCommandState>('/api/agent/command-state');
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       commandStateLoading = false;
     }
@@ -571,7 +662,7 @@
       const response = await apiFetch<{ files: DiffFile[] }>('/api/git/diff');
       diffFiles = response.files;
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       diffLoading = false;
     }
@@ -590,7 +681,7 @@
       filePath = response.currentPath;
       fileEntries = response.entries;
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       fileLoading = false;
     }
@@ -603,7 +694,7 @@
       editorDirty = false;
       view = 'editor';
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     }
   }
 
@@ -625,7 +716,7 @@
       await loadDiff();
       showBanner('File saved.', 'success');
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       savingFile = false;
     }
@@ -638,7 +729,7 @@
         body: JSON.stringify({ prompt })
       });
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     }
   }
 
@@ -646,7 +737,7 @@
     try {
       await apiFetch('/api/agent/abort', { method: 'POST' });
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     }
   }
 
@@ -676,7 +767,7 @@
         commandState = null;
       }
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       commandBusy = false;
     }
@@ -699,7 +790,7 @@
       commandPaletteOpen = false;
       showBanner('Last assistant reply copied.', 'success');
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     }
   }
 
@@ -740,7 +831,7 @@
       await loadDiff();
       showBanner(`Committed ${commitSha.slice(0, 7)}.`, 'success');
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       committing = false;
     }
@@ -760,10 +851,304 @@
       }
       showBanner('Hunk reverted.', 'success');
     } catch (error) {
-      showBanner(toErrorMessage(error), 'error');
+      handleApiFailure(error);
     } finally {
       revertingHunkId = null;
     }
+  }
+
+  async function loadLogs(refresh = false) {
+    if (refresh) {
+      logLoading = true;
+    } else {
+      logLoadingMore = true;
+    }
+
+    try {
+      const query = new URLSearchParams();
+      query.set('limit', '200');
+
+      if (!refresh && logEntries.length > 0) {
+        query.set('beforeSeq', String(logEntries[0].seq));
+      }
+
+      if (logLevelFilter) {
+        query.set('level', logLevelFilter);
+      }
+
+      if (logSourceFilter) {
+        query.set('source', logSourceFilter);
+      }
+
+      if (logSearchFilter) {
+        query.set('search', logSearchFilter);
+      }
+
+      const response = await apiFetch<BackendLogQueryResponse>(`/api/logs?${query.toString()}`);
+      logEntries = refresh ? response.entries : mergeLogEntries(logEntries, response.entries);
+      logEntries = logEntries.slice(-maxVisibleLogEntries);
+      logHasMore = response.hasMore;
+      logKnownSources = collectLogSources(logEntries);
+      logViewError = '';
+    } catch (error) {
+      logViewError = toErrorMessage(error);
+      handleApiFailure(error);
+    } finally {
+      if (refresh) {
+        logLoading = false;
+      } else {
+        logLoadingMore = false;
+      }
+    }
+  }
+
+  async function loadOlderLogs() {
+    if (logLoadingMore || !logHasMore) {
+      return;
+    }
+
+    await loadLogs(false);
+  }
+
+  function setLogLevel(value: BackendLogLevel | '') {
+    logLevelFilter = value;
+    void reloadLogView();
+  }
+
+  function setLogSource(value: string) {
+    logSourceFilter = value;
+    void reloadLogView();
+  }
+
+  function setLogSearch(value: string) {
+    logSearchFilter = value;
+    void reloadLogView();
+  }
+
+  function clearLogFilters() {
+    logLevelFilter = '';
+    logSourceFilter = '';
+    logSearchFilter = '';
+    void reloadLogView();
+  }
+
+  function toggleLogLive(value: boolean) {
+    logLive = value;
+
+    if (logLive) {
+      startLogStream(true);
+      return;
+    }
+
+    stopLogStream();
+  }
+
+  async function reloadLogView() {
+    await loadLogs(true);
+    if (view === 'logs' && logLive) {
+      startLogStream(true);
+    }
+  }
+
+  function startLogStream(forceRestart = false) {
+    if (!authenticated || view !== 'logs' || !logLive) {
+      return;
+    }
+
+    const query = new URLSearchParams();
+
+    if (logLevelFilter) {
+      query.set('level', logLevelFilter);
+    }
+
+    if (logSourceFilter) {
+      query.set('source', logSourceFilter);
+    }
+
+    if (logSearchFilter) {
+      query.set('search', logSearchFilter);
+    }
+
+    const streamUrl = query.size > 0 ? `/api/logs/stream?${query.toString()}` : '/api/logs/stream';
+
+    if (!forceRestart && logEventSource && activeLogStreamUrl === streamUrl) {
+      return;
+    }
+
+    stopLogStream();
+
+    const source = new EventSource(streamUrl, { withCredentials: true });
+    logEventSource = source;
+    activeLogStreamUrl = streamUrl;
+
+    source.addEventListener('ready', () => {
+      if (logEventSource !== source) {
+        return;
+      }
+
+      logStreamConnected = true;
+      logViewError = '';
+    });
+
+    source.addEventListener('log', (event) => {
+      if (logEventSource !== source) {
+        return;
+      }
+
+      const payload = event as MessageEvent<string>;
+
+      try {
+        const entry = JSON.parse(payload.data) as BackendLogEntry;
+        logEntries = mergeLogEntries(logEntries, [entry]).slice(-maxVisibleLogEntries);
+        logKnownSources = collectLogSources(logEntries);
+      } catch {
+        // Ignore malformed stream payloads but keep stream open.
+      }
+    });
+
+    source.onerror = () => {
+      if (logEventSource !== source) {
+        return;
+      }
+
+      source.close();
+      logEventSource = null;
+      activeLogStreamUrl = '';
+      logStreamConnected = false;
+
+      if (!authenticated || view !== 'logs' || !logLive) {
+        return;
+      }
+
+      if (logStreamRetryTimer === null) {
+        logStreamRetryTimer = window.setTimeout(() => {
+          logStreamRetryTimer = null;
+          startLogStream(true);
+        }, logStreamRetryDelayMs);
+      }
+    };
+  }
+
+  function stopLogStream() {
+    if (logStreamRetryTimer !== null) {
+      window.clearTimeout(logStreamRetryTimer);
+      logStreamRetryTimer = null;
+    }
+
+    if (logEventSource) {
+      logEventSource.close();
+      logEventSource = null;
+    }
+
+    activeLogStreamUrl = '';
+    logStreamConnected = false;
+  }
+
+  function startBackendHealthPolling() {
+    if (backendHealthTimer !== null) {
+      return;
+    }
+
+    backendHealthTimer = window.setInterval(() => {
+      void checkBackendHealth();
+    }, backendHealthPollIntervalMs);
+  }
+
+  function stopBackendHealthPolling() {
+    if (backendHealthTimer !== null) {
+      window.clearInterval(backendHealthTimer);
+      backendHealthTimer = null;
+    }
+  }
+
+  async function checkBackendHealth() {
+    try {
+      const health = await apiFetch<BackendHealthResponse>('/api/health');
+      backendStatus = health.status;
+      backendLastSeen = health.serverTime;
+      backendUptimeSeconds = health.uptimeSeconds;
+    } catch {
+      backendStatus = 'unreachable';
+    }
+  }
+
+  async function ensureSessionStillValid() {
+    try {
+      const session = await apiFetch<SessionResponse>('/api/auth/session');
+
+      if (!session.authenticated) {
+        expireSession('Session expired. Please sign in again.');
+      }
+    } catch {
+      // Ignore transient failures during reconnect.
+    }
+  }
+
+  function handleApiFailure(error: unknown) {
+    if (error instanceof ApiRequestError && error.status === 401) {
+      expireSession('Session expired. Please sign in again.');
+      return;
+    }
+
+    showBanner(toErrorMessage(error), 'error');
+  }
+
+  function expireSession(message: string) {
+    resetAuthenticatedState(message);
+  }
+
+  function resetAuthenticatedState(message: string) {
+    authChecked = true;
+    loginPending = false;
+    authenticated = false;
+    currentRepo = null;
+    view = 'chat';
+    menuOpen = false;
+    commandPaletteOpen = false;
+    commandState = null;
+    workspaceOpen = false;
+    workspaceEntries = [];
+    workspacePath = '.';
+    diffFiles = [];
+    fileEntries = [];
+    filePath = '.';
+    selectedDocument = null;
+    draftContent = '';
+    editorDirty = false;
+    agentSnapshot = emptyAgentSnapshot;
+    costReport = emptyCostReport;
+    costRepoFilter = '';
+    costModelFilter = '';
+    costFromDate = '';
+    costToDate = '';
+    costPreset = 'all';
+    logEntries = [];
+    logKnownSources = [];
+    logViewError = '';
+    logHasMore = false;
+    stopLogStream();
+    closeSocket();
+    stopBackendHealthPolling();
+    socketReconnectAttempt = 0;
+    loginError = message;
+  }
+
+  function mergeLogEntries(current: BackendLogEntry[], incoming: BackendLogEntry[]) {
+    const bySeq = new Map<number, BackendLogEntry>();
+
+    for (const entry of current) {
+      bySeq.set(entry.seq, entry);
+    }
+
+    for (const entry of incoming) {
+      bySeq.set(entry.seq, entry);
+    }
+
+    return [...bySeq.values()].sort((left, right) => left.seq - right.seq);
+  }
+
+  function collectLogSources(entries: BackendLogEntry[]) {
+    return [...new Set(entries.map((entry) => entry.source).filter((source) => source.length > 0))].sort((left, right) => left.localeCompare(right));
   }
 
   function showBanner(message: string, tone: 'info' | 'success' | 'error') {
@@ -778,6 +1163,11 @@
   showBanner.timeoutId = 0;
 
   function toErrorMessage(error: unknown) {
+    if (error instanceof ApiRequestError) {
+      const requestHint = error.requestId ? ` (request ${error.requestId})` : '';
+      return `${error.message}${requestHint}`;
+    }
+
     return error instanceof Error ? error.message : 'Unexpected error.';
   }
 </script>
@@ -807,6 +1197,16 @@
       <div class:success={bannerTone === 'success'} class:error={bannerTone === 'error'} class="notice floating">{bannerMessage}</div>
     {/if}
 
+    <SystemStatusBar
+      authStatus="authenticated"
+      socketStatus={socketStatus}
+      reconnectAttempt={socketReconnectAttempt}
+      backendStatus={backendStatus}
+      backendLastSeen={backendLastSeen}
+      backendUptimeSeconds={backendUptimeSeconds}
+      logStreamLive={view === 'logs' && logLive && logStreamConnected}
+    />
+
     {#if view === 'costs'}
       <CostView
         report={costReport}
@@ -822,6 +1222,27 @@
         on:setFrom={(event) => updateCostFromDate(event.detail.value)}
         on:setTo={(event) => updateCostToDate(event.detail.value)}
         on:applyPreset={(event) => applyCostPreset(event.detail.value)}
+      />
+    {:else if view === 'logs'}
+      <LogView
+        entries={logEntries}
+        loading={logLoading}
+        loadingMore={logLoadingMore}
+        hasMore={logHasMore}
+        live={logLive}
+        streamConnected={logStreamConnected}
+        levelFilter={logLevelFilter}
+        sourceFilter={logSourceFilter}
+        searchFilter={logSearchFilter}
+        knownSources={logKnownSources}
+        lastError={logViewError}
+        on:refresh={() => void loadLogs(true)}
+        on:loadMore={() => void loadOlderLogs()}
+        on:toggleLive={(event) => toggleLogLive(event.detail.value)}
+        on:setLevel={(event) => setLogLevel(event.detail.value)}
+        on:setSource={(event) => setLogSource(event.detail.value)}
+        on:setSearch={(event) => setLogSearch(event.detail.value)}
+        on:clearFilters={clearLogFilters}
       />
     {:else if currentRepo}
       {#if view === 'chat'}
@@ -902,13 +1323,13 @@
       <section class="view-shell">
         <div class="empty-state-card">
           <h2>No repository selected</h2>
-          <p>Open the repository picker and choose any Git repository below the configured `WORKSPACE_ROOT`.</p>
+          <p>Open the repository picker and choose any Git repository below the configured WORKSPACE_ROOT.</p>
           <button class="primary-button" type="button" on:click={() => (workspaceOpen = true)}>Open picker</button>
         </div>
       </section>
     {/if}
 
-    <BottomNav currentView={view === 'costs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => (view = event.detail.view)} />
+    <BottomNav currentView={view === 'costs' || view === 'logs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => (view = event.detail.view)} />
     <AppMenu
       open={menuOpen}
       currentRepo={currentRepo}
@@ -919,6 +1340,7 @@
         workspaceOpen = true;
       }}
       on:openCosts={() => void openCostView()}
+      on:openLogs={() => void openLogView()}
       on:setTheme={(event) => setTheme(event.detail.value)}
       on:logout={logout}
     />

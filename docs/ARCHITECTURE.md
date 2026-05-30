@@ -83,6 +83,16 @@ Written in TypeScript running on Node.js, the backend acts as a high-fidelity ro
 - **`GitService`:** Parses the standard stream of `git diff -U3` into structural JSON objects, making raw line offsets and hunk chunks readable for the frontend.
 - **`FileService`:** Directs file writing from the mobile editor and monitors directory workspaces dynamically using `chokidar` for seamless change synchronization.
 
+### 2.4 Observability & Failure Diagnostics
+
+To reduce silent failures and make incidents reproducible directly from mobile devices, the stack now includes a dedicated observability path:
+
+- **Structured Log Service:** Backend emits leveled entries (`debug|info|warn|error`) with `source`, `event`, optional `repo`, and `requestId` metadata.
+- **Dual Log Storage:** Logs are persisted to rotating files under `.pi-mobile/logs` while a bounded in-memory buffer powers fast UI retrieval.
+- **Request Correlation:** Every HTTP response includes `x-request-id`; API failures return a structured error payload with the same request ID.
+- **Live Log Streaming:** `GET /api/logs/stream` (SSE) pushes new backend events in real time, while `GET /api/logs` supports paged history queries.
+- **Client Status Strip:** The frontend app shell exposes explicit auth, WebSocket, backend health, and log-stream states.
+
 ---
 
 ## 3. Core Workflows & Technical Implementation
@@ -93,7 +103,7 @@ When a file is manually modified via the integrated touchscreen editor:
 
 1. The frontend dispatches the updated contents to `POST /api/files/write`.
 2. The backend commits the raw string directly into the targeted file within the `/workspace` directory.
-3. The filesystem watcher (`chokidar`) catches the write event and instantly broadcasts a global WebSocket notification to the client: `{ "event": "workspace_changed" }`.
+3. The filesystem watcher (`chokidar`) catches the write event and instantly broadcasts a global WebSocket notification to the client: `{ "type": "workspace_changed", "payload": { ... } }`.
 4. The frontend fetches the updated diff context. Because Git remains the _Single Source of Truth_, your manual touch-ups instantly populate the diff view alongside the agent's work.
 
 ### 3.2 Granular Code-Block Invalidation (Hunk-Level Revert)
@@ -111,6 +121,15 @@ Since Git does not natively provide a single non-interactive CLI command to disc
    ```
 
 6. The file is cleanly rolled back at that exact position. The `FileService` emits an updated state event, and the `pi` agent natively detects the updated file layout on its next turn.
+
+### 3.4 Runtime Incident Review (Menu -> Open log)
+
+When backend behavior is unclear, the mobile client can inspect runtime activity without leaving the UI:
+
+1. The user opens `Menu -> Open log`.
+2. The frontend fetches recent entries through `GET /api/logs` with optional filters (level/source/search).
+3. The frontend attaches to `GET /api/logs/stream` to receive new entries in real time.
+4. Every displayed error includes request-correlation metadata, so API failures can be traced to server-side records quickly.
 
 ### 3.3 Start a Fresh Agent Session (Context + Cost Reset)
 

@@ -1,39 +1,91 @@
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import cookieParser from "cookie-parser";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import type { AgentCommandRequest } from "../shared/contracts.js";
+import type { AgentCommandRequest, ApiErrorResponse, BackendHealthResponse, BackendLogLevel, BackendLogQuery, BackendLogQueryResponse } from "../shared/contracts.js";
 
 import type { AppConfig } from "./config.js";
 import { AuthService } from "./services/auth-service.js";
 import { FileService } from "./services/file-service.js";
 import { GitService } from "./services/git-service.js";
+import { LogService } from "./services/log-service.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { RepositoryRuntimeService } from "./services/repository-runtime-service.js";
 import { CostService } from "./services/cost-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
+import { HttpError, isHttpError } from "./utils/http-error.js";
 
 type AppServices = {
   config: AppConfig;
   authService: AuthService;
+  logService: LogService;
   workspaceService: WorkspaceService;
   repositoryRuntimeService: RepositoryRuntimeService;
   fileService: FileService;
   gitService: GitService;
   costService: CostService;
   piAgentService: PiAgentService;
+  serverStartedAt: Date;
 };
 
 export function createApp(services: AppServices) {
   const app = express();
+  const httpLog = services.logService.child({ source: "http" });
 
   app.use(express.json({ limit: "2mb" }));
   app.use(cookieParser());
 
+  app.use((request, response, next) => {
+    const incomingRequestId = request.header("x-request-id")?.trim();
+    const requestId = incomingRequestId && incomingRequestId.length > 0 ? incomingRequestId : randomUUID();
+    setRequestId(response, requestId);
+    response.setHeader("x-request-id", requestId);
+    next();
+  });
+
+  app.use((request, response, next) => {
+    const requestStartedAt = Date.now();
+    const requestId = getRequestId(response);
+
+    httpLog.info("Request started.", {
+      event: "request_start",
+      requestId,
+      details: {
+        method: request.method,
+        path: request.path,
+      },
+    });
+
+    response.on("finish", () => {
+      const durationMs = Date.now() - requestStartedAt;
+      const level: BackendLogLevel = response.statusCode >= 500 ? "error" : response.statusCode >= 400 ? "warn" : "info";
+      services.logService[level]("Request completed.", {
+        source: "http",
+        event: "request_finish",
+        requestId,
+        details: {
+          method: request.method,
+          path: request.path,
+          statusCode: response.statusCode,
+          durationMs,
+        },
+      });
+    });
+
+    next();
+  });
+
   app.get("/api/health", (_request, response) => {
-    response.json({ ok: true });
+    response.json({
+      ok: true,
+      status: "healthy",
+      serverTime: new Date().toISOString(),
+      startedAt: services.serverStartedAt.toISOString(),
+      uptimeSeconds: Math.floor(process.uptime()),
+    } satisfies BackendHealthResponse);
   });
 
   app.get("/api/auth/session", (request, response) => {
@@ -49,7 +101,7 @@ export function createApp(services: AppServices) {
     const token = services.authService.login(password);
 
     if (!token) {
-      response.status(401).json({ message: "Invalid password." });
+      sendApiError(response, new HttpError(401, "unauthorized", "Invalid password.", { retriable: false }));
       return;
     }
 
@@ -133,6 +185,40 @@ export function createApp(services: AppServices) {
     response.json({ ok: true });
   });
 
+  app.get("/api/logs", requireAuth(services), (request, response) => {
+    const query = parseLogQuery(request);
+    response.json(services.logService.queryLogs(query) satisfies BackendLogQueryResponse);
+  });
+
+  app.get("/api/logs/stream", requireAuth(services), (request, response) => {
+    const query = parseLogQuery(request);
+
+    response.setHeader("Content-Type", "text/event-stream");
+    response.setHeader("Cache-Control", "no-cache, no-transform");
+    response.setHeader("Connection", "keep-alive");
+    response.flushHeaders();
+
+    const writeEvent = (event: string, payload: unknown) => {
+      response.write(`event: ${event}\n`);
+      response.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    writeEvent("ready", { ok: true });
+
+    const unsubscribe = services.logService.subscribe((entry) => {
+      writeEvent("log", entry);
+    }, query);
+
+    const heartbeat = setInterval(() => {
+      writeEvent("ping", { time: Date.now() });
+    }, 15000);
+
+    request.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  });
+
   app.get("/api/agent/state", requireAuth(services), (_request, response) => {
     response.json(services.piAgentService.getSnapshot());
   });
@@ -171,8 +257,21 @@ export function createApp(services: AppServices) {
   }
 
   app.use((error: unknown, _request: Request, response: Response, _next: NextFunction) => {
-    const message = error instanceof Error ? error.message : "Unexpected server error.";
-    response.status(400).json({ message });
+    const { statusCode, payload } = toApiError(error, getRequestId(response));
+
+    services.logService.error("Request failed.", {
+      source: "http",
+      event: "request_failed",
+      requestId: payload.error.requestId,
+      details: {
+        code: payload.error.code,
+        statusCode,
+        message: payload.error.message,
+        error: serializeError(error),
+      },
+    });
+
+    response.status(statusCode).json(payload);
   });
 
   return app;
@@ -183,7 +282,7 @@ function requireAuth(services: AppServices) {
     const token = request.cookies?.[services.config.sessionCookieName];
 
     if (!services.authService.isValid(token)) {
-      response.status(401).json({ message: "Unauthorized." });
+      sendApiError(response, new HttpError(401, "unauthorized", "Unauthorized.", { retriable: false }));
       return;
     }
 
@@ -201,7 +300,7 @@ function getQueryString(request: Request, key: string, fallback?: string) {
     return fallback;
   }
 
-  throw new Error(`Missing query parameter: ${key}`);
+  throw new HttpError(400, "bad_request", `Missing query parameter: ${key}`, { retriable: false });
 }
 
 function getOptionalQueryString(request: Request, key: string) {
@@ -213,7 +312,7 @@ function getBodyString(request: Request, key: string) {
   const candidate = request.body?.[key];
 
   if (typeof candidate !== "string") {
-    throw new Error(`Missing request body field: ${key}`);
+    throw new HttpError(400, "bad_request", `Missing request body field: ${key}`, { retriable: false });
   }
 
   return candidate;
@@ -221,8 +320,142 @@ function getBodyString(request: Request, key: string) {
 
 function getBodyObject<T>(request: Request) {
   if (!request.body || typeof request.body !== "object") {
-    throw new Error("Missing request body.");
+    throw new HttpError(400, "bad_request", "Missing request body.", { retriable: false });
   }
 
   return request.body as T;
+}
+
+function parseLogQuery(request: Request): BackendLogQuery {
+  const query: BackendLogQuery = {};
+  const limitRaw = getOptionalQueryString(request, "limit");
+  const beforeSeqRaw = getOptionalQueryString(request, "beforeSeq");
+  const levelRaw = getOptionalQueryString(request, "level");
+  const sourceRaw = getOptionalQueryString(request, "source");
+  const searchRaw = getOptionalQueryString(request, "search");
+
+  if (limitRaw !== undefined) {
+    const value = Number.parseInt(limitRaw, 10);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new HttpError(400, "bad_request", "Query parameter 'limit' must be a positive integer.", { retriable: false });
+    }
+
+    query.limit = value;
+  }
+
+  if (beforeSeqRaw !== undefined) {
+    const value = Number.parseInt(beforeSeqRaw, 10);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new HttpError(400, "bad_request", "Query parameter 'beforeSeq' must be a positive integer.", { retriable: false });
+    }
+
+    query.beforeSeq = value;
+  }
+
+  if (levelRaw !== undefined) {
+    if (!isBackendLogLevel(levelRaw)) {
+      throw new HttpError(400, "bad_request", "Query parameter 'level' is invalid.", { retriable: false });
+    }
+
+    query.level = levelRaw;
+  }
+
+  if (sourceRaw !== undefined) {
+    query.source = sourceRaw;
+  }
+
+  if (searchRaw !== undefined) {
+    query.search = searchRaw;
+  }
+
+  return query;
+}
+
+function sendApiError(response: Response, error: HttpError) {
+  const { statusCode, payload } = toApiError(error, getRequestId(response));
+  response.status(statusCode).json(payload);
+}
+
+function toApiError(error: unknown, requestId: string): { statusCode: number; payload: ApiErrorResponse } {
+  if (isHttpError(error)) {
+    return {
+      statusCode: error.statusCode,
+      payload: {
+        ok: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          requestId,
+          retriable: error.retriable,
+          details: error.details,
+        },
+      },
+    };
+  }
+
+  if (error instanceof SyntaxError && "body" in error) {
+    return {
+      statusCode: 400,
+      payload: {
+        ok: false,
+        error: {
+          code: "validation_error",
+          message: "Malformed JSON request body.",
+          requestId,
+          retriable: false,
+        },
+      },
+    };
+  }
+
+  const message = error instanceof Error ? error.message : "Unexpected server error.";
+
+  return {
+    statusCode: 500,
+    payload: {
+      ok: false,
+      error: {
+        code: "internal_error",
+        message,
+        requestId,
+        retriable: true,
+      },
+    },
+  };
+}
+
+function getRequestId(response: Response) {
+  const locals = response.locals as Record<string, unknown>;
+  const requestId = locals.requestId;
+
+  if (typeof requestId === "string" && requestId.length > 0) {
+    return requestId;
+  }
+
+  const generated = randomUUID();
+  locals.requestId = generated;
+  return generated;
+}
+
+function setRequestId(response: Response, requestId: string) {
+  const locals = response.locals as Record<string, unknown>;
+  locals.requestId = requestId;
+}
+
+function isBackendLogLevel(value: string): value is BackendLogLevel {
+  return value === "debug" || value === "info" || value === "warn" || value === "error";
+}
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return { value: String(error) };
 }

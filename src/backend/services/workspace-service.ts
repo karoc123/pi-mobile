@@ -31,7 +31,9 @@ export class WorkspaceService {
   async browse(relativePath = ".") {
     const absolutePath = resolveWithin(this.rootPath, relativePath);
     const entries = await readdir(absolutePath, { withFileTypes: true });
-    const directories = entries.filter((entry) => entry.isDirectory() && entry.name !== ".git" && entry.name !== "node_modules").sort((left, right) => left.name.localeCompare(right.name));
+    const directories = entries
+      .filter((entry) => entry.isDirectory() && entry.name !== ".git" && entry.name !== "node_modules" && entry.name !== ".pi-mobile")
+      .sort((left, right) => left.name.localeCompare(right.name));
 
     return Promise.all(
       directories.map(async (entry): Promise<WorkspaceEntry> => {
@@ -119,11 +121,7 @@ async function getGitRootWithDiagnostics(candidatePath: string): Promise<{ root:
         return { root: stdout.trim() };
       } catch (configError) {
         const configMessage = configError instanceof Error ? configError.message : String(configError);
-        const combinedMessage = [
-          message,
-          `Attempted to run \`git config --global --add safe.directory "${unsafeRepositoryPath}"\` automatically but it failed:`,
-          configMessage,
-        ].join("\n");
+        const combinedMessage = [message, `Attempted to run \`git config --global --add safe.directory "${unsafeRepositoryPath}"\` automatically but it failed:`, configMessage].join("\n");
 
         return { root: null, errorMessage: combinedMessage };
       }
@@ -134,10 +132,7 @@ async function getGitRootWithDiagnostics(candidatePath: string): Promise<{ root:
 }
 
 function extractUnsafeRepositoryPath(message: string) {
-  const patterns = [
-    /detected dubious ownership in repository at '([^']+)'/,
-    /unsafe repository \('([^']+)'/,
-  ];
+  const patterns = [/detected dubious ownership in repository at '([^']+)'/, /unsafe repository \('([^']+)'/];
 
   for (const pattern of patterns) {
     const match = message.match(pattern);

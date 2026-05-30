@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "./app.js";
 import { AuthService } from "./services/auth-service.js";
+import { LogService } from "./services/log-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
 import { runCommand } from "./utils/process.js";
 
@@ -40,10 +41,13 @@ describe("createApp", () => {
       appPassword: "secret-pass",
       workspaceRoot: tempDir,
       costsDbPath: path.join(tempDir, ".pi-mobile", "costs.sqlite"),
+      logsDirPath: path.join(tempDir, ".pi-mobile", "logs"),
+      logLevel: "debug" as const,
       sessionCookieName: "pi_mobile_session",
       sessionCookieSecure: false,
     };
     const authService = new AuthService(config.appPassword);
+    const logService = new LogService({ logDirPath: config.logsDirPath, minLevel: config.logLevel });
     const workspaceService = new WorkspaceService(tempDir);
     await workspaceService.initializeDefaultRepo();
     const getCommandState = vi.fn(async () => ({
@@ -104,6 +108,7 @@ describe("createApp", () => {
     const app = createApp({
       config,
       authService,
+      logService,
       workspaceService,
       repositoryRuntimeService: {
         selectRepo: vi.fn(async (relativePath: string) => workspaceService.selectRepo(relativePath)),
@@ -127,11 +132,14 @@ describe("createApp", () => {
         prompt: vi.fn(async () => undefined),
         abort: vi.fn(async () => undefined),
       } as never,
+      serverStartedAt: new Date("2026-01-01T00:00:00.000Z"),
     });
 
     const unauthorized = await request(app).get("/api/workspaces/browse");
 
     expect(unauthorized.status).toBe(401);
+    expect(unauthorized.body.error.code).toBe("unauthorized");
+    expect(typeof unauthorized.headers["x-request-id"]).toBe("string");
 
     const login = await request(app).post("/api/auth/login").send({ password: "secret-pass" });
 
@@ -144,6 +152,7 @@ describe("createApp", () => {
     const commandStateResponse = await request(app).get("/api/agent/command-state").set("Cookie", cookie);
     const commandExecuteResponse = await request(app).post("/api/agent/command").set("Cookie", cookie).send({ command: "new-session" });
     const costResponse = await request(app).get("/api/costs?repo=repo-a&model=anthropic%2Fclaude-sonnet-4&from=2026-05-01T00%3A00%3A00.000Z&to=2026-05-02T00%3A00%3A00.000Z").set("Cookie", cookie);
+    const logsResponse = await request(app).get("/api/logs?limit=50").set("Cookie", cookie);
 
     expect(authorized.status).toBe(200);
     expect(authorized.body.entries).toEqual([]);
@@ -173,5 +182,12 @@ describe("createApp", () => {
       from: "2026-05-01T00:00:00.000Z",
       to: "2026-05-02T00:00:00.000Z",
     });
+    expect(logsResponse.status).toBe(200);
+    expect(Array.isArray(logsResponse.body.entries)).toBe(true);
+    expect(logsResponse.body.entries.length).toBeGreaterThan(0);
+    expect(logsResponse.body.entries[0]).toHaveProperty("requestId");
+    expect(typeof logsResponse.headers["x-request-id"]).toBe("string");
+
+    await logService.flush();
   });
 });

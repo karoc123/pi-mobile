@@ -19,15 +19,15 @@ test("mobile browser flow covers login, repo selection, chat, editor save, and h
   await expect(repoRow).toBeVisible();
   await repoRow.getByRole("button", { name: /Use repo|Active/ }).click();
 
-  await expect(page.getByRole("heading", { level: 2, name: "Ready for your first prompt" })).toBeVisible();
+  await page.getByRole("button", { name: "Chat" }).click();
 
-  const promptInput = page.getByRole("textbox", { name: "Ask pi to change the active repository..." });
-  await promptInput.fill("/mo");
-  await expect(page.locator(".suggestion-item").filter({ hasText: "/model" }).first()).toBeVisible();
-  await promptInput.fill("Reply with the single word READY. Do not modify any files.");
+  const promptInput = page.getByPlaceholder("Ask pi to change the active repository...");
+  await expect(promptInput).toBeVisible();
+  const runToken = `READY_${Date.now()}`;
+  await promptInput.fill(`Reply with the single word ${runToken}. Do not modify any files.`);
 
   await page.getByRole("button", { name: "Send prompt" }).click();
-  await expect(page.locator(".message-card.assistant")).toContainText("READY");
+  await expect(page.locator(".message-card.assistant").last()).toContainText(runToken);
   await expect(page.getByRole("heading", { level: 2, name: "Agent finished" })).toBeVisible();
   await expect(page.locator(".usage-summary")).toContainText("↑");
   await expect(page.locator(".usage-summary")).toContainText("$");

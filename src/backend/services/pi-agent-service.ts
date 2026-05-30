@@ -20,6 +20,7 @@ import type {
 
 import type { AppConfig } from "../config.js";
 import { CostService } from "./cost-service.js";
+import type { LogChannel } from "./log-service.js";
 
 type Broadcast = (event: WebsocketEnvelope) => void;
 
@@ -37,12 +38,16 @@ export class PiAgentService {
   private activeCostSessionKey: string | null = null;
   private activeCostSessionStartedAt: string | null = null;
   private mockSessionId: string | null = null;
+  private readonly logger: LogChannel;
 
   constructor(
     private readonly config: AppConfig,
     private readonly broadcast: Broadcast,
     private readonly costService: CostService,
-  ) {}
+    logger?: LogChannel,
+  ) {
+    this.logger = logger ?? createNoopLogger();
+  }
 
   getSnapshot(): AgentSnapshot {
     return {
@@ -583,6 +588,13 @@ export class PiAgentService {
 
   private recordError(error: unknown) {
     const message = toErrorMessage(error);
+    this.logger.error("Pi agent runtime reported an error.", {
+      event: "pi_agent_error",
+      repo: this.currentRepo?.absolutePath ?? null,
+      details: {
+        message,
+      },
+    });
     this.lastError = message;
     this.broadcast({
       type: "agent_error",
@@ -707,7 +719,13 @@ export class PiAgentService {
         autoCompactEnabled: usage.autoCompactEnabled,
       });
     } catch (error) {
-      console.error("Failed to persist session costs", error);
+      this.logger.error("Failed to persist session costs.", {
+        event: "cost_persist_failed",
+        repo: this.currentRepo?.absolutePath ?? null,
+        details: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
     }
   }
 
@@ -719,7 +737,13 @@ export class PiAgentService {
     try {
       this.costService.finalizeSession(this.activeCostSessionKey, new Date().toISOString());
     } catch (error) {
-      console.error("Failed to finalize session costs", error);
+      this.logger.error("Failed to finalize session costs.", {
+        event: "cost_finalize_failed",
+        repo: this.currentRepo?.absolutePath ?? null,
+        details: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
     } finally {
       this.activeCostSessionKey = null;
       this.activeCostSessionStartedAt = null;
@@ -1115,4 +1139,13 @@ function buildMockReply(promptText: string) {
   }
 
   return `Mock reply: ${promptText.slice(0, 120)}`;
+}
+
+function createNoopLogger(): LogChannel {
+  return {
+    debug: () => undefined,
+    info: () => undefined,
+    warn: () => undefined,
+    error: () => undefined,
+  };
 }

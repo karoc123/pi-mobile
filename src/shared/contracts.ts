@@ -136,6 +136,57 @@ export type CostReport = {
   };
 };
 
+export type BackendHealthStatus = "healthy" | "degraded";
+
+export type BackendHealthResponse = {
+  ok: true;
+  status: BackendHealthStatus;
+  serverTime: string;
+  startedAt: string;
+  uptimeSeconds: number;
+};
+
+export type BackendLogLevel = "debug" | "info" | "warn" | "error";
+
+export type BackendLogEntry = {
+  seq: number;
+  timestamp: string;
+  level: BackendLogLevel;
+  source: string;
+  event: string | null;
+  message: string;
+  repo: string | null;
+  requestId: string | null;
+  details: unknown;
+};
+
+export type BackendLogQuery = {
+  limit?: number;
+  beforeSeq?: number;
+  level?: BackendLogLevel;
+  source?: string;
+  search?: string;
+};
+
+export type BackendLogQueryResponse = {
+  entries: BackendLogEntry[];
+  hasMore: boolean;
+  nextBeforeSeq: number | null;
+};
+
+export type ApiErrorCode = "bad_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "validation_error" | "runtime_error" | "internal_error";
+
+export type ApiErrorResponse = {
+  ok: false;
+  error: {
+    code: ApiErrorCode;
+    message: string;
+    requestId: string;
+    retriable: boolean;
+    details?: unknown;
+  };
+};
+
 export type AgentThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export type AgentModelOption = {

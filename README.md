@@ -13,8 +13,10 @@ PiMobile is a mobile-first web cockpit for local Git repositories. It combines f
 - Express + TypeScript backend with cookie-based password auth
 - Svelte mobile UI with Chat, Diff, and Editor views
 - menu-driven cost dashboard with filters for repository, model, and timeframe
+- menu-driven backend log view with live streaming and filters for level, source, and search text
 - VS-Code-like light and dark themes via burger menu
 - chat status surface with explicit ready/running state, model label, and token/cost/context footer
+- global system status strip showing auth state, socket connectivity, backend health, and live-log link state
 - mobile-first slash command suggestions for fast `/model`, `/session`, `/compact`, and related commands
 - repository picker for any Git repo below `WORKSPACE_ROOT`
 - websocket updates for agent state and filesystem changes
@@ -93,6 +95,8 @@ http://localhost:5173
 
 9. Open `Menu -> Open costs` for the persistent cost overview. The dashboard aggregates all recorded Pi sessions and can be filtered by repository, model, and date range.
 
+10. Open `Menu -> Open log` to inspect the full backend runtime stream. The log view supports live streaming, request-id correlation, and paging older entries for incident analysis.
+
 ## Production-style local run
 
 If you want to test the built server instead of Vite dev mode:
@@ -125,7 +129,11 @@ WORKSPACE_HOST_PATH=/home/zink/dev
 PI_HOME_HOST_PATH=/home/zink/.pi
 GITCONFIG_HOST_PATH=/home/zink/.gitconfig
 SSH_HOST_PATH=/home/zink/.ssh
+HOST_UID=1000
+HOST_GID=1000
 ```
+
+Replace `HOST_UID` and `HOST_GID` with your host user and group IDs. You can check them once with `id -u` and `id -g`, or export them before Compose with `export HOST_UID=$(id -u) HOST_GID=$(id -g)`.
 
 Leave `SESSION_COOKIE_SECURE=false` when you open the Dockerized app over plain `http://...`. Only switch it to `true` if you terminate TLS in front of PiMobile and access it via HTTPS.
 
@@ -196,3 +204,4 @@ The suite starts the built app automatically against an isolated workspace under
 - the app tracks one active repository at a time in the UI
 - the chat layer uses the `pi.dev` SDK directly; CLI JSON/RPC fallbacks are not wired yet
 - cost persistence uses Node's built-in `node:sqlite` module on Node 22+, which currently emits an experimental runtime warning
+- the in-memory log buffer is capped for responsiveness; older entries remain in rotated files under `.pi-mobile/logs`

@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { z } from "zod";
 
+import type { BackendLogLevel } from "../shared/contracts.js";
+
 const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 const optionalEnvString = z.preprocess(emptyStringToUndefined, z.string().optional());
 const optionalThinkingLevel = z.preprocess(emptyStringToUndefined, z.enum(thinkingLevels).optional());
@@ -13,6 +15,8 @@ const configSchema = z.object({
   APP_PASSWORD: z.string().min(1, "APP_PASSWORD is required"),
   WORKSPACE_ROOT: z.string().default(process.cwd()),
   COSTS_DB_PATH: optionalEnvString,
+  LOGS_DIR: optionalEnvString,
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   DEFAULT_REPO: optionalEnvString,
   SESSION_COOKIE_NAME: z.string().default("pi_mobile_session"),
   SESSION_COOKIE_SECURE: optionalEnvString,
@@ -33,6 +37,8 @@ export type AppConfig = {
   appPassword: string;
   workspaceRoot: string;
   costsDbPath: string;
+  logsDirPath: string;
+  logLevel: BackendLogLevel;
   defaultRepo?: string;
   sessionCookieName: string;
   sessionCookieSecure: boolean;
@@ -64,6 +70,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: parsed.PORT,
     appPassword: parsed.APP_PASSWORD,
     costsDbPath: parsed.COSTS_DB_PATH ? path.resolve(parsed.COSTS_DB_PATH) : path.resolve(parsed.WORKSPACE_ROOT, ".pi-mobile", "costs.sqlite"),
+    logsDirPath: parsed.LOGS_DIR ? path.resolve(parsed.LOGS_DIR) : path.resolve(parsed.WORKSPACE_ROOT, ".pi-mobile", "logs"),
+    logLevel: parsed.LOG_LEVEL,
     defaultRepo: parsed.DEFAULT_REPO,
     sessionCookieName: parsed.SESSION_COOKIE_NAME,
     sessionCookieSecure: parsed.SESSION_COOKIE_SECURE ? asBoolean(parsed.SESSION_COOKIE_SECURE) : parsed.NODE_ENV === "production",
