@@ -127,6 +127,10 @@ describe("createApp", () => {
     }));
     const gitPull = vi.fn(async () => "Already up to date.");
     const gitPush = vi.fn(async () => "Everything up-to-date");
+    const createFile = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(Object.assign(new Error("File exists"), { code: "EEXIST" }));
 
     const app = createApp({
       config,
@@ -140,6 +144,7 @@ describe("createApp", () => {
         browse: vi.fn(async () => []),
         readFile: vi.fn(async () => ({ path: "README.md", content: "# temp repo\n" })),
         writeFile: vi.fn(async () => undefined),
+        createFile,
       } as never,
       gitService: {
         getDiff: vi.fn(async () => []),
@@ -210,6 +215,9 @@ describe("createApp", () => {
     const healthResponse = await request(app).get("/api/health").set("Cookie", cookie);
     const pullResponse = await request(app).post("/api/git/pull").set("Cookie", cookie);
     const pushResponse = await request(app).post("/api/git/push").set("Cookie", cookie);
+    const createFileResponse = await request(app).post("/api/files/create").set("Cookie", cookie).send({ path: "notes/new-file.md", content: "# hello\n" });
+    const createFileConflictResponse = await request(app).post("/api/files/create").set("Cookie", cookie).send({ path: "notes/new-file.md", content: "# hello again\n" });
+    const createFileMissingPathResponse = await request(app).post("/api/files/create").set("Cookie", cookie).send({ path: "   " });
     const clearLogsResponse = await request(app).delete("/api/logs").set("Cookie", cookie);
 
     expect(authorized.status).toBe(200);
@@ -263,6 +271,15 @@ describe("createApp", () => {
     expect(pushResponse.status).toBe(200);
     expect(pushResponse.body.summary).toBe("Everything up-to-date");
     expect(gitPush).toHaveBeenCalledTimes(1);
+    expect(createFileResponse.status).toBe(200);
+    expect(createFileResponse.body).toEqual({ ok: true, path: "notes/new-file.md" });
+    expect(createFile).toHaveBeenNthCalledWith(1, workspaceService.requireCurrentRepo(), "notes/new-file.md", "# hello\n");
+    expect(createFileConflictResponse.status).toBe(409);
+    expect(createFileConflictResponse.body.error.code).toBe("conflict");
+    expect(createFile).toHaveBeenNthCalledWith(2, workspaceService.requireCurrentRepo(), "notes/new-file.md", "# hello again\n");
+    expect(createFileMissingPathResponse.status).toBe(400);
+    expect(createFileMissingPathResponse.body.error.code).toBe("bad_request");
+    expect(createFile).toHaveBeenCalledTimes(2);
     expect(clearLogsResponse.status).toBe(204);
 
     await logService.flush();

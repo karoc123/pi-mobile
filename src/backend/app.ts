@@ -5,7 +5,7 @@ import path from "node:path";
 import cookieParser from "cookie-parser";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import type { AgentCommandRequest, ApiErrorResponse, BackendHealthResponse, BackendLogLevel, BackendLogQuery, BackendLogQueryResponse, GitSyncResult } from "../shared/contracts.js";
+import type { AgentCommandRequest, ApiErrorResponse, BackendHealthResponse, BackendLogLevel, BackendLogQuery, BackendLogQueryResponse, FileCreateRequest, FileCreateResult, GitSyncResult } from "../shared/contracts.js";
 
 import type { AppConfig } from "./config.js";
 import { AuthService } from "./services/auth-service.js";
@@ -167,6 +167,29 @@ export function createApp(services: AppServices) {
     const repo = services.workspaceService.requireCurrentRepo();
     await services.fileService.writeFile(repo, getBodyString(request, "path"), getBodyString(request, "content"));
     response.json({ ok: true });
+  });
+
+  app.post("/api/files/create", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const filePath = getBodyString(request, "path").trim();
+    const body = getBodyObject<FileCreateRequest>(request);
+    const content = typeof body.content === "string" ? body.content : "";
+
+    if (filePath.length === 0 || filePath === ".") {
+      throw new HttpError(400, "bad_request", "File path is required.", { retriable: false });
+    }
+
+    try {
+      await services.fileService.createFile(repo, filePath, content);
+    } catch (error) {
+      if (isNodeFileExistsError(error)) {
+        throw new HttpError(409, "conflict", "File already exists.", { retriable: false });
+      }
+
+      throw error;
+    }
+
+    response.json({ ok: true, path: filePath } satisfies FileCreateResult);
   });
 
   app.get("/api/git/diff", requireAuth(services), async (_request, response) => {
@@ -355,6 +378,10 @@ function getBodyObject<T>(request: Request) {
   }
 
   return request.body as T;
+}
+
+function isNodeFileExistsError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "EEXIST";
 }
 
 function parseLogQuery(request: Request): BackendLogQuery {

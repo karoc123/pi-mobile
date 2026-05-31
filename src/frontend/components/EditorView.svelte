@@ -14,13 +14,19 @@
   export let dirty = false;
   export let loading = false;
   export let saving = false;
+  export let creating = false;
 
   const dispatch = createEventDispatcher<{
     browse: { path: string };
     openFile: { path: string };
     save: { content: string };
     change: { content: string };
+    createFile: { path: string; content: string };
   }>();
+
+  let actionsOpen = false;
+  let newFileName = '';
+  let newFileContent = '';
 
   function parentPath(pathValue: string) {
     if (pathValue === '.' || pathValue.length === 0) {
@@ -30,6 +36,44 @@
     const parts = pathValue.split('/').filter(Boolean);
     parts.pop();
     return parts.length === 0 ? '.' : parts.join('/');
+  }
+
+  function joinPath(basePath: string, childPath: string) {
+    const normalizedChild = childPath.replace(/^\/+/, '');
+
+    if (basePath === '.' || basePath.length === 0) {
+      return normalizedChild;
+    }
+
+    return `${basePath.replace(/\/+$/, '')}/${normalizedChild}`;
+  }
+
+  function openActions() {
+    actionsOpen = !actionsOpen;
+
+    if (actionsOpen && !newFileName) {
+      newFileName = 'new-file.txt';
+    }
+  }
+
+  function canSubmitNewFile() {
+    const fileName = newFileName.trim();
+    const targetPath = joinPath(currentPath, fileName).trim();
+    return fileName.length > 0 && targetPath.length > 0 && targetPath !== '.';
+  }
+
+  function submitNewFile() {
+    if (creating || !canSubmitNewFile()) {
+      return;
+    }
+
+    dispatch('createFile', {
+      path: joinPath(currentPath, newFileName.trim()),
+      content: newFileContent,
+    });
+    actionsOpen = false;
+    newFileName = '';
+    newFileContent = '';
   }
 
   $: if (selectedFilePath) {
@@ -63,10 +107,44 @@
       <p class="eyebrow">Touch editor</p>
       <h2>{selectedFilePath || 'Select a file'}</h2>
     </div>
-    <button class="primary-button" type="button" on:click={() => dispatch('save', { content })} disabled={!selectedFilePath || !dirty || saving}>
-      {saving ? 'Saving...' : dirty ? 'Save changes' : 'Saved'}
-    </button>
+    <div class="header-actions editor-header-actions">
+      <button class="secondary-button" type="button" on:click={openActions} aria-expanded={actionsOpen}>
+        Actions
+      </button>
+      <button class="primary-button" type="button" on:click={() => dispatch('save', { content })} disabled={!selectedFilePath || !dirty || saving}>
+        {saving ? 'Saving...' : dirty ? 'Save changes' : 'Saved'}
+      </button>
+    </div>
   </div>
+
+  {#if actionsOpen}
+    <div class="card-panel editor-actions-panel">
+      <div class="editor-actions-panel-header">
+        <div>
+          <p class="eyebrow">Hidden actions</p>
+          <h3>Create file</h3>
+        </div>
+        <button class="ghost-button" type="button" on:click={() => (actionsOpen = false)}>Close</button>
+      </div>
+
+      <form class="editor-actions-form" on:submit|preventDefault={submitNewFile}>
+        <label class="field-label" for="new-file-name">File path</label>
+        <input id="new-file-name" class="text-input" bind:value={newFileName} placeholder="notes/new-file.md" autocomplete="off" />
+
+        <label class="field-label" for="new-file-content">Initial content</label>
+        <textarea id="new-file-content" class="text-input editor-actions-textarea" bind:value={newFileContent} placeholder="Optional starter content"></textarea>
+
+        <p class="empty-state small">Creates the file inside {currentPath === '.' ? 'the repo root' : currentPath}.</p>
+
+        <div class="editor-actions-footer">
+          <button class="ghost-button" type="button" on:click={() => (actionsOpen = false)}>Cancel</button>
+          <button class="primary-button" type="submit" disabled={!canSubmitNewFile() || creating}>
+            {creating ? 'Creating...' : 'Create file'}
+          </button>
+        </div>
+      </form>
+    </div>
+  {/if}
 
   <div class="editor-layout">
     <aside class="file-browser card-panel">

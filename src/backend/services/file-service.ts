@@ -49,4 +49,10 @@ export class FileService {
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, content, "utf8");
   }
+
+  async createFile(repo: SelectedRepo, relativePath: string, content = "") {
+    const absolutePath = resolveWithin(repo.absolutePath, relativePath);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, content, { encoding: "utf8", flag: "wx" });
+  }
 }

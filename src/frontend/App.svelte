@@ -15,6 +15,7 @@
     CostReport,
     DiffFile,
     GitCommitResult,
+    FileCreateResult,
     FileDocument,
     FileEntry,
     GitSyncResult,
@@ -120,6 +121,7 @@
   let draftContent = '';
   let editorDirty = false;
   let savingFile = false;
+  let creatingFile = false;
 
   let agentSnapshot: AgentSnapshot = emptyAgentSnapshot;
   let socket: WebSocket | null = null;
@@ -788,6 +790,31 @@
     }
   }
 
+  async function createFile(path: string, content: string) {
+    const normalizedPath = path.trim();
+
+    if (!normalizedPath || normalizedPath === '.') {
+      showBanner('File path is required.', 'error');
+      return;
+    }
+
+    creatingFile = true;
+
+    try {
+      const response = await apiFetch<FileCreateResult>('/api/files/create', {
+        method: 'POST',
+        body: JSON.stringify({ path: normalizedPath, content })
+      });
+      await loadFiles(parentDirectoryFor(response.path));
+      await openFile(response.path);
+      showBanner('File created.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      creatingFile = false;
+    }
+  }
+
   async function sendPrompt(prompt: string) {
     try {
       await apiFetch('/api/agent/prompt', {
@@ -1324,6 +1351,16 @@
     loginError = message;
   }
 
+  function parentDirectoryFor(relativePath: string) {
+    if (relativePath === '.' || relativePath.length === 0) {
+      return '.';
+    }
+
+    const segments = relativePath.split('/').filter(Boolean);
+    segments.pop();
+    return segments.length === 0 ? '.' : segments.join('/');
+  }
+
   function mergeLogEntries(current: BackendLogEntry[], incoming: BackendLogEntry[]) {
     const bySeq = new Map<number, BackendLogEntry>();
 
@@ -1514,9 +1551,11 @@
             dirty={editorDirty}
             loading={fileLoading}
             saving={savingFile}
+            creating={creatingFile}
             on:browse={(event) => loadFiles(event.detail.path)}
             on:openFile={(event) => openFile(event.detail.path)}
             on:save={(event) => saveFile(event.detail.content)}
+            on:createFile={(event) => createFile(event.detail.path, event.detail.content)}
             on:change={(event) => {
               draftContent = event.detail.content;
               editorDirty = selectedDocument ? event.detail.content !== selectedDocument.content : false;

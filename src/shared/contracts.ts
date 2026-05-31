@@ -22,6 +22,16 @@ export type FileDocument = {
   content: string;
 };
 
+export type FileCreateRequest = {
+  path: string;
+  content?: string;
+};
+
+export type FileCreateResult = {
+  ok: true;
+  path: string;
+};
+
 export type DiffHunk = {
   id: string;
   header: string;

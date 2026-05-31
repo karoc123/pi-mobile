@@ -73,7 +73,7 @@ To minimize memory footprint and execution latency on the Raspberry Pi, the fron
 - **Navigation:** Bottom-anchored navigation drawer featuring three unified thumb views:
   1. **Chat (`/chat`):** Feeds interactions directly into the active `pi` execution process. Utilizes modular Markdown text parsing with responsive fullscreen viewports for generated code blocks.
   2. **Git Diff (`/diff`):** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap hunk manipulation plus header-level `pull` / `push` / `commit` actions.
-  3. **Editor (`/editor`):** A touch-first text editing surface implemented with **CodeMirror 6**, ensuring fluid virtual keyboard integration and real-time syntax highlighting.
+  3. **Editor (`/editor`):** A touch-first text editing surface implemented with **CodeMirror 6**, ensuring fluid virtual keyboard integration, real-time syntax highlighting, and a hidden actions menu for fast file creation.
 
 ### 2.3 Backend & Tool-Wrapper
 
@@ -101,10 +101,10 @@ To reduce silent failures and make incidents reproducible directly from mobile d
 
 ### 3.1 Direct File Editing via Smartphone Editor
 
-When a file is manually modified via the integrated touchscreen editor:
+When a file is manually modified via the integrated touchscreen editor or a new file is created from the editor actions menu:
 
-1. The frontend dispatches the updated contents to `POST /api/files/write`.
-2. The backend commits the raw string directly into the targeted file within the `/workspace` directory.
+1. The frontend dispatches the updated contents to `POST /api/files/write` or a create request to `POST /api/files/create`.
+2. The backend commits the raw string directly into the targeted file within the `/workspace` directory, creating parent folders as needed.
 3. The filesystem watcher (`chokidar`) catches the write event and instantly broadcasts a global WebSocket notification to the client: `{ "type": "workspace_changed", "payload": { ... } }`.
 4. The frontend schedules a debounced diff refresh and only reloads diff data while the diff view is active, preventing burst traffic during rapid file writes.
 5. Because Git remains the _Single Source of Truth_, your manual touch-ups instantly populate the diff view alongside the agent's work.
