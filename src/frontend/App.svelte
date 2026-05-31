@@ -7,6 +7,8 @@
     AgentCommandState,
     AgentSnapshot,
     AgentUsage,
+    ChatMessage,
+    ToolActivity,
     BackendHealthResponse,
     BackendResourceCheck,
     BackendLogEntry,
@@ -24,21 +26,29 @@
     WebsocketEnvelope,
     WorkspaceEntry
   } from '../shared/contracts.js';
-  import AppMenu, { type ThemeName } from './components/AppMenu.svelte';
-  import BottomNav, { type ViewName } from './components/BottomNav.svelte';
+  import AppMenu from './components/AppMenu.svelte';
+  import BottomNav from './components/BottomNav.svelte';
   import ChatView from './components/ChatView.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
-  import CostView, { type CostRangePreset } from './components/CostView.svelte';
+  import CostView from './components/CostView.svelte';
   import LogView from './components/LogView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import SystemStatusBar from './components/SystemStatusBar.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
   import { ApiRequestError, apiFetch } from './lib/api.js';
 
+  type ThemeName = 'vscode-dark' | 'vscode-light';
+  type ViewName = 'chat' | 'diff' | 'editor';
+  type CostRangePreset = '7d' | '30d' | '90d' | 'all' | 'custom';
   type AppViewName = ViewName | 'costs' | 'logs';
   type AsyncViewName = Exclude<ViewName, 'chat'>;
   type SocketStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
   type BackendStatus = 'healthy' | 'degraded' | 'unreachable' | 'unknown';
+  type ToolTraceBatch = {
+    id: string;
+    boundary: number;
+    tools: ToolActivity[];
+  };
 
   const themeStorageKey = 'pimobile.theme';
   const backendHealthPollIntervalMs = 10_000;
@@ -46,6 +56,13 @@
   const diffRefreshDebounceMs = 450;
   const logStreamRetryDelayMs = 1_500;
   const maxVisibleLogEntries = 600;
+  const maxToolBatchCount = 8;
+  const maxToolsPerBatch = 24;
+  const maxLocalSystemMessages = 40;
+  const followUpCostGuardEnabledStorageKey = 'pimobile.follow-up-cost-guard-enabled';
+  const followUpCostSoftLimitUsdStorageKey = 'pimobile.follow-up-cost-soft-limit-usd';
+  const defaultFollowUpCostGuardEnabled = resolveFollowUpCostGuardEnabled();
+  const defaultFollowUpCostSoftLimitUsd = resolveFollowUpCostSoftLimitUsdFromEnv();
 
   const emptyUsage: AgentUsage = {
     inputTokens: 0,
@@ -124,6 +141,17 @@
   let creatingFile = false;
 
   let agentSnapshot: AgentSnapshot = emptyAgentSnapshot;
+  let localSystemMessages: ChatMessage[] = [];
+  let chatMessages: ChatMessage[] = [];
+  let toolTraceBatches: ToolTraceBatch[] = [];
+  let toolTraceBoundary = 0;
+  let followUpCostGuardEnabled = defaultFollowUpCostGuardEnabled;
+  let followUpCostGuardEnabledHasOverride = false;
+  let followUpCostSoftLimitUsd = defaultFollowUpCostSoftLimitUsd;
+  let followUpCostSoftLimitHasOverride = false;
+  let keepRunningRequired = false;
+  let keepRunningApproved = false;
+  let lastKnownGlobalCostUsd = 0;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let socketManualClose = false;
@@ -182,6 +210,7 @@
 
   onMount(() => {
     initializeTheme();
+    initializeFollowUpCostGuardSettings();
     void initialize();
 
     return () => {
@@ -207,6 +236,13 @@
 
   $: if (currentRepo && view === 'editor') {
     void ensureEditorViewLoaded();
+  }
+
+  $: chatMessages = [...agentSnapshot.messages, ...localSystemMessages];
+
+  $: if (agentSnapshot.runtimePhase === 'idle' && (keepRunningRequired || keepRunningApproved)) {
+    keepRunningRequired = false;
+    keepRunningApproved = false;
   }
 
   $: {
@@ -263,6 +299,70 @@
     if (persist) {
       window.localStorage.setItem(themeStorageKey, nextTheme);
     }
+  }
+
+  function initializeFollowUpCostGuardSettings() {
+    const storedGuardEnabled = window.localStorage.getItem(followUpCostGuardEnabledStorageKey);
+
+    if (storedGuardEnabled !== null) {
+      const parsed = parseStoredBoolean(storedGuardEnabled);
+
+      if (parsed !== null) {
+        followUpCostGuardEnabled = parsed;
+        followUpCostGuardEnabledHasOverride = true;
+      } else {
+        window.localStorage.removeItem(followUpCostGuardEnabledStorageKey);
+      }
+    }
+
+    const storedSoftLimitUsd = window.localStorage.getItem(followUpCostSoftLimitUsdStorageKey);
+
+    if (storedSoftLimitUsd !== null) {
+      const parsed = parseNonNegativeNumber(storedSoftLimitUsd);
+
+      if (parsed !== null) {
+        followUpCostSoftLimitUsd = parsed;
+        followUpCostSoftLimitHasOverride = true;
+      } else {
+        window.localStorage.removeItem(followUpCostSoftLimitUsdStorageKey);
+      }
+    }
+  }
+
+  function setFollowUpCostGuardEnabled(value: boolean) {
+    followUpCostGuardEnabled = value;
+    followUpCostGuardEnabledHasOverride = true;
+    window.localStorage.setItem(followUpCostGuardEnabledStorageKey, value ? 'true' : 'false');
+    clearKeepRunningGate();
+  }
+
+  function resetFollowUpCostGuardEnabled() {
+    followUpCostGuardEnabled = defaultFollowUpCostGuardEnabled;
+    followUpCostGuardEnabledHasOverride = false;
+    window.localStorage.removeItem(followUpCostGuardEnabledStorageKey);
+    clearKeepRunningGate();
+  }
+
+  function setFollowUpCostSoftLimitUsd(valueRaw: string) {
+    const parsed = parseNonNegativeNumber(valueRaw);
+
+    if (parsed === null) {
+      showBanner('Soft limit must be a non-negative number.', 'error');
+      return;
+    }
+
+    const normalized = Number(parsed.toFixed(2));
+    followUpCostSoftLimitUsd = normalized;
+    followUpCostSoftLimitHasOverride = true;
+    window.localStorage.setItem(followUpCostSoftLimitUsdStorageKey, normalized.toFixed(2));
+    clearKeepRunningGate();
+  }
+
+  function resetFollowUpCostSoftLimitUsd() {
+    followUpCostSoftLimitUsd = defaultFollowUpCostSoftLimitUsd;
+    followUpCostSoftLimitHasOverride = false;
+    window.localStorage.removeItem(followUpCostSoftLimitUsdStorageKey);
+    clearKeepRunningGate();
   }
 
   function seedComposer(nextPrompt: string) {
@@ -453,10 +553,77 @@
     socketStatus = 'offline';
   }
 
+  function createToolBatchId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+
+    return `tool-batch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function resetToolTraceBatches() {
+    toolTraceBatches = [];
+    toolTraceBoundary = 0;
+  }
+
+  function setToolTraceFromSnapshot(tools: ToolActivity[]) {
+    if (tools.length === 0) {
+      toolTraceBatches = [];
+      return;
+    }
+
+    toolTraceBatches = [
+      {
+        id: createToolBatchId(),
+        boundary: toolTraceBoundary,
+        tools: tools.slice(0, maxToolsPerBatch),
+      },
+    ];
+  }
+
+  function markToolTraceBoundary() {
+    toolTraceBoundary += 1;
+  }
+
+  function appendToolTrace(tool: ToolActivity) {
+    const activeBatch = toolTraceBatches[0];
+
+    if (!activeBatch || activeBatch.boundary !== toolTraceBoundary) {
+      toolTraceBatches = [
+        {
+          id: createToolBatchId(),
+          boundary: toolTraceBoundary,
+          tools: [tool],
+        },
+        ...toolTraceBatches,
+      ].slice(0, maxToolBatchCount);
+      return;
+    }
+
+    const updatedBatch: ToolTraceBatch = {
+      ...activeBatch,
+      tools: [tool, ...activeBatch.tools.filter((entry) => entry.id !== tool.id)].slice(0, maxToolsPerBatch),
+    };
+
+    toolTraceBatches = [updatedBatch, ...toolTraceBatches.slice(1)];
+  }
+
+  function syncToolTraceFromSnapshot(snapshot: AgentSnapshot) {
+    if (snapshot.tools.length > 0) {
+      setToolTraceFromSnapshot(snapshot.tools);
+      return;
+    }
+
+    if (snapshot.messages.length === 0) {
+      resetToolTraceBatches();
+    }
+  }
+
   function handleSocketMessage(event: WebsocketEnvelope) {
     if (event.type === 'connected') {
       agentSnapshot = event.payload;
       currentRepo = event.payload.repo;
+      syncToolTraceFromSnapshot(event.payload);
       socketStatus = 'connected';
       return;
     }
@@ -476,6 +643,11 @@
         ...agentSnapshot,
         messages: [...agentSnapshot.messages, event.payload.message]
       };
+
+      if (event.payload.message.role === 'user' || event.payload.message.role === 'assistant') {
+        markToolTraceBoundary();
+      }
+
       return;
     }
 
@@ -496,6 +668,7 @@
         ...agentSnapshot,
         tools: [event.payload.tool, ...agentSnapshot.tools.filter((tool) => tool.id !== event.payload.tool.id)].slice(0, 12)
       };
+      appendToolTrace(event.payload.tool);
       return;
     }
 
@@ -511,6 +684,9 @@
       currentRepo = event.payload.repo;
       commandPaletteOpen = false;
       commandState = null;
+      resetToolTraceBatches();
+      localSystemMessages = [];
+      clearKeepRunningGate();
       agentSnapshot = {
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
@@ -659,8 +835,10 @@
 
   async function loadAgentState(options: { silent?: boolean } = {}) {
     try {
-      agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
-      currentRepo = agentSnapshot.repo;
+      const snapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
+      agentSnapshot = snapshot;
+      currentRepo = snapshot.repo;
+      syncToolTraceFromSnapshot(snapshot);
     } catch (error) {
       if (!options.silent) {
         handleApiFailure(error);
@@ -692,6 +870,20 @@
 
     commandPaletteOpen = true;
     await loadCommandState();
+  }
+
+  async function startNewChatFromComposer() {
+    if (!currentRepo || commandBusy) {
+      return;
+    }
+
+    if (!window.confirm('Start new chat?')) {
+      return;
+    }
+
+    localSystemMessages = [];
+    clearKeepRunningGate();
+    await executePaletteCommand({ command: 'new-session' });
   }
 
   function scheduleDiffReload(force = false) {
@@ -816,14 +1008,56 @@
   }
 
   async function sendPrompt(prompt: string) {
+    const trimmed = prompt.trim();
+
+    if (trimmed.length === 0) {
+      return;
+    }
+
+    const isFollowUp = agentSnapshot.runtimePhase !== 'idle';
+    let globalCostTotal = lastKnownGlobalCostUsd;
+    let consumedKeepRunningApproval = false;
+
+    if (isFollowUp && followUpCostGuardEnabled) {
+      globalCostTotal = await readGlobalCostTotal();
+    }
+
+    if (isFollowUp && followUpCostGuardEnabled && globalCostTotal >= followUpCostSoftLimitUsd && !keepRunningApproved) {
+      keepRunningRequired = true;
+      appendLocalSystemMessage(
+        `Global cost currently ${formatUsd(globalCostTotal)} (limit ${formatUsd(followUpCostSoftLimitUsd)}). Tap Keep running before the next follow-up step.`,
+      );
+      seedComposer(trimmed);
+      return;
+    }
+
+    if (!isFollowUp) {
+      clearKeepRunningGate();
+    } else if (keepRunningApproved) {
+      consumedKeepRunningApproval = true;
+      keepRunningApproved = false;
+      keepRunningRequired = false;
+    }
+
     try {
       await apiFetch('/api/agent/prompt', {
         method: 'POST',
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt: trimmed })
       });
     } catch (error) {
+      if (consumedKeepRunningApproval) {
+        keepRunningApproved = true;
+      }
+
+      seedComposer(trimmed);
       handleApiFailure(error);
     }
+  }
+
+  function allowKeepRunning() {
+    keepRunningRequired = false;
+    keepRunningApproved = true;
+    appendLocalSystemMessage(`Keep running confirmed. Next follow-up is allowed (global cost: ${formatUsd(lastKnownGlobalCostUsd)}).`);
   }
 
   async function abortRun() {
@@ -880,6 +1114,12 @@
       if (closePaletteCommands.includes(request.command)) {
         commandPaletteOpen = false;
         commandState = null;
+
+        if (request.command === 'new-session' || request.command === 'resume-session') {
+          resetToolTraceBatches();
+          localSystemMessages = [];
+          clearKeepRunningGate();
+        }
       }
     } catch (error) {
       handleApiFailure(error);
@@ -1331,6 +1571,11 @@
     draftContent = '';
     editorDirty = false;
     agentSnapshot = emptyAgentSnapshot;
+    resetToolTraceBatches();
+    localSystemMessages = [];
+    chatMessages = [];
+    clearKeepRunningGate();
+    lastKnownGlobalCostUsd = 0;
     costReport = emptyCostReport;
     costRepoFilter = '';
     costModelFilter = '';
@@ -1377,6 +1622,95 @@
 
   function collectLogSources(entries: BackendLogEntry[]) {
     return [...new Set(entries.map((entry) => entry.source).filter((source) => source.length > 0))].sort((left, right) => left.localeCompare(right));
+  }
+
+  function createSystemMessageId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+
+    return `system-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
+
+  function appendLocalSystemMessage(text: string) {
+    const systemMessage: ChatMessage = {
+      id: createSystemMessageId(),
+      role: 'system',
+      text,
+      status: 'complete',
+      timestamp: new Date().toISOString(),
+    };
+
+    localSystemMessages = [
+      ...localSystemMessages,
+      systemMessage,
+    ].slice(-maxLocalSystemMessages);
+  }
+
+  function clearKeepRunningGate() {
+    keepRunningRequired = false;
+    keepRunningApproved = false;
+  }
+
+  function formatUsd(value: number) {
+    return `$${value.toFixed(2)}`;
+  }
+
+  function parseStoredBoolean(value: string) {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+      return true;
+    }
+
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+      return false;
+    }
+
+    return null;
+  }
+
+  function parseNonNegativeNumber(value: string) {
+    const parsed = Number.parseFloat(value);
+
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  function resolveFollowUpCostGuardEnabled() {
+    const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_FOLLOW_UP_COST_GUARD_ENABLED;
+
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+      return true;
+    }
+
+    const parsed = parseStoredBoolean(raw);
+    return parsed ?? true;
+  }
+
+  function resolveFollowUpCostSoftLimitUsdFromEnv() {
+    const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_FOLLOW_UP_COST_SOFT_LIMIT_USD;
+
+    if (typeof raw !== 'string' || raw.trim().length === 0) {
+      return 0.5;
+    }
+
+    const parsed = parseNonNegativeNumber(raw);
+    return parsed ?? 0.5;
+  }
+
+  async function readGlobalCostTotal() {
+    try {
+      const report = await apiFetch<CostReport>('/api/costs');
+      lastKnownGlobalCostUsd = report.summary.totalCost;
+      return report.summary.totalCost;
+    } catch {
+      lastKnownGlobalCostUsd = agentSnapshot.usage.totalCost;
+      return lastKnownGlobalCostUsd;
+    }
   }
 
   function showBanner(message: string, tone: 'info' | 'success' | 'error') {
@@ -1497,17 +1831,20 @@
     {:else if currentRepo}
       {#if view === 'chat'}
         <ChatView
-          messages={agentSnapshot.messages}
-          tools={agentSnapshot.tools}
+          messages={chatMessages}
+          toolBatches={toolTraceBatches}
           runtimePhase={agentSnapshot.runtimePhase}
           pendingMessageCount={agentSnapshot.pendingMessageCount}
           canAbort={agentSnapshot.runtimePhase !== 'idle'}
+          showKeepRunning={keepRunningRequired}
           lastError={agentSnapshot.lastError}
           usage={agentSnapshot.usage}
           prefillPrompt={composerPrefill}
           prefillToken={composerPrefillToken}
           on:submit={(event) => sendPrompt(event.detail.prompt)}
           on:abort={abortRun}
+          on:keepRunning={allowKeepRunning}
+          on:newSession={() => void startNewChatFromComposer()}
           on:openCommands={() => void openCommandPalette()}
         />
       {:else if view === 'diff'}
@@ -1523,7 +1860,7 @@
             on:commit={requestCommit}
             on:pull={() => void pullChanges()}
             on:push={() => void pushChanges()}
-            on:revert={(event) => revertHunk(event.detail.diff, event.detail.hunkId)}
+            on:revert={(event: CustomEvent<{ diff: string; hunkId: string }>) => revertHunk(event.detail.diff, event.detail.hunkId)}
           />
         {:else if lazyViewLoading === 'diff'}
           <section class="view-shell">
@@ -1552,11 +1889,11 @@
             loading={fileLoading}
             saving={savingFile}
             creating={creatingFile}
-            on:browse={(event) => loadFiles(event.detail.path)}
-            on:openFile={(event) => openFile(event.detail.path)}
-            on:save={(event) => saveFile(event.detail.content)}
-            on:createFile={(event) => createFile(event.detail.path, event.detail.content)}
-            on:change={(event) => {
+            on:browse={(event: CustomEvent<{ path: string }>) => loadFiles(event.detail.path)}
+            on:openFile={(event: CustomEvent<{ path: string }>) => openFile(event.detail.path)}
+            on:save={(event: CustomEvent<{ content: string }>) => saveFile(event.detail.content)}
+            on:createFile={(event: CustomEvent<{ path: string; content: string }>) => createFile(event.detail.path, event.detail.content)}
+            on:change={(event: CustomEvent<{ content: string }>) => {
               draftContent = event.detail.content;
               editorDirty = selectedDocument ? event.detail.content !== selectedDocument.content : false;
             }}
@@ -1592,6 +1929,11 @@
       open={menuOpen}
       currentRepo={currentRepo}
       theme={theme}
+      followUpCostGuardEnabled={followUpCostGuardEnabled}
+      followUpCostGuardEnabledHasOverride={followUpCostGuardEnabledHasOverride}
+      followUpCostSoftLimitUsd={followUpCostSoftLimitUsd}
+      followUpCostSoftLimitUsdDefault={defaultFollowUpCostSoftLimitUsd}
+      followUpCostSoftLimitHasOverride={followUpCostSoftLimitHasOverride}
       on:close={() => (menuOpen = false)}
       on:chooseRepo={() => {
         menuOpen = false;
@@ -1600,6 +1942,10 @@
       on:openCosts={() => void openCostView()}
       on:openLogs={() => void openLogView()}
       on:setTheme={(event) => setTheme(event.detail.value)}
+      on:setFollowUpCostGuardEnabled={(event) => setFollowUpCostGuardEnabled(event.detail.value)}
+      on:resetFollowUpCostGuardEnabled={resetFollowUpCostGuardEnabled}
+      on:setFollowUpCostSoftLimitUsd={(event) => setFollowUpCostSoftLimitUsd(event.detail.value)}
+      on:resetFollowUpCostSoftLimitUsd={resetFollowUpCostSoftLimitUsd}
       on:logout={logout}
     />
     <WorkspacePicker

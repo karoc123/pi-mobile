@@ -62,7 +62,7 @@ To secure filesystem access from the mobile client, an explicit authentication b
 
 - **Mechanism:** Simple Password-Only Authentication.
 - **Implementation:** A lightweight, HTTP-only cookie-based session token system managed within the Express backend.
-- **Configuration:** The master password is safe-guarded via environment variables (`APP_PASSWORD`) fed through Docker Compose.
+- **Configuration:** The master password is safe-guarded via environment variables (`APP_PASSWORD`) fed through Docker Compose or loaded from a local `.env` file during `npm start`.
 - **Flow:** Any unauthenticated requests to REST routes or WebSocket handshake upgrades are intercepted by an auth-middleware and redirected to a minimalist login screen.
 
 ### 2.2 Frontend (Mobile-Optimized Web App)

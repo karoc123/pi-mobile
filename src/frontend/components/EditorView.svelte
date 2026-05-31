@@ -107,14 +107,6 @@
       <p class="eyebrow">Touch editor</p>
       <h2>{selectedFilePath || 'Select a file'}</h2>
     </div>
-    <div class="header-actions editor-header-actions">
-      <button class="secondary-button" type="button" on:click={openActions} aria-expanded={actionsOpen}>
-        Actions
-      </button>
-      <button class="primary-button" type="button" on:click={() => dispatch('save', { content })} disabled={!selectedFilePath || !dirty || saving}>
-        {saving ? 'Saving...' : dirty ? 'Save changes' : 'Saved'}
-      </button>
-    </div>
   </div>
 
   {#if actionsOpen}
@@ -197,6 +189,15 @@
           <p>Pick a file from the browser to edit it directly inside the mobile UI.</p>
         </div>
       {/if}
+
+      <div class="editor-panel-footer">
+        <button class="secondary-button" type="button" on:click={openActions} aria-expanded={actionsOpen}>
+          Actions
+        </button>
+        <button class="primary-button" type="button" on:click={() => dispatch('save', { content })} disabled={!selectedFilePath || !dirty || saving}>
+          {saving ? 'Saving...' : dirty ? 'Save changes' : 'Saved'}
+        </button>
+      </div>
     </div>
   </div>
 </section>

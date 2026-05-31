@@ -600,7 +600,12 @@ export class PiAgentService {
         id: event.toolCallId,
         toolName: event.toolName,
         status: event.type === "tool_execution_end" ? (event.isError ? "error" : "complete") : "running",
-        detail: event.type === "tool_execution_start" ? summarizePayload(event.args) : event.type === "tool_execution_update" ? summarizePayload(event.partialResult) : summarizePayload(event.result),
+        detail:
+          event.type === "tool_execution_start"
+            ? summarizePayload(event.args, null)
+            : event.type === "tool_execution_update"
+              ? summarizePayload(event.partialResult, null)
+              : summarizePayload(event.result, null),
       };
 
       this.tools = upsertTool(this.tools, tool);

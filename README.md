@@ -1,148 +1,97 @@
 # PiMobile
 
-PiMobile is a mobile-first web cockpit for local Git repositories. It combines four pieces in one runtime:
+PiMobile turns a local Git workspace into a mobile-first coding cockpit.
 
-- password-protected access to a workspace root
-- repository selection below that workspace root
-- a live `pi.dev` SDK session bound to the active repository
-- touch-friendly diff review and file editing
-- persistent per-session cost tracking with a menu-driven overview
+You can run it either:
 
-## What is implemented
+- locally with npm start
+- containerized with docker compose up
 
-- Express + TypeScript backend with cookie-based password auth
-- Svelte mobile UI with Chat, Diff, and Editor views
-- menu-driven cost dashboard with filters for repository, model, and timeframe
-- menu-driven backend log view with live streaming and filters for level, source, and search text
-- VS-Code-like light and dark themes via burger menu
-- chat status surface with explicit ready/running state, model label, and token/cost/context footer
-- toggleable system status panel (tool icon beside menu) with auth/socket/backend/log-stream state and required resource-access checks
-- mobile-first slash command suggestions for fast `/model`, `/session`, `/compact`, and related commands
-- repository picker for any Git repo below `WORKSPACE_ROOT`
-- websocket updates for agent state and filesystem changes
-- hunk-level revert through reverse `git apply`
-- one-tap Git `pull` and `push` actions directly in the Diff header
-- CodeMirror editor with save flow
-- SQLite-backed cost persistence under `.pi-mobile/costs.sqlite` by default
-- Docker and local run paths
+The goal is simple: clone, configure once, and start working from your phone in minutes.
+
+## Why This Repo
+
+- Fast local setup for Raspberry Pi and Linux hosts
+- Password-gated web UI for chat, diffs, and editing
+- Works against real repositories on your filesystem
 
 ## Prerequisites
 
 - Node.js 22+
 - npm 10+
 - Git
-- an existing `pi.dev` authentication under `~/.pi/agent`
+- Existing pi.dev auth under ~/.pi/agent
 
-If `~/.pi/agent` is not authenticated yet, log in once with the official package before using the chat view. One way is:
+If pi.dev is not authenticated yet:
 
 ```bash
 npx @earendil-works/pi-coding-agent
 ```
 
-Then complete `/login` inside the interactive session and exit again.
+Then run /login once and exit.
 
-## Local start on this machine
+## 5-Minute Local Quickstart
 
-1. Create the environment file.
+1. Clone and enter the repo.
+
+```bash
+git clone git@github.com:karoc123/pi-mobile.git
+cd pi-mobile
+```
+
+2. Create environment file.
 
 ```bash
 cp .env.example .env
 ```
 
-2. Edit `.env` and set at least these values:
+3. Edit .env and set at minimum:
 
 ```env
 APP_PASSWORD=your-local-password
-GIT_USER_NAME=Your Name
-GIT_USER_EMAIL=you@example.com
-WORKSPACE_ROOT=/home/zink/dev
-COSTS_DB_PATH=/home/zink/dev/.pi-mobile/costs.sqlite
-PI_AGENT_DIR=/home/zink/.pi/agent
-PI_SESSION_DIR=/home/zink/.pi/agent/sessions
+WORKSPACE_ROOT=/home/your-user/dev
+PI_AGENT_DIR=/home/your-user/.pi/agent
+PI_SESSION_DIR=/home/your-user/.pi/agent/sessions
 ```
 
-`GIT_USER_NAME` and `GIT_USER_EMAIL` are injected into every Git operation so containerized runs do not depend on a global gitconfig.
+Optional but recommended for commits:
 
-3. Install dependencies.
+```env
+GIT_USER_NAME=Your Name
+GIT_USER_EMAIL=you@example.com
+```
+
+4. Install and start.
 
 ```bash
 npm install
-```
-
-4. Start the development servers.
-
-```bash
-set -a
-source .env
-set +a
-npm run dev
-```
-
-5. Open the web UI.
-
-```text
-http://localhost:5173
-```
-
-6. Log in with `APP_PASSWORD`.
-
-7. Open the burger menu, choose `Choose repo`, browse within `/home/zink/dev`, and select `pi-mobile`.
-
-8. Use the three main views:
-
-- `Chat`: send prompts to the active repository through the `pi.dev` SDK session, inspect explicit ready/running state, and use slash suggestions for common commands
-- `Diff`: inspect changed hunks and revert individual hunks
-- `Editor`: browse files, edit them in-place, and save
-
-9. Open `Menu -> Open costs` for the persistent cost overview. The dashboard aggregates all recorded Pi sessions and can be filtered by repository, model, and date range.
-
-10. Open `Menu -> Open log` to inspect the full backend runtime stream. The log view supports live streaming, request-id correlation, and paging older entries for incident analysis.
-
-11. In the log view, use `Delete complete log` to clear the in-memory log buffer and persisted backend log files.
-
-## Production-style local run
-
-If you want to test the built server instead of Vite dev mode:
-
-```bash
-set -a
-source .env
-set +a
-npm run build
 npm start
 ```
 
-Then open:
+5. Open:
 
 ```text
 http://localhost:3000
 ```
 
-## Docker start
+Login with APP_PASSWORD, select a repository, and start.
 
-1. Copy `.env.example` to `.env` and set at least:
+## Docker Quickstart
+
+1. Create .env from template and set at minimum:
 
 ```env
 APP_PASSWORD=your-local-password
-GIT_USER_NAME=Your Name
-GIT_USER_EMAIL=you@example.com
-HOST_PORT=3000
 SESSION_COOKIE_SECURE=false
-WORKSPACE_HOST_PATH=/home/zink/dev
-PI_HOME_HOST_PATH=/home/zink/.pi
-GITCONFIG_HOST_PATH=/home/zink/.gitconfig
-SSH_HOST_PATH=/home/zink/.ssh
+WORKSPACE_HOST_PATH=/home/your-user/dev
+PI_HOME_HOST_PATH=/home/your-user/.pi
+GITCONFIG_HOST_PATH=/home/your-user/.gitconfig
+SSH_HOST_PATH=/home/your-user/.ssh
 HOST_UID=1000
 HOST_GID=1000
 ```
 
-Replace `HOST_UID` and `HOST_GID` with your host user and group IDs. You can check them once with `id -u` and `id -g`, or export them before Compose with `export HOST_UID=$(id -u) HOST_GID=$(id -g)`.
-
-Leave `SESSION_COOKIE_SECURE=false` when you open the Dockerized app over plain `http://...`. Only switch it to `true` if you terminate TLS in front of PiMobile and access it via HTTPS.
-
-If port 3000 is already in use on the host, change `HOST_PORT` to another free port such as `3001`.
-
-2. Start the container:
+2. Build and run:
 
 ```bash
 docker compose up --build
@@ -151,66 +100,26 @@ docker compose up --build
 3. Open:
 
 ```text
-http://localhost:HOST_PORT
+http://localhost:3000
 ```
 
-4. Pick `pi-mobile` from the repository picker to work on this repository itself.
-
-If login succeeds but the initial workspace bootstrap fails, the UI now returns to the login screen and shows the backend error instead of leaving you in an empty picker state.
-
-By default, Docker now stores cost DB, backend logs, and Pi session files in the project folder under `/workspace/pi-mobile/.pi-mobile/` so data persists across container recreates:
-
-- `/workspace/pi-mobile/.pi-mobile/costs.sqlite`
-- `/workspace/pi-mobile/.pi-mobile/logs/`
-- `/workspace/pi-mobile/.pi-mobile/sessions/`
-
-You can still override each path with `COSTS_DB_PATH`, `LOGS_DIR`, and `PI_SESSION_DIR` in `.env`.
-
-## Verification run in this workspace
-
-The current kickoff was validated with:
+## Day-to-Day Commands
 
 ```bash
-npm run build
-npm test
+npm run dev      # frontend + backend watch mode
+npm test         # test suite
+npm run build    # production build
 ```
 
-Both commands pass in this workspace.
+## Common First-Run Issues
 
-## Browser end-to-end suite
+- APP_PASSWORD missing:
+  - Ensure .env exists and APP_PASSWORD is non-empty.
+- Docker file permission issues:
+  - Set HOST_UID and HOST_GID to your user IDs.
 
-The manually verified browser flow is available as a Playwright suite.
+## Where To Go Next
 
-1. Install the Playwright browser once:
-
-```bash
-npx playwright install chromium
-```
-
-2. Run the suite:
-
-```bash
-npm run test:e2e
-```
-
-What it covers:
-
-- password login
-- burger menu and theme toggle
-- repository picker selection
-- slash command suggestion visibility
-- chat flow against a deterministic mock pi runtime
-- explicit finished state plus usage footer rendering
-- editor save
-- diff view detection
-- hunk revert back to a clean tree
-
-The suite starts the built app automatically against an isolated workspace under `.playwright/workspace` and does not touch your real repositories.
-
-## Current limitations
-
-- the frontend still has a non-trivial client bundle, but Diff2Html and CodeMirror are now loaded on demand with the Diff and Editor views instead of the initial page load
-- the app tracks one active repository at a time in the UI
-- the chat layer uses the `pi.dev` SDK directly; CLI JSON/RPC fallbacks are not wired yet
-- cost persistence uses Node's built-in `node:sqlite` module on Node 22+, which currently emits an experimental runtime warning
-- the in-memory log buffer is capped for responsiveness; older entries remain in rotated files under `.pi-mobile/logs`
+- Architecture overview: docs/ARCHITECTURE.md
+- Product scope: docs/VISION.md
+- Runtime/domain context: CONTEXT.md

@@ -8,6 +8,11 @@
   export let open = false;
   export let currentRepo: SelectedRepo | null = null;
   export let theme: ThemeName = 'vscode-dark';
+  export let followUpCostGuardEnabled = true;
+  export let followUpCostGuardEnabledHasOverride = false;
+  export let followUpCostSoftLimitUsd = 0.5;
+  export let followUpCostSoftLimitUsdDefault = 0.5;
+  export let followUpCostSoftLimitHasOverride = false;
 
   const dispatch = createEventDispatcher<{
     close: void;
@@ -16,7 +21,15 @@
     openLogs: void;
     logout: void;
     setTheme: { value: ThemeName };
+    setFollowUpCostGuardEnabled: { value: boolean };
+    resetFollowUpCostGuardEnabled: void;
+    setFollowUpCostSoftLimitUsd: { value: string };
+    resetFollowUpCostSoftLimitUsd: void;
   }>();
+
+  function formatUsd(value: number) {
+    return `$${value.toFixed(2)}`;
+  }
 </script>
 
 {#if open}
@@ -44,6 +57,47 @@
           <button class:selected={theme === 'vscode-light'} class="theme-toggle" type="button" on:click={() => dispatch('setTheme', { value: 'vscode-light' })}>
             VS Code Light
           </button>
+        </div>
+      </section>
+
+      <section class="menu-section">
+        <p class="eyebrow">Follow-up cost guard</p>
+        <p class="menu-copy">Global guardrail for follow-up steps while a turn is still running.</p>
+
+        <label class="menu-setting-inline">
+          <span>Guard enabled</span>
+          <input
+            type="checkbox"
+            checked={followUpCostGuardEnabled}
+            on:change={(event) => dispatch('setFollowUpCostGuardEnabled', { value: (event.currentTarget as HTMLInputElement).checked })}
+          />
+        </label>
+
+        <label class="menu-setting-row">
+          <span class="field-label">Soft limit (USD)</span>
+          <input
+            class="text-input"
+            type="number"
+            min="0"
+            step="0.01"
+            value={followUpCostSoftLimitUsd.toFixed(2)}
+            on:change={(event) => dispatch('setFollowUpCostSoftLimitUsd', { value: (event.currentTarget as HTMLInputElement).value })}
+          />
+        </label>
+
+        <p class="menu-copy">
+          Env default: {formatUsd(followUpCostSoftLimitUsdDefault)}
+          {#if followUpCostSoftLimitHasOverride}
+            · menu override active
+          {/if}
+          {#if followUpCostGuardEnabledHasOverride}
+            · guard override active
+          {/if}
+        </p>
+
+        <div class="menu-insight-actions">
+          <button class="secondary-button" type="button" on:click={() => dispatch('resetFollowUpCostSoftLimitUsd')}>Use env limit</button>
+          <button class="secondary-button" type="button" on:click={() => dispatch('resetFollowUpCostGuardEnabled')}>Use env toggle</button>
         </div>
       </section>
 

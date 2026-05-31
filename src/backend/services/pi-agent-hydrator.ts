@@ -66,20 +66,28 @@ export function upsertTool(tools: ToolActivity[], tool: ToolActivity) {
   return [tool, ...remainder].slice(0, 12);
 }
 
-export function summarizePayload(payload: unknown) {
-  if (typeof payload === "string") {
-    return payload.slice(0, 240);
-  }
-
+export function summarizePayload(payload: unknown, maxLength: number | null = 240) {
   if (payload === null || payload === undefined) {
     return "";
   }
 
-  try {
-    return JSON.stringify(payload).slice(0, 240);
-  } catch {
-    return String(payload).slice(0, 240);
+  const text = (() => {
+    if (typeof payload === "string") {
+      return payload;
+    }
+
+    try {
+      return JSON.stringify(payload);
+    } catch {
+      return String(payload);
+    }
+  })();
+
+  if (maxLength === null || maxLength < 0) {
+    return text;
   }
+
+  return text.slice(0, maxLength);
 }
 
 export function summarizeText(text: string) {
