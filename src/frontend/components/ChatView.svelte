@@ -2,7 +2,7 @@
   import { createEventDispatcher, onMount, tick } from 'svelte';
 
   import type { AgentRuntimePhase, AgentUsage, ChatMessage, ToolActivity } from '../../../src/shared/contracts.js';
-  import { formatCompactTokenCount, formatModelLabel } from '../lib/agent-usage.js';
+  import { formatCompactTokenCount, formatModelLabel, formatUsageCost } from '../lib/agent-usage.js';
   import { renderMarkdown } from '../lib/markdown.js';
 
   type ToolTraceBatch = {
@@ -345,10 +345,6 @@
   function sendButtonLabel() {
     return 'SEND';
   }
-
-  function formatCost() {
-    return `$${usage.totalCost.toFixed(3)}`;
-  }
 </script>
 
 <section class="view-shell chat-view">
@@ -476,7 +472,7 @@
         <div class="usage-rail" title={formatModelLabel(usage.modelId)}>
           <span class="usage-chip">I {formatCompactTokenCount(usage.inputTokens)}</span>
           <span class="usage-chip">O {formatCompactTokenCount(usage.outputTokens)}</span>
-          <span class="usage-chip usage-cost">{formatCost()}</span>
+          <span class="usage-chip usage-cost">{formatUsageCost(usage.totalCost)}</span>
         </div>
         <div class="model-summary compact-model" title={formatModelLabel(usage.modelId)}>{formatModelLabel(usage.modelId)}</div>
         {#if canAbort}

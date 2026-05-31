@@ -5,7 +5,17 @@ import path from "node:path";
 import cookieParser from "cookie-parser";
 import express, { type NextFunction, type Request, type Response } from "express";
 
-import type { AgentCommandRequest, ApiErrorResponse, BackendHealthResponse, BackendLogLevel, BackendLogQuery, BackendLogQueryResponse, FileCreateRequest, FileCreateResult, GitSyncResult } from "../shared/contracts.js";
+import type {
+  AgentCommandRequest,
+  ApiErrorResponse,
+  BackendHealthResponse,
+  BackendLogLevel,
+  BackendLogQuery,
+  BackendLogQueryResponse,
+  FileCreateRequest,
+  FileCreateResult,
+  GitSyncResult,
+} from "../shared/contracts.js";
 
 import type { AppConfig } from "./config.js";
 import { AuthService } from "./services/auth-service.js";
@@ -39,6 +49,13 @@ export function createApp(services: AppServices) {
 
   app.use(express.json({ limit: "2mb" }));
   app.use(cookieParser());
+
+  app.use("/api", (_request, response, next) => {
+    response.setHeader("Cache-Control", "no-store, max-age=0");
+    response.setHeader("Pragma", "no-cache");
+    response.setHeader("Expires", "0");
+    next();
+  });
 
   app.use((request, response, next) => {
     const incomingRequestId = request.header("x-request-id")?.trim();

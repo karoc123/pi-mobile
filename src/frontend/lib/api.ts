@@ -36,6 +36,7 @@ export async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<
 
   const response = await fetch(url, {
     credentials: "same-origin",
+    cache: init.cache ?? "no-store",
     ...init,
     headers,
   });

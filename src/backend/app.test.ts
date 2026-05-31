@@ -223,6 +223,7 @@ describe("createApp", () => {
     expect(authorized.status).toBe(200);
     expect(authorized.body.entries).toEqual([]);
     expect(authorized.body.currentRepo.name).toBe(path.basename(tempDir));
+    expect(authorized.headers["cache-control"]).toContain("no-store");
     expect(commandStateResponse.status).toBe(200);
     expect(commandStateResponse.body).toEqual({
       session: null,
@@ -250,6 +251,7 @@ describe("createApp", () => {
     expect(executeCommand).toHaveBeenCalledWith({ command: "new-session" });
     expect(costResponse.status).toBe(200);
     expect(costResponse.body.summary.totalCost).toBe(2.75);
+    expect(costResponse.headers["cache-control"]).toContain("no-store");
     expect(getCostReport).toHaveBeenCalledWith({
       repo: "repo-a",
       model: "anthropic/claude-sonnet-4",

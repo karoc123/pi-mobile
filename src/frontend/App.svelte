@@ -53,6 +53,7 @@
   const themeStorageKey = 'pimobile.theme';
   const backendHealthPollIntervalMs = 10_000;
   const agentStatePollIntervalMs = 7_000;
+  const socketStateResyncDelaysMs = [300, 1200, 3000, 7000, 12000] as const;
   const diffRefreshDebounceMs = 450;
   const logStreamRetryDelayMs = 1_500;
   const maxVisibleLogEntries = 600;
@@ -157,6 +158,8 @@
   let socketManualClose = false;
   let socketStatus: SocketStatus = 'offline';
   let socketReconnectAttempt = 0;
+  let socketStateResyncTimer: number | null = null;
+  let socketStateResyncDelayIndex = 0;
 
   let backendStatus: BackendStatus = 'unknown';
   let backendLastSeen: string | null = null;
@@ -246,7 +249,15 @@
   }
 
   $: {
-    const shouldPollAgentState = authenticated && !!currentRepo && (socketStatus !== 'connected' || agentSnapshot.runtimePhase !== 'idle');
+    const unresolvedUsageCost =
+      agentSnapshot.usage.totalCost === 0 &&
+      agentSnapshot.usage.totalTokens > 0 &&
+      !agentSnapshot.usage.usingSubscription;
+
+    const shouldPollAgentState =
+      authenticated &&
+      !!currentRepo &&
+      (socketStatus !== 'connected' || agentSnapshot.runtimePhase !== 'idle' || unresolvedUsageCost);
 
     if (shouldPollAgentState) {
       startAgentStatePolling();
@@ -483,6 +494,8 @@
       reconnectTimer = null;
     }
 
+    clearSocketStateResyncTimer();
+
     socketManualClose = true;
     socket?.close();
     socketManualClose = false;
@@ -520,6 +533,7 @@
         return;
       }
 
+      clearSocketStateResyncTimer();
       socket = null;
 
       if (!authenticated || socketManualClose) {
@@ -538,6 +552,8 @@
   }
 
   function closeSocket() {
+    clearSocketStateResyncTimer();
+
     if (reconnectTimer !== null) {
       window.clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -551,6 +567,49 @@
     }
 
     socketStatus = 'offline';
+  }
+
+  function clearSocketStateResyncTimer() {
+    if (socketStateResyncTimer !== null) {
+      window.clearTimeout(socketStateResyncTimer);
+      socketStateResyncTimer = null;
+    }
+
+    socketStateResyncDelayIndex = 0;
+  }
+
+  function scheduleSocketStateResyncBurst() {
+    clearSocketStateResyncTimer();
+    scheduleNextSocketStateResync();
+  }
+
+  function scheduleNextSocketStateResync() {
+    if (socketStateResyncDelayIndex >= socketStateResyncDelaysMs.length) {
+      return;
+    }
+
+    const delayMs = socketStateResyncDelaysMs[socketStateResyncDelayIndex];
+    socketStateResyncDelayIndex += 1;
+
+    socketStateResyncTimer = window.setTimeout(() => {
+      socketStateResyncTimer = null;
+
+      if (!authenticated || !currentRepo) {
+        return;
+      }
+
+      void loadAgentState({ silent: true }).finally(() => {
+        scheduleNextSocketStateResync();
+      });
+    }, delayMs);
+  }
+
+  function navigateMainView(nextView: ViewName) {
+    view = nextView;
+
+    if (nextView === 'chat' && authenticated && !!currentRepo) {
+      void loadAgentState({ silent: true });
+    }
   }
 
   function createToolBatchId() {
@@ -621,20 +680,34 @@
 
   function handleSocketMessage(event: WebsocketEnvelope) {
     if (event.type === 'connected') {
-      agentSnapshot = event.payload;
+      const mergedUsage = coalesceUsageCost(event.payload.usage, agentSnapshot.usage);
+
+      agentSnapshot = {
+        ...event.payload,
+        usage: mergedUsage,
+      };
       currentRepo = event.payload.repo;
       syncToolTraceFromSnapshot(event.payload);
       socketStatus = 'connected';
+      scheduleSocketStateResyncBurst();
       return;
     }
 
     if (event.type === 'agent_status') {
+      const mergedUsage = coalesceUsageCost(event.payload.usage, agentSnapshot.usage);
+
       agentSnapshot = {
         ...agentSnapshot,
         ...event.payload,
+        usage: mergedUsage,
         repo: event.payload.repo ?? agentSnapshot.repo
       };
       currentRepo = event.payload.repo ?? currentRepo;
+
+      if (agentSnapshot.usage.totalCost === 0 && agentSnapshot.usage.totalTokens > 0) {
+        scheduleSocketStateResyncBurst();
+      }
+
       return;
     }
 
@@ -1680,6 +1753,17 @@
     return parsed;
   }
 
+  function coalesceUsageCost(nextUsage: AgentUsage, previousUsage: AgentUsage) {
+    if (nextUsage.totalCost === 0 && nextUsage.totalTokens > 0 && previousUsage.totalCost > 0) {
+      return {
+        ...nextUsage,
+        totalCost: previousUsage.totalCost,
+      };
+    }
+
+    return nextUsage;
+  }
+
   function resolveFollowUpCostGuardEnabled() {
     const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_FOLLOW_UP_COST_GUARD_ENABLED;
 
@@ -1924,7 +2008,7 @@
       </section>
     {/if}
 
-    <BottomNav currentView={view === 'costs' || view === 'logs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => (view = event.detail.view)} />
+    <BottomNav currentView={view === 'costs' || view === 'logs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => navigateMainView(event.detail.view)} />
     <AppMenu
       open={menuOpen}
       currentRepo={currentRepo}

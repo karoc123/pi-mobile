@@ -2,16 +2,7 @@ import path from "node:path";
 
 import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
-import type {
-  AgentCommandState,
-  AgentResumeSession,
-  AgentRuntimePhase,
-  AgentSlashCommand,
-  AgentThinkingLevel,
-  AgentTreeEntry,
-  AgentUsage,
-  SelectedRepo,
-} from "../../shared/contracts.js";
+import type { AgentCommandState, AgentResumeSession, AgentRuntimePhase, AgentSlashCommand, AgentThinkingLevel, AgentTreeEntry, AgentUsage, SelectedRepo } from "../../shared/contracts.js";
 
 import type { AppConfig } from "../config.js";
 import { flattenMessageText, summarizeText } from "./pi-agent-hydrator.js";
@@ -100,7 +91,7 @@ export class PiAgentSessionAdapter {
       cacheReadTokens: sessionStats.tokens.cacheRead,
       cacheWriteTokens: sessionStats.tokens.cacheWrite,
       totalTokens: sessionStats.tokens.total,
-      totalCost: sessionStats.cost,
+      totalCost: resolveSessionTotalCost(sessionStats.cost, this.session.messages),
       contextTokens: contextUsage?.tokens ?? null,
       contextWindow: contextUsage?.contextWindow ?? model?.contextWindow ?? null,
       contextPercent: contextUsage?.percent ?? null,
@@ -321,4 +312,71 @@ function deriveRuntimePhase(input: { isStreaming: boolean; isCompacting: boolean
   }
 
   return "idle";
+}
+
+function resolveSessionTotalCost(sessionStatsCost: unknown, messages: readonly unknown[]) {
+  const directCost = parseNonNegativeNumber(sessionStatsCost);
+
+  if (directCost !== null && directCost > 0) {
+    return directCost;
+  }
+
+  const aggregatedCost = aggregateAssistantMessageCost(messages);
+
+  if (aggregatedCost !== null && aggregatedCost > 0) {
+    return aggregatedCost;
+  }
+
+  return directCost ?? 0;
+}
+
+function aggregateAssistantMessageCost(messages: readonly unknown[]) {
+  let total = 0;
+  let hasCost = false;
+
+  for (const message of messages) {
+    const cost = readAssistantMessageCost(message);
+
+    if (cost === null) {
+      continue;
+    }
+
+    total += cost;
+    hasCost = true;
+  }
+
+  if (!hasCost) {
+    return null;
+  }
+
+  return Number(total.toFixed(10));
+}
+
+function readAssistantMessageCost(message: unknown) {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+
+  const assistantMessage = message as {
+    role?: unknown;
+    usage?: {
+      cost?: {
+        total?: unknown;
+      };
+    };
+  };
+
+  if (assistantMessage.role !== "assistant") {
+    return null;
+  }
+
+  return parseNonNegativeNumber(assistantMessage.usage?.cost?.total);
+}
+
+function parseNonNegativeNumber(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+
+  return value;
 }

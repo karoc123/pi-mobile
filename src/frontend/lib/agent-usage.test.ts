@@ -1,15 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import { formatCompactTokenCount, formatModelLabel, formatUsageSummary } from './agent-usage.js';
+import { formatCompactTokenCount, formatModelLabel, formatUsageCost, formatUsageSummary } from "./agent-usage.js";
 
-describe('agent usage helpers', () => {
-  it('formats compact token values', () => {
-    expect(formatCompactTokenCount(5)).toBe('5');
-    expect(formatCompactTokenCount(4700)).toBe('4.7k');
-    expect(formatCompactTokenCount(400000)).toBe('400k');
+describe("agent usage helpers", () => {
+  it("formats compact token values", () => {
+    expect(formatCompactTokenCount(5)).toBe("5");
+    expect(formatCompactTokenCount(4700)).toBe("4.7k");
+    expect(formatCompactTokenCount(400000)).toBe("400k");
   });
 
-  it('formats the Pi-style footer summary', () => {
+  it("formats the Pi-style footer summary", () => {
     expect(
       formatUsageSummary({
         inputTokens: 4700,
@@ -21,15 +21,21 @@ describe('agent usage helpers', () => {
         contextTokens: 4800,
         contextWindow: 400000,
         contextPercent: 1.2,
-        modelId: 'anthropic/claude-sonnet-4-5',
+        modelId: "anthropic/claude-sonnet-4-5",
         usingSubscription: false,
         autoCompactEnabled: true,
       }),
-    ).toBe('↑4.7k ↓5 $0.008 1.2%/400k (auto)');
+    ).toBe("↑4.7k ↓5 $0.008 1.2%/400k (auto)");
   });
 
-  it('falls back to a readable model label', () => {
-    expect(formatModelLabel('anthropic/claude-sonnet-4-5')).toBe('anthropic/claude-sonnet-4-5');
-    expect(formatModelLabel(null)).toBe('No model');
+  it("formats tiny session costs with micro precision", () => {
+    expect(formatUsageCost(0)).toBe("$0.000");
+    expect(formatUsageCost(0.00041)).toBe("$0.000410");
+    expect(formatUsageCost(0.0041)).toBe("$0.004");
+  });
+
+  it("falls back to a readable model label", () => {
+    expect(formatModelLabel("anthropic/claude-sonnet-4-5")).toBe("anthropic/claude-sonnet-4-5");
+    expect(formatModelLabel(null)).toBe("No model");
   });
 });
