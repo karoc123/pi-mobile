@@ -55,7 +55,7 @@
   let expandedTraceToolMap: Record<string, boolean> = {};
   let expandedMessageToolMap: Record<string, boolean> = {};
   let shouldAutoScroll = true;
-  let previousMessageSignature = '';
+  let previousFinalAssistantMessageId: string | null = null;
   let displayEntries: DisplayEntry[] = [];
 
   $: statusTitle = lastError
@@ -78,19 +78,19 @@
   $: statusTone = lastError ? 'error' : runtimePhase === 'idle' ? 'ready' : 'running';
   $: totalToolCount = toolBatches.reduce((sum, batch) => sum + batch.tools.length, 0);
   $: displayEntries = buildDisplayEntries(messages);
-  $: messageSignature = messages.map((message) => `${message.id}:${message.status}:${message.text.length}`).join('|');
+  $: latestFinalAssistantMessageId = getLatestFinalAssistantMessageId(messages);
 
   $: if (prefillToken !== handledPrefillToken) {
     handledPrefillToken = prefillToken;
     void applyPrefill(prefillPrompt);
   }
 
-  $: if (messageSignature !== previousMessageSignature) {
-    previousMessageSignature = messageSignature;
+  $: if (latestFinalAssistantMessageId !== previousFinalAssistantMessageId) {
+    previousFinalAssistantMessageId = latestFinalAssistantMessageId;
 
-    if (shouldAutoScroll) {
+    if (latestFinalAssistantMessageId && shouldAutoScroll) {
       requestAnimationFrame(() => {
-        logEndAnchor?.scrollIntoView({ block: 'end' });
+        scrollWindowToBottom();
       });
     }
   }
@@ -102,6 +102,12 @@
 
     window.addEventListener('scroll', handleWindowScroll, { passive: true });
     handleWindowScroll();
+
+    if (shouldAutoScroll) {
+      requestAnimationFrame(() => {
+        scrollWindowToBottom();
+      });
+    }
 
     return () => {
       window.removeEventListener('scroll', handleWindowScroll);
@@ -135,12 +141,38 @@
     return window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 140;
   }
 
+  function scrollWindowToBottom() {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  }
+
   function describeMessageStatus(message: ChatMessage) {
     if (message.role === 'assistant') {
       return message.status === 'streaming' ? 'working...' : 'ready';
     }
 
     return new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function getLatestFinalAssistantMessageId(messageList: ChatMessage[]) {
+    for (let index = messageList.length - 1; index >= 0; index -= 1) {
+      const message = messageList[index];
+
+      if (message.role !== 'assistant') {
+        continue;
+      }
+
+      if (message.status !== 'complete') {
+        continue;
+      }
+
+      if (message.text.trim().length === 0) {
+        continue;
+      }
+
+      return message.id;
+    }
+
+    return null;
   }
 
   function describeMessageRole(message: ChatMessage) {
@@ -393,9 +425,7 @@
         <span class="subdued">{totalToolCount}</span>
       </button>
 
-      {#if totalToolCount === 0}
-        <p class="tool-trace-empty subdued">No tool activity yet.</p>
-      {:else if toolTraceExpanded}
+      {#if toolTraceExpanded && totalToolCount > 0}
         <div class="tool-batch-stack">
           {#each toolBatches as batch, index (batch.id)}
             <article class="tool-batch">
@@ -434,6 +464,10 @@
             </article>
           {/each}
         </div>
+      {:else}
+        <p class="tool-trace-empty subdued">
+          {totalToolCount === 0 ? 'No tool activity yet.' : `${totalToolCount} tool event${totalToolCount === 1 ? '' : 's'}. Expand to inspect.`}
+        </p>
       {/if}
     </section>
   <div class="chat-log">
