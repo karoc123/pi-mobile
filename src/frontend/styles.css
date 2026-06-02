@@ -1131,6 +1131,15 @@ code {
   gap: 0.9rem;
 }
 
+.editor-action-sheet {
+  width: min(30rem, calc(100vw - 1rem));
+  display: grid;
+  gap: 0.9rem;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .editor-actions-panel-header,
 .editor-actions-footer {
   display: flex;
@@ -1144,9 +1153,25 @@ code {
   gap: 0.75rem;
 }
 
+.editor-action-menu {
+  display: grid;
+  gap: 0.6rem;
+}
+
 .editor-actions-textarea {
   min-height: 7rem;
   resize: vertical;
+}
+
+.browser-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.file-browser.collapsed {
+  min-height: 0;
 }
 
 .browser-entry,
@@ -2236,6 +2261,14 @@ code {
 
   .editor-layout {
     grid-template-columns: 20rem minmax(0, 1fr);
+  }
+
+  .editor-layout.browser-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .editor-layout.browser-collapsed .file-browser {
+    display: none;
   }
 
   .chat-view .composer-session-tags {

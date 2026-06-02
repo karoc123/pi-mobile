@@ -3,6 +3,8 @@
 
   import type { FileEntry } from '../../../src/shared/contracts.js';
 
+  type ActionMode = 'menu' | 'create-file' | 'create-directory' | 'duplicate-file' | 'rename-file' | 'move-file' | 'delete-file';
+
   let codeEditorComponent: any = null;
   let codeEditorPromise: Promise<void> | null = null;
   let codeEditorError = '';
@@ -22,11 +24,22 @@
     save: { content: string };
     change: { content: string };
     createFile: { path: string; content: string };
+    createDirectory: { path: string };
+    duplicateFile: { fromPath: string; toPath: string };
+    renameFile: { fromPath: string; toPath: string };
+    moveFile: { fromPath: string; toPath: string };
+    deleteFile: { path: string };
   }>();
 
   let actionsOpen = false;
+  let actionMode: ActionMode = 'menu';
+  let browserCollapsed = false;
+  let lastAutoCollapsedFilePath = '';
+
   let newFileName = '';
   let newFileContent = '';
+  let newDirectoryName = '';
+  let targetPath = '';
 
   function parentPath(pathValue: string) {
     if (pathValue === '.' || pathValue.length === 0) {
@@ -48,36 +61,153 @@
     return `${basePath.replace(/\/+$/, '')}/${normalizedChild}`;
   }
 
+  function fileName(relativePath: string) {
+    const parts = relativePath.split('/').filter(Boolean);
+    return parts.length > 0 ? parts[parts.length - 1] : relativePath;
+  }
+
+  function withCopySuffix(relativePath: string) {
+    const baseName = fileName(relativePath);
+    const dotIndex = baseName.lastIndexOf('.');
+    const parent = parentPath(relativePath);
+
+    if (dotIndex <= 0) {
+      return joinPath(parent, `${baseName}-copy`);
+    }
+
+    const stem = baseName.slice(0, dotIndex);
+    const ext = baseName.slice(dotIndex);
+    return joinPath(parent, `${stem}-copy${ext}`);
+  }
+
   function openActions() {
     actionsOpen = !actionsOpen;
 
-    if (actionsOpen && !newFileName) {
-      newFileName = 'new-file.txt';
+    if (actionsOpen) {
+      actionMode = 'menu';
+      ensureActionDefaults('create-file');
     }
   }
 
-  function canSubmitNewFile() {
-    const fileName = newFileName.trim();
-    const targetPath = joinPath(currentPath, fileName).trim();
-    return fileName.length > 0 && targetPath.length > 0 && targetPath !== '.';
+  function closeActions() {
+    actionsOpen = false;
+    actionMode = 'menu';
   }
 
-  function submitNewFile() {
-    if (creating || !canSubmitNewFile()) {
+  function ensureActionDefaults(mode: ActionMode) {
+    if (mode === 'create-file' && !newFileName) {
+      newFileName = 'new-file.txt';
+      newFileContent = '';
+    }
+
+    if (mode === 'create-directory' && !newDirectoryName) {
+      newDirectoryName = 'new-folder';
+    }
+
+    if (selectedFilePath && (mode === 'duplicate-file' || mode === 'rename-file' || mode === 'move-file')) {
+      if (mode === 'duplicate-file') {
+        targetPath = withCopySuffix(selectedFilePath);
+      } else {
+        targetPath = selectedFilePath;
+      }
+    }
+  }
+
+  function selectAction(mode: ActionMode) {
+    actionMode = mode;
+    ensureActionDefaults(mode);
+  }
+
+  function canSubmitAction() {
+    if (actionMode === 'create-file') {
+      const fileNameValue = newFileName.trim();
+      const nextPath = joinPath(currentPath, fileNameValue).trim();
+      return fileNameValue.length > 0 && nextPath.length > 0 && nextPath !== '.';
+    }
+
+    if (actionMode === 'create-directory') {
+      const directoryName = newDirectoryName.trim();
+      const nextPath = joinPath(currentPath, directoryName).trim();
+      return directoryName.length > 0 && nextPath.length > 0 && nextPath !== '.';
+    }
+
+    if (actionMode === 'duplicate-file' || actionMode === 'rename-file' || actionMode === 'move-file') {
+      return selectedFilePath.length > 0 && targetPath.trim().length > 0 && targetPath.trim() !== '.';
+    }
+
+    if (actionMode === 'delete-file') {
+      return selectedFilePath.length > 0;
+    }
+
+    return false;
+  }
+
+  function submitAction() {
+    if (creating || !canSubmitAction()) {
       return;
     }
 
-    dispatch('createFile', {
-      path: joinPath(currentPath, newFileName.trim()),
-      content: newFileContent,
-    });
-    actionsOpen = false;
-    newFileName = '';
-    newFileContent = '';
+    if (actionMode === 'create-file') {
+      dispatch('createFile', {
+        path: joinPath(currentPath, newFileName.trim()),
+        content: newFileContent,
+      });
+      closeActions();
+      return;
+    }
+
+    if (actionMode === 'create-directory') {
+      dispatch('createDirectory', {
+        path: joinPath(currentPath, newDirectoryName.trim()),
+      });
+      closeActions();
+      return;
+    }
+
+    if (actionMode === 'duplicate-file' && selectedFilePath) {
+      dispatch('duplicateFile', {
+        fromPath: selectedFilePath,
+        toPath: targetPath.trim(),
+      });
+      closeActions();
+      return;
+    }
+
+    if (actionMode === 'rename-file' && selectedFilePath) {
+      dispatch('renameFile', {
+        fromPath: selectedFilePath,
+        toPath: targetPath.trim(),
+      });
+      closeActions();
+      return;
+    }
+
+    if (actionMode === 'move-file' && selectedFilePath) {
+      dispatch('moveFile', {
+        fromPath: selectedFilePath,
+        toPath: targetPath.trim(),
+      });
+      closeActions();
+      return;
+    }
+
+    if (actionMode === 'delete-file' && selectedFilePath) {
+      if (!window.confirm(`Delete ${selectedFilePath}?`)) {
+        return;
+      }
+
+      dispatch('deleteFile', { path: selectedFilePath });
+      closeActions();
+    }
   }
 
   $: if (selectedFilePath) {
     void ensureCodeEditorLoaded();
+  }
+
+  $: if (selectedFilePath && selectedFilePath !== lastAutoCollapsedFilePath) {
+    browserCollapsed = true;
+    lastAutoCollapsedFilePath = selectedFilePath;
   }
 
   async function ensureCodeEditorLoaded() {
@@ -110,44 +240,101 @@
   </div>
 
   {#if actionsOpen}
-    <div class="card-panel editor-actions-panel">
-      <div class="editor-actions-panel-header">
-        <div>
-          <p class="eyebrow">Hidden actions</p>
-          <h3>Create file</h3>
+    <div class="overlay" role="presentation" on:click={closeActions}>
+      <div class="sheet-card editor-action-sheet" role="dialog" aria-modal="true" aria-label="Editor actions" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+        <div class="editor-actions-panel-header">
+          <div>
+            <p class="eyebrow">Editor actions</p>
+            <h3>
+              {#if actionMode === 'menu'}
+                Choose action
+              {:else if actionMode === 'create-file'}
+                Create file
+              {:else if actionMode === 'create-directory'}
+                Create folder
+              {:else if actionMode === 'duplicate-file'}
+                Duplicate file
+              {:else if actionMode === 'rename-file'}
+                Rename file
+              {:else if actionMode === 'move-file'}
+                Move file
+              {:else}
+                Delete file
+              {/if}
+            </h3>
+          </div>
+          <button class="ghost-button" type="button" on:click={closeActions}>Close</button>
         </div>
-        <button class="ghost-button" type="button" on:click={() => (actionsOpen = false)}>Close</button>
+
+        {#if actionMode === 'menu'}
+          <div class="editor-action-menu">
+            <button class="secondary-button" type="button" on:click={() => selectAction('create-file')}>New file</button>
+            <button class="secondary-button" type="button" on:click={() => selectAction('create-directory')}>New folder</button>
+
+            {#if selectedFilePath}
+              <button class="secondary-button" type="button" on:click={() => selectAction('duplicate-file')}>Duplicate file</button>
+              <button class="secondary-button" type="button" on:click={() => selectAction('rename-file')}>Rename file</button>
+              <button class="secondary-button" type="button" on:click={() => selectAction('move-file')}>Move file</button>
+              <button class="danger-button" type="button" on:click={() => selectAction('delete-file')}>Delete file</button>
+            {:else}
+              <p class="empty-state small">Open a file to unlock duplicate, rename, move and delete actions.</p>
+            {/if}
+          </div>
+        {:else}
+          <form class="editor-actions-form" on:submit|preventDefault={submitAction}>
+            {#if actionMode === 'create-file'}
+              <label class="field-label" for="new-file-name">File path</label>
+              <input id="new-file-name" class="text-input" bind:value={newFileName} placeholder="notes/new-file.md" autocomplete="off" />
+
+              <label class="field-label" for="new-file-content">Initial content</label>
+              <textarea id="new-file-content" class="text-input editor-actions-textarea" bind:value={newFileContent} placeholder="Optional starter content"></textarea>
+
+              <p class="empty-state small">Creates the file inside {currentPath === '.' ? 'the repo root' : currentPath}.</p>
+            {:else if actionMode === 'create-directory'}
+              <label class="field-label" for="new-folder-name">Folder path</label>
+              <input id="new-folder-name" class="text-input" bind:value={newDirectoryName} placeholder="notes/new-folder" autocomplete="off" />
+
+              <p class="empty-state small">Creates the folder inside {currentPath === '.' ? 'the repo root' : currentPath}.</p>
+            {:else if actionMode === 'duplicate-file' || actionMode === 'rename-file' || actionMode === 'move-file'}
+              <p class="empty-state small">Current file: <strong>{selectedFilePath}</strong></p>
+
+              <label class="field-label" for="target-path">Target path</label>
+              <input id="target-path" class="text-input" bind:value={targetPath} placeholder="src/new-name.ts" autocomplete="off" />
+            {:else}
+              <p class="empty-state small">
+                The file <strong>{selectedFilePath}</strong> will be permanently deleted from the repository working tree.
+              </p>
+            {/if}
+
+            <div class="editor-actions-footer">
+              <button class="ghost-button" type="button" on:click={() => (actionMode = 'menu')}>Back</button>
+              <button class="primary-button" type="submit" disabled={!canSubmitAction() || creating}>
+                {creating ? 'Working...' : actionMode === 'create-file' ? 'Create file' : actionMode === 'create-directory' ? 'Create folder' : actionMode === 'duplicate-file' ? 'Duplicate file' : actionMode === 'rename-file' ? 'Rename file' : actionMode === 'move-file' ? 'Move file' : 'Delete file'}
+              </button>
+            </div>
+          </form>
+        {/if}
       </div>
-
-      <form class="editor-actions-form" on:submit|preventDefault={submitNewFile}>
-        <label class="field-label" for="new-file-name">File path</label>
-        <input id="new-file-name" class="text-input" bind:value={newFileName} placeholder="notes/new-file.md" autocomplete="off" />
-
-        <label class="field-label" for="new-file-content">Initial content</label>
-        <textarea id="new-file-content" class="text-input editor-actions-textarea" bind:value={newFileContent} placeholder="Optional starter content"></textarea>
-
-        <p class="empty-state small">Creates the file inside {currentPath === '.' ? 'the repo root' : currentPath}.</p>
-
-        <div class="editor-actions-footer">
-          <button class="ghost-button" type="button" on:click={() => (actionsOpen = false)}>Cancel</button>
-          <button class="primary-button" type="submit" disabled={!canSubmitNewFile() || creating}>
-            {creating ? 'Creating...' : 'Create file'}
-          </button>
-        </div>
-      </form>
     </div>
   {/if}
 
-  <div class="editor-layout">
-    <aside class="file-browser card-panel">
+  <div class="editor-layout" class:browser-collapsed={browserCollapsed}>
+    <aside class="file-browser card-panel" class:collapsed={browserCollapsed}>
       <div class="browser-toolbar">
         <strong>{currentPath === '.' ? 'Repo root' : currentPath}</strong>
-        {#if currentPath !== '.'}
-          <button class="ghost-button" type="button" on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>Up</button>
-        {/if}
+        <div class="browser-toolbar-actions">
+          <button class="ghost-button" type="button" on:click={() => (browserCollapsed = !browserCollapsed)} aria-expanded={!browserCollapsed}>
+            {browserCollapsed ? 'Expand' : 'Collapse'}
+          </button>
+          {#if currentPath !== '.'}
+            <button class="ghost-button" type="button" on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>Up</button>
+          {/if}
+        </div>
       </div>
 
-      {#if loading}
+      {#if browserCollapsed}
+        <p class="empty-state small">Repo root is collapsed. Tap expand to browse files.</p>
+      {:else if loading}
         <p class="empty-state small">Loading files...</p>
       {:else if entries.length === 0}
         <p class="empty-state small">No files in this directory.</p>

@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { FileDocument, FileEntry, SelectedRepo } from "../../shared/contracts.js";
@@ -54,5 +55,38 @@ export class FileService {
     const absolutePath = resolveWithin(repo.absolutePath, relativePath);
     await mkdir(path.dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, content, { encoding: "utf8", flag: "wx" });
+  }
+
+  async createDirectory(repo: SelectedRepo, relativePath: string) {
+    const absolutePath = resolveWithin(repo.absolutePath, relativePath);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await mkdir(absolutePath);
+  }
+
+  async duplicateFile(repo: SelectedRepo, sourceRelativePath: string, targetRelativePath: string) {
+    const sourceAbsolutePath = resolveWithin(repo.absolutePath, sourceRelativePath);
+    const targetAbsolutePath = resolveWithin(repo.absolutePath, targetRelativePath);
+
+    const sourceStats = await stat(sourceAbsolutePath);
+
+    if (!sourceStats.isFile()) {
+      throw new Error("Only files can be duplicated.");
+    }
+
+    await mkdir(path.dirname(targetAbsolutePath), { recursive: true });
+    await copyFile(sourceAbsolutePath, targetAbsolutePath, constants.COPYFILE_EXCL);
+  }
+
+  async movePath(repo: SelectedRepo, sourceRelativePath: string, targetRelativePath: string) {
+    const sourceAbsolutePath = resolveWithin(repo.absolutePath, sourceRelativePath);
+    const targetAbsolutePath = resolveWithin(repo.absolutePath, targetRelativePath);
+
+    await mkdir(path.dirname(targetAbsolutePath), { recursive: true });
+    await rename(sourceAbsolutePath, targetAbsolutePath);
+  }
+
+  async deletePath(repo: SelectedRepo, relativePath: string) {
+    const absolutePath = resolveWithin(repo.absolutePath, relativePath);
+    await rm(absolutePath, { recursive: true, force: false });
   }
 }

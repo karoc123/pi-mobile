@@ -12,8 +12,15 @@ import type {
   BackendLogLevel,
   BackendLogQuery,
   BackendLogQueryResponse,
+  FileCreateDirectoryResult,
   FileCreateRequest,
   FileCreateResult,
+  FileDeleteRequest,
+  FileDeleteResult,
+  FileDuplicateRequest,
+  FileDuplicateResult,
+  FileMoveRequest,
+  FileMoveResult,
   GitDiffResponse,
   GitSyncResult,
 } from "../shared/contracts.js";
@@ -208,6 +215,129 @@ export function createApp(services: AppServices) {
     }
 
     response.json({ ok: true, path: filePath } satisfies FileCreateResult);
+  });
+
+  app.post("/api/files/create-directory", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const directoryPath = getBodyString(request, "path").trim();
+
+    if (directoryPath.length === 0 || directoryPath === ".") {
+      throw new HttpError(400, "bad_request", "Directory path is required.", { retriable: false });
+    }
+
+    try {
+      await services.fileService.createDirectory(repo, directoryPath);
+    } catch (error) {
+      if (isNodeFileExistsError(error)) {
+        throw new HttpError(409, "conflict", "Directory already exists.", { retriable: false });
+      }
+
+      throw error;
+    }
+
+    response.json({ ok: true, path: directoryPath } satisfies FileCreateDirectoryResult);
+  });
+
+  app.post("/api/files/duplicate", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const body = getBodyObject<FileDuplicateRequest>(request);
+    const sourcePath = body.sourcePath.trim();
+    const targetPath = body.targetPath.trim();
+
+    if (sourcePath.length === 0 || targetPath.length === 0 || sourcePath === "." || targetPath === ".") {
+      throw new HttpError(400, "bad_request", "Source and target paths are required.", { retriable: false });
+    }
+
+    try {
+      await services.fileService.duplicateFile(repo, sourcePath, targetPath);
+    } catch (error) {
+      if (isNodeFileExistsError(error)) {
+        throw new HttpError(409, "conflict", "Target file already exists.", { retriable: false });
+      }
+
+      if (isNodeFileNotFoundError(error)) {
+        throw new HttpError(404, "not_found", "Source file does not exist.", { retriable: false });
+      }
+
+      throw error;
+    }
+
+    response.json({ ok: true, path: targetPath } satisfies FileDuplicateResult);
+  });
+
+  app.post("/api/files/move", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const body = getBodyObject<FileMoveRequest>(request);
+    const fromPath = body.fromPath.trim();
+    const toPath = body.toPath.trim();
+
+    if (fromPath.length === 0 || toPath.length === 0 || fromPath === "." || toPath === ".") {
+      throw new HttpError(400, "bad_request", "Source and target paths are required.", { retriable: false });
+    }
+
+    try {
+      await services.fileService.movePath(repo, fromPath, toPath);
+    } catch (error) {
+      if (isNodeFileExistsError(error)) {
+        throw new HttpError(409, "conflict", "Target path already exists.", { retriable: false });
+      }
+
+      if (isNodeFileNotFoundError(error)) {
+        throw new HttpError(404, "not_found", "Source path does not exist.", { retriable: false });
+      }
+
+      throw error;
+    }
+
+    response.json({ ok: true, fromPath, toPath } satisfies FileMoveResult);
+  });
+
+  app.post("/api/files/rename", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const body = getBodyObject<FileMoveRequest>(request);
+    const fromPath = body.fromPath.trim();
+    const toPath = body.toPath.trim();
+
+    if (fromPath.length === 0 || toPath.length === 0 || fromPath === "." || toPath === ".") {
+      throw new HttpError(400, "bad_request", "Source and target paths are required.", { retriable: false });
+    }
+
+    try {
+      await services.fileService.movePath(repo, fromPath, toPath);
+    } catch (error) {
+      if (isNodeFileExistsError(error)) {
+        throw new HttpError(409, "conflict", "Target path already exists.", { retriable: false });
+      }
+
+      if (isNodeFileNotFoundError(error)) {
+        throw new HttpError(404, "not_found", "Source path does not exist.", { retriable: false });
+      }
+
+      throw error;
+    }
+
+    response.json({ ok: true, fromPath, toPath } satisfies FileMoveResult);
+  });
+
+  app.post("/api/files/delete", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const filePath = getBodyObject<FileDeleteRequest>(request).path.trim();
+
+    if (filePath.length === 0 || filePath === ".") {
+      throw new HttpError(400, "bad_request", "Path is required.", { retriable: false });
+    }
+
+    try {
+      await services.fileService.deletePath(repo, filePath);
+    } catch (error) {
+      if (isNodeFileNotFoundError(error)) {
+        throw new HttpError(404, "not_found", "Path does not exist.", { retriable: false });
+      }
+
+      throw error;
+    }
+
+    response.json({ ok: true, path: filePath } satisfies FileDeleteResult);
   });
 
   app.get("/api/git/diff", requireAuth(services), async (_request, response) => {
@@ -406,6 +536,10 @@ function getBodyObject<T>(request: Request) {
 
 function isNodeFileExistsError(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "EEXIST";
+}
+
+function isNodeFileNotFoundError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
 }
 
 function parseLogQuery(request: Request): BackendLogQuery {

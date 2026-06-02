@@ -32,6 +32,45 @@ export type FileCreateResult = {
   path: string;
 };
 
+export type FileCreateDirectoryRequest = {
+  path: string;
+};
+
+export type FileCreateDirectoryResult = {
+  ok: true;
+  path: string;
+};
+
+export type FileMoveRequest = {
+  fromPath: string;
+  toPath: string;
+};
+
+export type FileMoveResult = {
+  ok: true;
+  fromPath: string;
+  toPath: string;
+};
+
+export type FileDuplicateRequest = {
+  sourcePath: string;
+  targetPath: string;
+};
+
+export type FileDuplicateResult = {
+  ok: true;
+  path: string;
+};
+
+export type FileDeleteRequest = {
+  path: string;
+};
+
+export type FileDeleteResult = {
+  ok: true;
+  path: string;
+};
+
 export type DiffHunk = {
   id: string;
   header: string;

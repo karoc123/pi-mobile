@@ -17,9 +17,13 @@
     CostReport,
     DiffFile,
     GitCommitResult,
+    FileCreateDirectoryResult,
     FileCreateResult,
+    FileDeleteResult,
     FileDocument,
+    FileDuplicateResult,
     FileEntry,
+    FileMoveResult,
     GitDiffResponse,
     GitRemoteSyncStatus,
     GitSyncResult,
@@ -1085,6 +1089,139 @@
     }
   }
 
+  async function createDirectory(path: string) {
+    const normalizedPath = path.trim();
+
+    if (!normalizedPath || normalizedPath === '.') {
+      showBanner('Directory path is required.', 'error');
+      return;
+    }
+
+    creatingFile = true;
+
+    try {
+      const response = await apiFetch<FileCreateDirectoryResult>('/api/files/create-directory', {
+        method: 'POST',
+        body: JSON.stringify({ path: normalizedPath })
+      });
+      await loadFiles(parentDirectoryFor(response.path));
+      showBanner('Folder created.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      creatingFile = false;
+    }
+  }
+
+  async function duplicateFile(sourcePath: string, targetPath: string) {
+    const normalizedSourcePath = sourcePath.trim();
+    const normalizedTargetPath = targetPath.trim();
+
+    if (!normalizedSourcePath || !normalizedTargetPath || normalizedSourcePath === '.' || normalizedTargetPath === '.') {
+      showBanner('Source and target file paths are required.', 'error');
+      return;
+    }
+
+    creatingFile = true;
+
+    try {
+      const response = await apiFetch<FileDuplicateResult>('/api/files/duplicate', {
+        method: 'POST',
+        body: JSON.stringify({ sourcePath: normalizedSourcePath, targetPath: normalizedTargetPath })
+      });
+      await loadFiles(parentDirectoryFor(response.path));
+      await openFile(response.path);
+      showBanner('File duplicated.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      creatingFile = false;
+    }
+  }
+
+  async function renameFile(fromPath: string, toPath: string) {
+    const normalizedFromPath = fromPath.trim();
+    const normalizedToPath = toPath.trim();
+
+    if (!normalizedFromPath || !normalizedToPath || normalizedFromPath === '.' || normalizedToPath === '.') {
+      showBanner('Source and target file paths are required.', 'error');
+      return;
+    }
+
+    creatingFile = true;
+
+    try {
+      const response = await apiFetch<FileMoveResult>('/api/files/rename', {
+        method: 'POST',
+        body: JSON.stringify({ fromPath: normalizedFromPath, toPath: normalizedToPath })
+      });
+      await loadFiles(parentDirectoryFor(response.toPath));
+      await openFile(response.toPath);
+      showBanner('File renamed.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      creatingFile = false;
+    }
+  }
+
+  async function moveFile(fromPath: string, toPath: string) {
+    const normalizedFromPath = fromPath.trim();
+    const normalizedToPath = toPath.trim();
+
+    if (!normalizedFromPath || !normalizedToPath || normalizedFromPath === '.' || normalizedToPath === '.') {
+      showBanner('Source and target file paths are required.', 'error');
+      return;
+    }
+
+    creatingFile = true;
+
+    try {
+      const response = await apiFetch<FileMoveResult>('/api/files/move', {
+        method: 'POST',
+        body: JSON.stringify({ fromPath: normalizedFromPath, toPath: normalizedToPath })
+      });
+      await loadFiles(parentDirectoryFor(response.toPath));
+      await openFile(response.toPath);
+      showBanner('File moved.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      creatingFile = false;
+    }
+  }
+
+  async function deleteFile(path: string) {
+    const normalizedPath = path.trim();
+
+    if (!normalizedPath || normalizedPath === '.') {
+      showBanner('File path is required.', 'error');
+      return;
+    }
+
+    creatingFile = true;
+
+    try {
+      const response = await apiFetch<FileDeleteResult>('/api/files/delete', {
+        method: 'POST',
+        body: JSON.stringify({ path: normalizedPath })
+      });
+      await loadFiles(parentDirectoryFor(response.path));
+
+      if (selectedDocument?.path === response.path) {
+        selectedDocument = null;
+        draftContent = '';
+        editorDirty = false;
+      }
+
+      showBanner('File deleted.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      creatingFile = false;
+    }
+  }
+
   async function sendPrompt(prompt: string) {
     const trimmed = prompt.trim();
 
@@ -1984,6 +2121,11 @@
             on:openFile={(event: CustomEvent<{ path: string }>) => openFile(event.detail.path)}
             on:save={(event: CustomEvent<{ content: string }>) => saveFile(event.detail.content)}
             on:createFile={(event: CustomEvent<{ path: string; content: string }>) => createFile(event.detail.path, event.detail.content)}
+            on:createDirectory={(event: CustomEvent<{ path: string }>) => createDirectory(event.detail.path)}
+            on:duplicateFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) => duplicateFile(event.detail.fromPath, event.detail.toPath)}
+            on:renameFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) => renameFile(event.detail.fromPath, event.detail.toPath)}
+            on:moveFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) => moveFile(event.detail.fromPath, event.detail.toPath)}
+            on:deleteFile={(event: CustomEvent<{ path: string }>) => deleteFile(event.detail.path)}
             on:change={(event: CustomEvent<{ content: string }>) => {
               draftContent = event.detail.content;
               editorDirty = selectedDocument ? event.detail.content !== selectedDocument.content : false;
