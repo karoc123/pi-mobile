@@ -2363,10 +2363,15 @@ code {
   }
 
   .editor-layout.browser-collapsed {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 20rem minmax(0, 1fr);
   }
 
   .editor-layout.browser-collapsed .file-browser {
+    display: grid;
+    align-content: start;
+  }
+
+  .browser-collapse-toggle {
     display: none;
   }
 

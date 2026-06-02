@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
 
   import type { FileEntry } from '../../../src/shared/contracts.js';
 
@@ -31,9 +31,12 @@
     deleteFile: { path: string };
   }>();
 
+  const COLLAPSIBLE_MAX_WIDTH = 859;
+
   let actionsOpen = false;
   let actionMode: ActionMode = 'menu';
   let browserCollapsed = false;
+  let canCollapseBrowser = false;
   let lastAutoCollapsedFilePath = '';
 
   let newFileName = '';
@@ -206,9 +209,30 @@
   }
 
   $: if (selectedFilePath && selectedFilePath !== lastAutoCollapsedFilePath) {
-    browserCollapsed = true;
+    browserCollapsed = canCollapseBrowser;
     lastAutoCollapsedFilePath = selectedFilePath;
   }
+
+  function syncCollapseCapability() {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    canCollapseBrowser = window.innerWidth <= COLLAPSIBLE_MAX_WIDTH;
+
+    if (!canCollapseBrowser && browserCollapsed) {
+      browserCollapsed = false;
+    }
+  }
+
+  onMount(() => {
+    syncCollapseCapability();
+    window.addEventListener('resize', syncCollapseCapability, { passive: true });
+
+    return () => {
+      window.removeEventListener('resize', syncCollapseCapability);
+    };
+  });
 
   async function ensureCodeEditorLoaded() {
     if (codeEditorComponent || codeEditorPromise) {
@@ -318,21 +342,28 @@
     </div>
   {/if}
 
-  <div class="editor-layout" class:browser-collapsed={browserCollapsed}>
-    <aside class="file-browser card-panel" class:collapsed={browserCollapsed}>
+  <div class="editor-layout" class:browser-collapsed={browserCollapsed && canCollapseBrowser}>
+    <aside class="file-browser card-panel" class:collapsed={browserCollapsed && canCollapseBrowser}>
       <div class="browser-toolbar">
         <strong>{currentPath === '.' ? 'Repo root' : currentPath}</strong>
         <div class="browser-toolbar-actions">
-          <button class="ghost-button" type="button" on:click={() => (browserCollapsed = !browserCollapsed)} aria-expanded={!browserCollapsed}>
-            {browserCollapsed ? 'Expand' : 'Collapse'}
-          </button>
+          {#if canCollapseBrowser}
+            <button
+              class="ghost-button browser-collapse-toggle"
+              type="button"
+              on:click={() => (browserCollapsed = !browserCollapsed)}
+              aria-expanded={!browserCollapsed}
+            >
+              {browserCollapsed ? 'Expand' : 'Collapse'}
+            </button>
+          {/if}
           {#if currentPath !== '.'}
             <button class="ghost-button" type="button" on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>Up</button>
           {/if}
         </div>
       </div>
 
-      {#if browserCollapsed}
+      {#if browserCollapsed && canCollapseBrowser}
         <p class="empty-state small">Repo root is collapsed. Tap expand to browse files.</p>
       {:else if loading}
         <p class="empty-state small">Loading files...</p>
