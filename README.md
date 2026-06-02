@@ -111,6 +111,9 @@ npm test         # test suite
 npm run build    # production build
 ```
 
+During `npm run dev`, open `http://localhost:5173` (or `http://<your-host>:5173` from mobile).
+`http://localhost:3000` remains the backend/API server and will redirect to Vite in development.
+
 ## Common First-Run Issues
 
 - APP_PASSWORD missing:

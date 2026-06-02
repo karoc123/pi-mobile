@@ -270,6 +270,10 @@
     let activeToolGroup: Extract<DisplayEntry, { kind: 'tool-group' }> | null = null;
 
     for (const message of messageList) {
+      if (isSkippableAssistantPlaceholder(message)) {
+        continue;
+      }
+
       const parsedToolCalls = message.role === 'assistant' ? parseToolCalls(message) : [];
 
       if (parsedToolCalls.length > 0) {
@@ -294,6 +298,10 @@
     }
 
     return entries;
+  }
+
+  function isSkippableAssistantPlaceholder(message: ChatMessage) {
+    return message.role === 'assistant' && message.text.trim().length === 0;
   }
 
   function compactInline(value: string, maxLength: number) {

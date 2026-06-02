@@ -320,10 +320,15 @@ export function createApp(services: AppServices) {
   const publicDir = path.resolve(process.cwd(), "dist/public");
   const indexFile = path.join(publicDir, "index.html");
 
-  if (services.config.nodeEnv !== "test" && existsSync(indexFile)) {
+  if (services.config.nodeEnv === "production" && existsSync(indexFile)) {
     app.use(express.static(publicDir));
     app.get(/^(?!\/api).*/, (_request, response) => {
       response.sendFile(indexFile);
+    });
+  } else if (services.config.nodeEnv === "development") {
+    app.get(/^(?!\/api|\/ws).*/, (request, response) => {
+      const host = request.hostname;
+      response.redirect(307, `http://${host}:5173${request.originalUrl}`);
     });
   }
 
