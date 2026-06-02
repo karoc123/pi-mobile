@@ -358,7 +358,7 @@
             </button>
           {/if}
           {#if currentPath !== '.'}
-            <button class="ghost-button" type="button" on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>Up</button>
+            <button class="ghost-button" type="button" on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>↑</button>
           {/if}
         </div>
       </div>
