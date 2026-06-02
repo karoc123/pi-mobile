@@ -117,6 +117,7 @@ body {
   min-height: 100vh;
   background: inherit;
   color: inherit;
+  font-size: 15px;
 }
 
 button,
@@ -731,6 +732,10 @@ code {
   white-space: nowrap;
 }
 
+.chat-view .usage-chip.usage-context {
+  color: var(--cli-ink);
+}
+
 .chat-view .usage-chip.usage-cost {
   font-weight: 800;
   color: var(--cli-ink);
@@ -971,9 +976,17 @@ code {
 }
 
 .chat-view .composer-footer .send-button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
   background: color-mix(in srgb, #fd6755 26%, var(--cli-panel));
   border-color: color-mix(in srgb, #fd6755 60%, var(--terminal-panel-border));
   color: var(--cli-ink);
+}
+
+.chat-view .composer-footer .send-button .send-button-model {
+  font-size: 0.58em;
+  opacity: 0.75;
 }
 
 .chat-view .composer-footer .send-button:hover {

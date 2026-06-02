@@ -2,7 +2,7 @@
   import { createEventDispatcher, onMount, tick } from 'svelte';
 
   import type { AgentRuntimePhase, AgentUsage, ChatMessage, ToolActivity } from '../../../src/shared/contracts.js';
-  import { formatCompactTokenCount, formatModelLabel, formatUsageCost } from '../lib/agent-usage.js';
+  import { formatCompactTokenCount, formatUsageCost } from '../lib/agent-usage.js';
   import { renderMarkdown } from '../lib/markdown.js';
 
   type ToolTraceBatch = {
@@ -213,6 +213,21 @@
     return 'M11.3 1.05a1 1 0 0 1 1.4 0l1.11 1.12a2.5 2.5 0 0 0 2.13.67l1.57-.3a1 1 0 0 1 1.17.78l.3 1.57a2.5 2.5 0 0 0 1.36 1.8l1.42.7a1 1 0 0 1 .46 1.34l-.7 1.42a2.5 2.5 0 0 0 0 2.24l.7 1.42a1 1 0 0 1-.46 1.34l-1.42.7a2.5 2.5 0 0 0-1.36 1.8l-.3 1.57a1 1 0 0 1-1.17.78l-1.57-.3a2.5 2.5 0 0 0-2.13.67l-1.11 1.12a1 1 0 0 1-1.4 0L10.2 21.8a2.5 2.5 0 0 0-2.13-.67l-1.57.3a1 1 0 0 1-1.17-.78l-.3-1.57a2.5 2.5 0 0 0-1.36-1.8l-1.42-.7a1 1 0 0 1-.46-1.34l.7-1.42a2.5 2.5 0 0 0 0-2.24l-.7-1.42a1 1 0 0 1 .46-1.34l1.42-.7a2.5 2.5 0 0 0 1.36-1.8l.3-1.57a1 1 0 0 1 1.17-.78l1.57.3a2.5 2.5 0 0 0 2.13-.67l1.1-1.12zM12 15.5a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7z';
   }
 
+  function formatContextChip(usageValue: AgentUsage) {
+    const usedLabel = usageValue.contextTokens === null ? '?' : formatCompactTokenCount(usageValue.contextTokens);
+    const windowLabel = usageValue.contextWindow === null ? '?' : formatCompactTokenCount(usageValue.contextWindow);
+
+    return `${usedLabel}/${windowLabel}`;
+  }
+
+  function formatContextChipTitle(usageValue: AgentUsage) {
+    const usedLabel = usageValue.contextTokens === null ? '?' : formatCompactTokenCount(usageValue.contextTokens);
+    const windowLabel = usageValue.contextWindow === null ? '?' : formatCompactTokenCount(usageValue.contextWindow);
+    const modeLabel = usageValue.autoCompactEnabled ? 'auto compact on' : 'auto compact off';
+
+    return `Context usage ${usedLabel}/${windowLabel} (${modeLabel})`;
+  }
+
   function parseToolCalls(message: ChatMessage) {
     const lines = message.text
       .split(/\r?\n/)
@@ -342,8 +357,17 @@
     return !!expandedMessageToolMap[messageToolKey(groupId, toolCallId)];
   }
 
-  function sendButtonLabel() {
-    return 'SEND';
+  function modelLabelForSendButton(modelId: string | null) {
+    if (!modelId) {
+      return 'no-model';
+    }
+
+    const compact = modelId.split('/').filter(Boolean).pop() ?? modelId;
+    return compact.length > 20 ? `${compact.slice(0, 20)}...` : compact;
+  }
+
+  function sendButtonModelLabel() {
+    return `(${modelLabelForSendButton(usage.modelId)})`;
   }
 </script>
 
@@ -469,12 +493,12 @@
         <span class:ready={statusTone === 'ready'} class:error={statusTone === 'error'} class:running={statusTone === 'running'} class="live-dot"></span>
         <strong class="composer-status-title">{statusTitle}</strong>
         <div class="composer-status-spacer"></div>
-        <div class="usage-rail" title={formatModelLabel(usage.modelId)}>
-          <span class="usage-chip">I {formatCompactTokenCount(usage.inputTokens)}</span>
-          <span class="usage-chip">O {formatCompactTokenCount(usage.outputTokens)}</span>
+        <div class="usage-rail">
+          <span class="usage-chip">↑ {formatCompactTokenCount(usage.inputTokens)}</span>
+          <span class="usage-chip">↓ {formatCompactTokenCount(usage.outputTokens)}</span>
+          <span class="usage-chip usage-context" title={formatContextChipTitle(usage)}>{formatContextChip(usage)}</span>
           <span class="usage-chip usage-cost">{formatUsageCost(usage.totalCost)}</span>
         </div>
-        <div class="model-summary compact-model" title={formatModelLabel(usage.modelId)}>{formatModelLabel(usage.modelId)}</div>
         {#if canAbort}
           <button class="ghost-button compact" type="button" on:click={() => dispatch('abort')}>
             Stop
@@ -509,7 +533,8 @@
         {/if}
       </div>
       <button class="primary-button send-button" type="button" on:click={submit} disabled={prompt.trim().length === 0 || (showKeepRunning && runtimePhase !== 'idle')}>
-        {sendButtonLabel()}
+        <span>SEND</span>
+        <span class="send-button-model">{sendButtonModelLabel()}</span>
       </button>
     </div>
   </div>
