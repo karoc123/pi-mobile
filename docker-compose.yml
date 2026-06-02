@@ -7,7 +7,7 @@ services:
       - "${HOST_PORT:-3000}:3000"
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
       APP_PASSWORD: ${APP_PASSWORD}
