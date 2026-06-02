@@ -374,9 +374,7 @@
     return compact.length > 20 ? `${compact.slice(0, 20)}...` : compact;
   }
 
-  function sendButtonModelLabel() {
-    return `(${modelLabelForSendButton(usage.modelId)})`;
-  }
+  $: sendButtonModel = `(${modelLabelForSendButton(usage?.modelId ?? null)})`;
 </script>
 
 <section class="view-shell chat-view">
@@ -542,7 +540,7 @@
       </div>
       <button class="primary-button send-button" type="button" on:click={submit} disabled={prompt.trim().length === 0 || (showKeepRunning && runtimePhase !== 'idle')}>
         <span>SEND</span>
-        <span class="send-button-model">{sendButtonModelLabel()}</span>
+        <span class="send-button-model">{sendButtonModel}</span>
       </button>
     </div>
   </div>
