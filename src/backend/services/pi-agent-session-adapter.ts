@@ -44,7 +44,8 @@ export class PiAgentSessionAdapter {
   }
 
   async createSession(repo: SelectedRepo, continueRecent: boolean, options: SessionOpenOptions = { useConfiguredDefaults: true }) {
-    const sessionManager = continueRecent ? SessionManager.continueRecent(repo.absolutePath, this.config.piSessionDir) : SessionManager.create(repo.absolutePath, this.config.piSessionDir);
+    const sessionDirectory = this.resolveSessionDirectory(repo);
+    const sessionManager = continueRecent ? SessionManager.continueRecent(repo.absolutePath, sessionDirectory) : SessionManager.create(repo.absolutePath, sessionDirectory);
     return this.openSessionManager(repo, sessionManager, options);
   }
 
@@ -106,7 +107,8 @@ export class PiAgentSessionAdapter {
     const sessionStats = session.getSessionStats();
     const currentModel = session.model;
     const currentSessionFile = session.sessionFile;
-    const resumeSessions = await SessionManager.list(repo.absolutePath, this.config.piSessionDir);
+    const sessionDirectory = this.resolveSessionDirectory(repo);
+    const resumeSessions = await SessionManager.list(repo.absolutePath, sessionDirectory);
     const availableCommands = this.getAvailableSlashCommands(session, repo.absolutePath);
 
     return {
@@ -216,6 +218,14 @@ export class PiAgentSessionAdapter {
     }
 
     return model;
+  }
+
+  private resolveSessionDirectory(repo: SelectedRepo) {
+    if (!this.config.piSessionDir) {
+      return undefined;
+    }
+
+    return path.join(this.config.piSessionDir, toSessionDirName(repo.absolutePath));
   }
 
   private getAvailableSlashCommands(session: AgentSession, repoPath: string): AgentSlashCommand[] {
@@ -379,4 +389,8 @@ function parseNonNegativeNumber(value: unknown) {
   }
 
   return value;
+}
+
+function toSessionDirName(repoAbsolutePath: string) {
+  return Buffer.from(repoAbsolutePath).toString("base64url");
 }

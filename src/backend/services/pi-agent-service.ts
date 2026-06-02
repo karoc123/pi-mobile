@@ -444,7 +444,8 @@ export class PiAgentService {
 
   private async restoreSession() {
     try {
-      await this.ensureSession();
+      const session = await this.ensureSession();
+      this.syncFromSession(session);
     } catch (error) {
       this.recordError(error);
     }
