@@ -14,6 +14,7 @@ import type {
   BackendLogQueryResponse,
   FileCreateRequest,
   FileCreateResult,
+  GitDiffResponse,
   GitSyncResult,
 } from "../shared/contracts.js";
 
@@ -211,7 +212,8 @@ export function createApp(services: AppServices) {
 
   app.get("/api/git/diff", requireAuth(services), async (_request, response) => {
     const repo = services.workspaceService.requireCurrentRepo();
-    response.json({ files: await services.gitService.getDiff(repo) });
+    const [files, sync] = await Promise.all([services.gitService.getDiff(repo), services.gitService.getRemoteSyncStatus(repo)]);
+    response.json({ files, sync } satisfies GitDiffResponse);
   });
 
   app.post("/api/git/commit", requireAuth(services), async (request, response) => {

@@ -1,4 +1,4 @@
-import type { DiffFile, DiffHunk, SelectedRepo } from "../../shared/contracts.js";
+import type { DiffFile, DiffHunk, GitRemoteSyncStatus, SelectedRepo } from "../../shared/contracts.js";
 
 import { runCommand } from "../utils/process.js";
 
@@ -27,6 +27,27 @@ export class GitService {
   async getDiff(repo: SelectedRepo) {
     const [trackedDiff, untrackedDiff] = await Promise.all([this.getTrackedDiff(repo), this.getUntrackedDiff(repo)]);
     return parseUnifiedDiff([trackedDiff, untrackedDiff].filter(Boolean).join("\n"));
+  }
+
+  async getRemoteSyncStatus(repo: SelectedRepo): Promise<GitRemoteSyncStatus> {
+    try {
+      await this.runGit(repo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]);
+    } catch {
+      return {
+        ahead: 0,
+        behind: 0,
+        hasUpstream: false,
+      };
+    }
+
+    const { stdout } = await this.runGit(repo, ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"]);
+    const [behind, ahead] = parseLeftRightCommitCounts(stdout);
+
+    return {
+      ahead,
+      behind,
+      hasUpstream: true,
+    };
   }
 
   async revertHunk(repo: SelectedRepo, diff: string) {
@@ -155,6 +176,17 @@ function summarizeSyncOutput(fallback: string, stdout: string, stderr: string) {
     .filter(Boolean);
 
   return lines.at(-1) ?? fallback;
+}
+
+function parseLeftRightCommitCounts(rawOutput: string): [behind: number, ahead: number] {
+  const [behindRaw = "0", aheadRaw = "0"] = rawOutput.trim().split(/\s+/);
+  const behind = Number.parseInt(behindRaw, 10);
+  const ahead = Number.parseInt(aheadRaw, 10);
+
+  return [
+    Number.isFinite(behind) ? behind : 0,
+    Number.isFinite(ahead) ? ahead : 0,
+  ];
 }
 
 export function parseUnifiedDiff(input: string): DiffFile[] {

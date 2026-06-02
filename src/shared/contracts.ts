@@ -55,6 +55,17 @@ export type GitCommitResult = {
   commitSha: string;
 };
 
+export type GitRemoteSyncStatus = {
+  ahead: number;
+  behind: number;
+  hasUpstream: boolean;
+};
+
+export type GitDiffResponse = {
+  files: DiffFile[];
+  sync: GitRemoteSyncStatus;
+};
+
 export type GitSyncResult = {
   summary: string;
 };

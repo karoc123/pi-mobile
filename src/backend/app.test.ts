@@ -148,6 +148,7 @@ describe("createApp", () => {
       } as never,
       gitService: {
         getDiff: vi.fn(async () => []),
+        getRemoteSyncStatus: vi.fn(async () => ({ ahead: 0, behind: 0, hasUpstream: true })),
         pull: gitPull,
         push: gitPush,
         revertHunk: vi.fn(async () => undefined),

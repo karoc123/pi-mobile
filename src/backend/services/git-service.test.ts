@@ -191,6 +191,28 @@ describe("GitService", () => {
     expect(summary.length).toBeGreaterThan(0);
     expect(primaryContent).toContain("line pushed");
   });
+
+  it("reports ahead/behind commit counts against upstream", async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-git-"));
+    const { primaryDir, secondaryDir } = await createRemoteFixture(tempDir);
+
+    await writeFile(path.join(primaryDir, "notes.txt"), "line a\nline from primary\n", "utf8");
+    await runCommand("git", ["add", "notes.txt"], { cwd: primaryDir });
+    await runCommand("git", ["commit", "-m", "remote update"], { cwd: primaryDir });
+    await runCommand("git", ["push", "origin", "HEAD"], { cwd: primaryDir });
+
+    await runCommand("git", ["fetch", "origin"], { cwd: secondaryDir });
+
+    await writeFile(path.join(secondaryDir, "notes.txt"), "line a\nline from secondary\n", "utf8");
+    await runCommand("git", ["add", "notes.txt"], { cwd: secondaryDir });
+    await runCommand("git", ["commit", "-m", "local update"], { cwd: secondaryDir });
+
+    const service = new GitService();
+    const repo = { name: "secondary", relativePath: ".", absolutePath: secondaryDir };
+    const status = await service.getRemoteSyncStatus(repo);
+
+    expect(status).toEqual({ ahead: 1, behind: 1, hasUpstream: true });
+  });
 });
 
 async function createRemoteFixture(baseDir: string) {

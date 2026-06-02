@@ -20,6 +20,8 @@
     FileCreateResult,
     FileDocument,
     FileEntry,
+    GitDiffResponse,
+    GitRemoteSyncStatus,
     GitSyncResult,
     SelectedRepo,
     SessionResponse,
@@ -125,6 +127,7 @@
 
   let diffLoading = false;
   let diffFiles: DiffFile[] = [];
+  let diffSyncStatus: GitRemoteSyncStatus | null = null;
   let diffRefreshPending = false;
   let diffReloadTimer: number | null = null;
   let revertingHunkId: string | null = null;
@@ -984,6 +987,7 @@
   async function loadDiff() {
     if (!currentRepo) {
       diffFiles = [];
+      diffSyncStatus = null;
       diffRefreshPending = false;
       return;
     }
@@ -991,8 +995,9 @@
     diffLoading = true;
 
     try {
-      const response = await apiFetch<{ files: DiffFile[] }>('/api/git/diff');
+      const response = await apiFetch<GitDiffResponse>('/api/git/diff');
       diffFiles = response.files;
+      diffSyncStatus = response.sync;
       diffRefreshPending = false;
     } catch (error) {
       handleApiFailure(error);
@@ -1631,6 +1636,7 @@
     workspaceEntries = [];
     workspacePath = '.';
     diffFiles = [];
+    diffSyncStatus = null;
     diffRefreshPending = false;
 
     if (diffReloadTimer !== null) {
@@ -1937,6 +1943,7 @@
             this={diffViewComponent}
             files={diffFiles}
             loading={diffLoading}
+            syncStatus={diffSyncStatus}
             revertingHunkId={revertingHunkId}
             committing={committing}
             pulling={pulling}

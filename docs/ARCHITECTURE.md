@@ -72,7 +72,7 @@ To minimize memory footprint and execution latency on the Raspberry Pi, the fron
 - **Technology:** Svelte (compiled down to vanilla JS chunks).
 - **Navigation:** Bottom-anchored navigation drawer featuring three unified thumb views:
   1. **Chat (`/chat`):** Feeds interactions directly into the active `pi` execution process. Utilizes modular Markdown text parsing with responsive fullscreen viewports for generated code blocks.
-  2. **Git Diff (`/diff`):** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap hunk manipulation plus header-level `pull` / `push` / `commit` actions.
+  2. **Git Diff (`/diff`):** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap hunk manipulation plus header-level `pull` / `push` / `commit` actions. The header shows remote sync state (`↑ ahead`, `↓ behind`, or up-to-date) and the actions menu annotates pull/push with commit counts.
   3. **Editor (`/editor`):** A touch-first text editing surface implemented with **CodeMirror 6**, ensuring fluid virtual keyboard integration, real-time syntax highlighting, and a hidden actions menu for fast file creation.
 
 ### 2.3 Backend & Tool-Wrapper

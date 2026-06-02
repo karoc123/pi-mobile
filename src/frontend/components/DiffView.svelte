@@ -3,11 +3,12 @@
 
   import { createEventDispatcher } from 'svelte';
 
-  import type { DiffFile } from '../../../src/shared/contracts.js';
+  import type { DiffFile, GitRemoteSyncStatus } from '../../../src/shared/contracts.js';
   import { renderDiff } from '../lib/diff.js';
 
   export let files: DiffFile[] = [];
   export let loading = false;
+  export let syncStatus: GitRemoteSyncStatus | null = null;
   export let revertingHunkId: string | null = null;
   export let committing = false;
   export let pulling = false;
@@ -23,6 +24,9 @@
   let actionsOpen = false;
 
   $: actionsBusy = loading || pulling || pushing || committing;
+  $: syncHeadline = describeSyncHeadline(syncStatus);
+  $: pullLabel = pulling ? 'Pulling…' : buildActionLabel('Pull', '↓', syncStatus?.behind ?? 0, Boolean(syncStatus?.hasUpstream));
+  $: pushLabel = pushing ? 'Pushing…' : buildActionLabel('Push', '↑', syncStatus?.ahead ?? 0, Boolean(syncStatus?.hasUpstream));
 
   function triggerPull() {
     actionsOpen = false;
@@ -57,6 +61,30 @@
       actionsOpen = false;
     }
   }
+
+  function describeSyncHeadline(status: GitRemoteSyncStatus | null) {
+    if (!status) {
+      return 'checking…';
+    }
+
+    if (!status.hasUpstream) {
+      return 'no upstream';
+    }
+
+    if (status.ahead === 0 && status.behind === 0) {
+      return 'up to date';
+    }
+
+    return `↑ ${status.ahead} ↓ ${status.behind}`;
+  }
+
+  function buildActionLabel(base: string, icon: '↑' | '↓', commitCount: number, hasUpstream: boolean) {
+    if (!hasUpstream || commitCount <= 0) {
+      return base;
+    }
+
+    return `${base} (${icon}${commitCount})`;
+  }
 </script>
 
 <svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
@@ -65,7 +93,7 @@
   <div class="section-header">
     <div>
       <p class="eyebrow">Git diff</p>
-      <h2>Review every hunk</h2>
+      <h2>Review (Sync: {syncHeadline})</h2>
     </div>
     <div class="header-actions">
       <span class="status-pill">{files.length} file{files.length === 1 ? '' : 's'}</span>
@@ -84,10 +112,10 @@
         {#if actionsOpen}
           <div class="diff-actions-menu" role="menu" aria-label="Git actions">
             <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPull}>
-              {pulling ? 'Pulling…' : 'Pull'}
+              {pullLabel}
             </button>
             <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPush}>
-              {pushing ? 'Pushing…' : 'Push'}
+              {pushLabel}
             </button>
             <button class="primary-button" type="button" role="menuitem" disabled={actionsBusy || files.length === 0} on:click={triggerCommit}>
               {committing ? 'Committing…' : 'Commit changes'}
