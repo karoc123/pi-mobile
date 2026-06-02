@@ -83,6 +83,17 @@ type SessionRow = {
   auto_compact_enabled: number;
 };
 
+type ModelUsageRow = {
+  model_id: string;
+  usage_count: number;
+  last_used_at: string;
+};
+
+export type ModelUsageSummary = {
+  usageCount: number;
+  lastUsedAt: string;
+};
+
 export class CostService {
   private readonly database: DatabaseSync;
 
@@ -384,6 +395,33 @@ export class CostService {
       value: row.model_id,
       label: row.model_id,
     }));
+  }
+
+  getModelUsageSummary(repoRelativePath?: string) {
+    const rows = this.database
+      .prepare(
+        `
+        SELECT
+          models.model_id,
+          COUNT(*) AS usage_count,
+          MAX(sessions.updated_at) AS last_used_at
+        FROM agent_cost_session_models models
+        INNER JOIN agent_cost_sessions sessions
+          ON sessions.session_key = models.session_key
+        WHERE (:repoRelativePath IS NULL OR sessions.repo_relative_path = :repoRelativePath)
+        GROUP BY models.model_id
+      `,
+      )
+      .all({ repoRelativePath: repoRelativePath ?? null }) as ModelUsageRow[];
+
+    return rows.reduce<Record<string, ModelUsageSummary>>((summary, row) => {
+      summary[row.model_id] = {
+        usageCount: row.usage_count,
+        lastUsedAt: row.last_used_at,
+      };
+
+      return summary;
+    }, {});
   }
 }
 

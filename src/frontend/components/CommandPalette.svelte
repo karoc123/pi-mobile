@@ -10,6 +10,8 @@
   export let busy = false;
   export let state: AgentCommandState | null = null;
   export let theme: ThemeName = 'vscode-dark';
+  export let initialCommand: string | null = null;
+  export let selectionToken = 0;
 
   const dispatch = createEventDispatcher<{
     close: void;
@@ -20,12 +22,22 @@
 
   let selectedCommand = SLASH_COMMANDS[0]?.command ?? '/model';
   let availableModels: AgentModelOption[] = [];
+  let appliedSelectionToken = 0;
   let sessionNameDraft = '';
   let bashCommandDraft = 'git status --short';
   let bashExcludeFromContext = false;
 
   $: if (open && !SLASH_COMMANDS.some((entry) => entry.command === selectedCommand)) {
     selectedCommand = SLASH_COMMANDS[0]?.command ?? '/model';
+  }
+
+  $: if (open && selectionToken > 0 && selectionToken !== appliedSelectionToken) {
+    appliedSelectionToken = selectionToken;
+    const requestedCommand = initialCommand?.trim();
+
+    if (requestedCommand && SLASH_COMMANDS.some((entry) => entry.command === requestedCommand)) {
+      selectedCommand = requestedCommand;
+    }
   }
 
   $: availableModels = state?.models.filter((model) => model.available || model.isCurrent) ?? [];
@@ -41,6 +53,20 @@
       hour: '2-digit',
       minute: '2-digit',
     });
+  }
+
+  function formatModelUsage(model: AgentModelOption) {
+    const parts: string[] = [];
+
+    if (typeof model.usageCount === 'number' && model.usageCount > 0) {
+      parts.push(`Used ${model.usageCount}x`);
+    }
+
+    if (model.lastUsedAt) {
+      parts.push(`Last ${formatTimestamp(model.lastUsedAt)}`);
+    }
+
+    return parts.join(' · ');
   }
 </script>
 
@@ -94,6 +120,9 @@
                       <div class="command-option-main">
                         <strong>{model.provider}/{model.modelId}</strong>
                         <span>{model.name}</span>
+                        {#if formatModelUsage(model)}
+                          <span>{formatModelUsage(model)}</span>
+                        {/if}
                       </div>
                       <span class="command-meta">{model.isCurrent ? 'Current' : model.usingSubscription ? 'OAuth' : 'Ready'}</span>
                     </button>

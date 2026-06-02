@@ -44,6 +44,7 @@
     abort: void;
     keepRunning: void;
     openCommands: void;
+    openModelCommands: void;
     newSession: void;
   }>();
 
@@ -563,9 +564,21 @@
         <button class="secondary-button compact new-button" type="button" on:click={() => dispatch('newSession')} disabled={runtimePhase !== 'idle'}>
           NEW
         </button>
-        <button class="secondary-button compact cmd-button" type="button" on:click={() => dispatch('openCommands')} disabled={runtimePhase !== 'idle'}>
-          CMD
-        </button>
+        <div class="cmd-split" role="group" aria-label="Command palette actions">
+          <button class="secondary-button compact cmd-button" type="button" on:click={() => dispatch('openCommands')} disabled={runtimePhase !== 'idle'}>
+            CMD
+          </button>
+          <button
+            class="secondary-button compact cmd-button-shortcut"
+            type="button"
+            on:click={() => dispatch('openModelCommands')}
+            disabled={runtimePhase !== 'idle'}
+            aria-label="Open model switcher"
+            title="Quick open model switcher"
+          >
+            ▾
+          </button>
+        </div>
         {#if showKeepRunning && runtimePhase !== 'idle'}
           <button class="secondary-button compact keep-running-button" type="button" on:click={() => dispatch('keepRunning')}>
             Keep running

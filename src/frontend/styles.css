@@ -955,13 +955,34 @@ code {
   background: color-mix(in srgb, #2e88ff 34%, var(--cli-panel));
 }
 
-.chat-view .composer-actions .cmd-button {
+.chat-view .composer-actions .cmd-split {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.chat-view .composer-actions .cmd-button,
+.chat-view .composer-actions .cmd-button-shortcut {
   background: color-mix(in srgb, #7ac57a 22%, var(--cli-panel));
   border-color: color-mix(in srgb, #7ac57a 58%, var(--terminal-panel-border));
   color: var(--cli-ink);
 }
 
-.chat-view .composer-actions .cmd-button:hover {
+.chat-view .composer-actions .cmd-button {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.chat-view .composer-actions .cmd-button-shortcut {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left-width: 0;
+  min-width: 2.2rem;
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
+.chat-view .composer-actions .cmd-button:hover,
+.chat-view .composer-actions .cmd-button-shortcut:hover {
   background: color-mix(in srgb, #7ac57a 34%, var(--cli-panel));
 }
 
@@ -1234,9 +1255,11 @@ code {
 
 .command-sheet {
   width: min(56rem, calc(100vw - 1rem));
+  max-height: min(86dvh, 46rem);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   padding: 0;
+  overflow: hidden;
 }
 
 .command-sheet .sheet-header {
@@ -1249,15 +1272,17 @@ code {
 }
 
 .command-body {
-  overflow-y: auto;
+  overflow: hidden;
   padding: 1rem;
   display: grid;
-  gap: 1rem;
+  min-height: 0;
 }
 
 .command-layout {
   display: grid;
-  gap: 1rem;
+  grid-template-columns: minmax(8.6rem, 38%) minmax(0, 1fr);
+  gap: 0.8rem;
+  min-height: 0;
 }
 
 .command-list,
@@ -1265,6 +1290,15 @@ code {
 .command-stack {
   display: grid;
   gap: 0.75rem;
+}
+
+.command-list,
+.command-panel {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .command-tab,
@@ -2110,6 +2144,71 @@ code {
   }
 }
 
+@media (max-width: 420px) {
+  .command-sheet {
+    width: calc(100vw - 0.5rem);
+    max-height: min(90dvh, 42rem);
+  }
+
+  .command-body {
+    padding: 0.75rem;
+  }
+
+  .command-layout {
+    grid-template-columns: minmax(6.5rem, 30%) minmax(0, 1fr);
+    gap: 0.6rem;
+  }
+
+  .command-tab,
+  .command-option,
+  .command-summary-card,
+  .command-stat {
+    padding: 0.7rem 0.75rem;
+  }
+
+  .command-tab {
+    gap: 0.15rem;
+  }
+
+  .command-tab strong,
+  .command-option-main strong {
+    font-size: 0.92rem;
+  }
+
+  .command-tab span,
+  .command-option span,
+  .command-summary-card span,
+  .command-meta {
+    font-size: 0.77rem;
+  }
+
+  .command-option {
+    gap: 0.55rem;
+  }
+
+  .command-option-main {
+    gap: 0.15rem;
+  }
+
+  .command-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .command-toggle-grid {
+    grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr));
+  }
+
+  .chat-view .composer-actions {
+    gap: 0.5rem;
+  }
+
+  .chat-view .composer-actions .cmd-button-shortcut {
+    min-width: 2rem;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+  }
+}
+
 .small {
   font-size: 0.92rem;
 }
@@ -2282,7 +2381,7 @@ code {
 
   .command-layout {
     grid-template-columns: 15rem minmax(0, 1fr);
-    align-items: start;
+    align-items: stretch;
   }
 
   .cost-filter-grid {

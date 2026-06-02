@@ -74,6 +74,5 @@ All contributions must adhere to principles that ensure the system remains extre
 
 - Feature completely satisfies the mobile-first UX goals (thumb-reachable targets, tight viewports).
 - Secure password boundaries are active and verified across all newly introduced routes.
-- Hunk-level reverting and CodeMirror save-states execute successfully against test repositories.
 - Local tests pass, linting is green, and the `ARCHITECTURE.md` is updated to reflect any technical pivot.
 - Hand-off report includes a short summary of implemented logic and remaining risks.

@@ -280,6 +280,8 @@ export type AgentModelOption = {
   available: boolean;
   isCurrent: boolean;
   usingSubscription: boolean;
+  usageCount?: number;
+  lastUsedAt?: string | null;
 };
 
 export type AgentThinkingLevelOption = {

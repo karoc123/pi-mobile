@@ -6,6 +6,7 @@ import type {
   AgentCommandRequest,
   AgentCommandResponse,
   AgentCommandState,
+  AgentModelOption,
   AgentSnapshot,
   AgentThinkingLevel,
   AgentUsage,
@@ -78,7 +79,14 @@ export class PiAgentService {
       return this.mockAdapter.getCommandState(this.currentRepo, this.messages);
     }
 
-    return this.sessionAdapter.getCommandState(this.currentRepo);
+    const baseState = await this.sessionAdapter.getCommandState(this.currentRepo);
+    const repoUsageSummary = this.costService.getModelUsageSummary(this.currentRepo.relativePath);
+    const globalUsageSummary = this.costService.getModelUsageSummary();
+
+    return {
+      ...baseState,
+      models: rankModelsByUsage(baseState.models, repoUsageSummary, globalUsageSummary),
+    };
   }
 
   async executeCommand(request: AgentCommandRequest): Promise<AgentCommandResponse> {
@@ -812,6 +820,94 @@ export class PiAgentService {
       autoCompactEnabled: false,
     };
   }
+}
+
+function rankModelsByUsage(
+  models: AgentModelOption[],
+  repoUsageSummary: Record<string, { usageCount: number; lastUsedAt: string }>,
+  globalUsageSummary: Record<string, { usageCount: number; lastUsedAt: string }>,
+): AgentModelOption[] {
+  return models
+    .map((model) => {
+      const repoUsage = resolveModelUsage(repoUsageSummary, model.provider, model.modelId);
+      const globalUsage = resolveModelUsage(globalUsageSummary, model.provider, model.modelId);
+
+      const usageCount = repoUsage?.usageCount ?? globalUsage?.usageCount;
+      const lastUsedAt = repoUsage?.lastUsedAt ?? globalUsage?.lastUsedAt ?? null;
+
+      return {
+        model,
+        repoUsageCount: repoUsage?.usageCount ?? 0,
+        repoLastUsedAt: repoUsage?.lastUsedAt ?? null,
+        globalUsageCount: globalUsage?.usageCount ?? 0,
+        globalLastUsedAt: globalUsage?.lastUsedAt ?? null,
+        usageCount,
+        lastUsedAt,
+      };
+    })
+    .sort((left, right) => {
+      if (left.model.isCurrent !== right.model.isCurrent) {
+        return left.model.isCurrent ? -1 : 1;
+      }
+
+      const repoLastUsedSort = compareIsoTimestampDesc(left.repoLastUsedAt, right.repoLastUsedAt);
+
+      if (repoLastUsedSort !== 0) {
+        return repoLastUsedSort;
+      }
+
+      if (left.repoUsageCount !== right.repoUsageCount) {
+        return right.repoUsageCount - left.repoUsageCount;
+      }
+
+      const globalLastUsedSort = compareIsoTimestampDesc(left.globalLastUsedAt, right.globalLastUsedAt);
+
+      if (globalLastUsedSort !== 0) {
+        return globalLastUsedSort;
+      }
+
+      if (left.globalUsageCount !== right.globalUsageCount) {
+        return right.globalUsageCount - left.globalUsageCount;
+      }
+
+      if (left.model.available !== right.model.available) {
+        return left.model.available ? -1 : 1;
+      }
+
+      return `${left.model.provider}/${left.model.modelId}`.localeCompare(`${right.model.provider}/${right.model.modelId}`);
+    })
+    .map((entry) => ({
+      ...entry.model,
+      usageCount: entry.usageCount,
+      lastUsedAt: entry.lastUsedAt,
+    }));
+}
+
+function resolveModelUsage(
+  usageSummary: Record<string, { usageCount: number; lastUsedAt: string }>,
+  provider: string,
+  modelId: string,
+) {
+  const compositeModelId = `${provider}/${modelId}`;
+  const modelIdWithoutProviderPrefix = modelId.startsWith(`${provider}/`) ? modelId.slice(provider.length + 1) : modelId;
+
+  return usageSummary[compositeModelId] ?? usageSummary[modelId] ?? usageSummary[modelIdWithoutProviderPrefix];
+}
+
+function compareIsoTimestampDesc(left: string | null, right: string | null) {
+  if (left === right) {
+    return 0;
+  }
+
+  if (!left) {
+    return 1;
+  }
+
+  if (!right) {
+    return -1;
+  }
+
+  return right.localeCompare(left);
 }
 
 function createEmptyCommandState(): AgentCommandState {

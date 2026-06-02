@@ -190,6 +190,8 @@
   let commandStateLoading = false;
   let commandBusy = false;
   let commandState: AgentCommandState | null = null;
+  let commandPaletteInitialCommand: string | null = null;
+  let commandPaletteSelectionToken = 0;
   let composerPrefill = '';
   let composerPrefillToken = 0;
   let costReport: CostReport = emptyCostReport;
@@ -943,11 +945,13 @@
     }
   }
 
-  async function openCommandPalette() {
+  async function openCommandPalette(initialCommand: string | null = null) {
     if (!currentRepo) {
       return;
     }
 
+    commandPaletteInitialCommand = initialCommand;
+    commandPaletteSelectionToken += 1;
     commandPaletteOpen = true;
     await loadCommandState();
   }
@@ -2073,6 +2077,7 @@
           on:keepRunning={allowKeepRunning}
           on:newSession={() => void startNewChatFromComposer()}
           on:openCommands={() => void openCommandPalette()}
+          on:openModelCommands={() => void openCommandPalette('/model')}
         />
       {:else if view === 'diff'}
         {#if diffViewComponent}
@@ -2197,6 +2202,8 @@
       busy={commandBusy}
       state={commandState}
       theme={theme}
+      initialCommand={commandPaletteInitialCommand}
+      selectionToken={commandPaletteSelectionToken}
       on:close={() => (commandPaletteOpen = false)}
       on:copy={copyLastAssistantReply}
       on:execute={(event) => executePaletteCommand(event.detail.request)}
