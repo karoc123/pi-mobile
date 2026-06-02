@@ -53,6 +53,7 @@ export type AppConfig = {
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  hydrateProcessEnvFromDotEnvIfNeeded(env);
   const parsed = configSchema.parse(env);
 
   if ((parsed.PI_PROVIDER && !parsed.PI_MODEL) || (!parsed.PI_PROVIDER && parsed.PI_MODEL)) {
@@ -84,6 +85,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     gitUserName: parsed.GIT_USER_NAME,
     gitUserEmail: parsed.GIT_USER_EMAIL,
   };
+}
+
+function hydrateProcessEnvFromDotEnvIfNeeded(env: NodeJS.ProcessEnv) {
+  if (env !== process.env) {
+    return;
+  }
+
+  if (typeof process.loadEnvFile !== "function") {
+    return;
+  }
+
+  try {
+    process.loadEnvFile(".env");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
 }
 
 function asBoolean(value: string | undefined) {
