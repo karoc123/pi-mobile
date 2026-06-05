@@ -57,6 +57,33 @@ export class WorkspaceService {
     return this.currentRepo;
   }
 
+  async cloneRepo(remoteUrl: string, destinationPath?: string) {
+    const normalizedRemoteUrl = remoteUrl.trim();
+
+    if (!normalizedRemoteUrl) {
+      throw new Error("Remote URL is required.");
+    }
+
+    const relativeDestinationPath = resolveCloneDestinationPath(normalizedRemoteUrl, destinationPath);
+    const absoluteDestinationPath = resolveWithin(this.rootPath, relativeDestinationPath);
+
+    if (await pathExists(absoluteDestinationPath)) {
+      throw new Error("Destination path already exists.");
+    }
+
+    await runCommand("git", ["clone", normalizedRemoteUrl, absoluteDestinationPath]);
+
+    const { root: repositoryRoot, errorMessage } = await getGitRootWithDiagnostics(absoluteDestinationPath);
+
+    if (!repositoryRoot) {
+      const hint = errorMessage ? `\n\nGit error:\n${errorMessage}` : "";
+      throw new Error(`Cloned directory is not a Git repository.${hint}`);
+    }
+
+    resolveWithin(this.rootPath, relativeFrom(this.rootPath, repositoryRoot));
+    return createSelectedRepo(this.rootPath, repositoryRoot);
+  }
+
   requireCurrentRepo() {
     if (!this.currentRepo) {
       throw new Error("No repository is currently selected.");
@@ -151,4 +178,31 @@ async function pathExists(candidatePath: string) {
   } catch {
     return false;
   }
+}
+
+function resolveCloneDestinationPath(remoteUrl: string, destinationPath?: string) {
+  const providedDestinationPath = destinationPath?.trim();
+
+  if (providedDestinationPath && providedDestinationPath.length > 0) {
+    if (providedDestinationPath === "." || providedDestinationPath === "..") {
+      throw new Error("Destination path must point to a subdirectory.");
+    }
+
+    return providedDestinationPath;
+  }
+
+  return deriveCloneDirectoryName(remoteUrl);
+}
+
+function deriveCloneDirectoryName(remoteUrl: string) {
+  const normalized = remoteUrl.trim().replace(/[\\/]+$/, "");
+  const separatorIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf(":"));
+  const rawName = (separatorIndex >= 0 ? normalized.slice(separatorIndex + 1) : normalized).replace(/\.git$/i, "").trim();
+  const sanitized = rawName.replace(/[<>:"|?*\u0000]/g, "-").replace(/[\\/]/g, "-");
+
+  if (sanitized.length === 0 || sanitized === "." || sanitized === "..") {
+    return "cloned-repo";
+  }
+
+  return sanitized;
 }

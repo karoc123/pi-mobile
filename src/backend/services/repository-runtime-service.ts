@@ -29,6 +29,12 @@ export class RepositoryRuntimeService {
     return repo;
   }
 
+  async cloneRepo(remoteUrl: string, destinationPath?: string) {
+    const repo = await this.workspaceService.cloneRepo(remoteUrl, destinationPath);
+    await this.applySelection(repo);
+    return repo;
+  }
+
   private async applySelection(repo: SelectedRepo) {
     await this.watcherService.watch(repo.absolutePath);
     await this.piAgentService.selectRepo(repo);

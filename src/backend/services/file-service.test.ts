@@ -2,7 +2,7 @@
 
 import os from 'node:os';
 import path from 'node:path';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import { describe, expect, it } from 'vitest';
 
@@ -55,6 +55,32 @@ describe('FileService', () => {
 
       await writeFile(path.join(tempDir, 'notes/archive/todo-copy.md'), 'exists\n', 'utf8');
       await expect(fileService.duplicateFile(repo, 'notes/archive/todo.md', 'notes/archive/todo-copy.md')).rejects.toMatchObject({ code: 'EEXIST' });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns image preview payloads for image files', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-mobile-file-service-'));
+
+    try {
+      const repo = {
+        name: path.basename(tempDir),
+        relativePath: tempDir,
+        absolutePath: tempDir,
+      };
+
+      const tinyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sE5e3kAAAAASUVORK5CYII=';
+      await mkdir(path.join(tempDir, 'assets'), { recursive: true });
+      await writeFile(path.join(tempDir, 'assets', 'pixel.png'), Buffer.from(tinyPngBase64, 'base64'));
+
+      const document = await fileService.readFile(repo, 'assets/pixel.png');
+
+      expect(document.path).toBe('assets/pixel.png');
+      expect(document.kind).toBe('image');
+      expect(document.mimeType).toBe('image/png');
+      expect(document.content).toBe('');
+      expect(document.imageDataUrl?.startsWith('data:image/png;base64,')).toBe(true);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

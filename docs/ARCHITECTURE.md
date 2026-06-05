@@ -72,7 +72,7 @@ To minimize memory footprint and execution latency on the Raspberry Pi, the fron
 - **Technology:** Svelte (compiled down to vanilla JS chunks).
 - **Navigation:** Bottom-anchored navigation drawer featuring three unified thumb views:
   1. **Chat (`/chat`):** Feeds interactions directly into the active `pi` execution process. Utilizes modular Markdown text parsing with responsive fullscreen viewports for generated code blocks.
-  2. **Git Diff (`/diff`):** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap hunk manipulation plus header-level `pull` / `push` / `commit` actions. The header shows remote sync state (`↑ ahead`, `↓ behind`, or up-to-date) and the actions menu annotates pull/push with commit counts.
+  2. **Git Diff (`/diff`):** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap hunk manipulation (`stage`, `unstage`, `revert`) plus header-level `stage all` / `unstage all` / `pull` / `push` / `commit` actions. The header shows remote sync state (`↑ ahead`, `↓ behind`, or up-to-date) and commit counters.
   3. **Editor (`/editor`):** A touch-first text editing surface implemented with **CodeMirror 6**, ensuring fluid virtual keyboard integration, real-time syntax highlighting, and a hidden actions menu for file/folder creation plus file duplicate/rename/move/delete operations.
 
 ### 2.3 Backend & Tool-Wrapper
@@ -125,6 +125,15 @@ Since Git does not natively provide a single non-interactive CLI command to disc
 
 6. The file is cleanly rolled back at that exact position. The `FileService` emits an updated state event, and the `pi` agent natively detects the updated file layout on its next turn.
 
+### 3.3 Git Staging Pipeline (Hunk + All)
+
+The diff view now follows staged-first Git semantics:
+
+1. The user can stage or unstage individual hunks through `POST /api/git/stage-hunk` and `POST /api/git/unstage-hunk`.
+2. Global index operations are available via `POST /api/git/stage-all` and `POST /api/git/unstage-all`.
+3. Commits no longer auto-stage the full working tree; `POST /api/git/commit` now commits only what is currently staged.
+4. Diff payloads mark each hunk with `staged: true|false` so the mobile UI can render the correct action per hunk.
+
 ### 3.4 Runtime Incident Review (Menu -> Open log)
 
 When backend behavior is unclear, the mobile client can inspect runtime activity without leaving the UI:
@@ -135,7 +144,7 @@ When backend behavior is unclear, the mobile client can inspect runtime activity
 4. Every displayed error includes request-correlation metadata, so API failures can be traced to server-side records quickly.
 5. The log view can trigger `DELETE /api/logs` to clear in-memory entries and persisted backend log files (`backend.log` + rotated files).
 
-### 3.3 Start a Fresh Agent Session (Context + Cost Reset)
+### 3.5 Start a Fresh Agent Session (Context + Cost Reset)
 
 To avoid carrying forward long-running conversation context, the chat UI exposes a **New session** action:
 
@@ -143,7 +152,7 @@ To avoid carrying forward long-running conversation context, the chat UI exposes
 2. The backend disposes the active `AgentSession`, clears in-memory chat/tool state, and creates a brand-new SDK session via `SessionManager.create(...)` for the current repository.
 3. The frontend refreshes `/api/agent/state`, so messages/tool activity become empty and usage/cost counters restart from zero for the new session.
 
-### 3.5 Agent Status & Command Resilience
+### 3.6 Agent Status & Command Resilience
 
 To keep runtime status accurate even when WebSocket delivery is delayed, status synchronization combines push and pull paths:
 
@@ -151,6 +160,15 @@ To keep runtime status accurate even when WebSocket delivery is delayed, status 
 2. The frontend consumes `runtimePhase` and related fields to render precise labels instead of a coarse "working" state.
 3. If WebSocket is disconnected or the runtime is non-idle, the client starts fallback polling of `GET /api/agent/state` until stable idle conditions return.
 4. `GET /api/agent/command-state` now includes discovered slash commands (extension, prompt, skill sources) plus queue/retry/bash indicators used by the command palette.
+
+### 3.7 Clone-From-Picker Workflow
+
+To reduce setup friction on mobile, repository cloning is integrated directly into the repository picker:
+
+1. The user enters a remote URL (and optional destination path) in the picker.
+2. The frontend calls `POST /api/workspaces/clone`.
+3. The backend clones inside `WORKSPACE_ROOT`, validates the cloned directory as Git repository, and immediately activates it via the existing repo-runtime selection flow.
+4. Watchers and agent session context are rebound to the newly cloned repository using the same `repo_selected` event pipeline as manual repo selection.
 
 ---
 

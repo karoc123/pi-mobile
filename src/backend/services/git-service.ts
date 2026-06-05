@@ -25,8 +25,19 @@ export class GitService {
   }
 
   async getDiff(repo: SelectedRepo) {
-    const [trackedDiff, untrackedDiff] = await Promise.all([this.getTrackedDiff(repo), this.getUntrackedDiff(repo)]);
-    return parseUnifiedDiff([trackedDiff, untrackedDiff].filter(Boolean).join("\n"));
+    const [stagedDiff, unstagedDiff, untrackedDiff] = await Promise.all([
+      this.getStagedDiff(repo),
+      this.getUnstagedDiff(repo),
+      this.getUntrackedDiff(repo),
+    ]);
+
+    const stagedFiles = parseUnifiedDiff(stagedDiff, { staged: true, idPrefix: "staged" });
+    const unstagedFiles = parseUnifiedDiff([unstagedDiff, untrackedDiff].filter(Boolean).join("\n"), {
+      staged: false,
+      idPrefix: "unstaged",
+    });
+
+    return mergeDiffFiles(stagedFiles, unstagedFiles);
   }
 
   async getRemoteSyncStatus(repo: SelectedRepo): Promise<GitRemoteSyncStatus> {
@@ -51,10 +62,35 @@ export class GitService {
   }
 
   async revertHunk(repo: SelectedRepo, diff: string) {
-    const normalizedDiff = diff.endsWith("\n") ? diff : `${diff}\n`;
+    const normalizedDiff = normalizePatch(diff);
     await this.runGit(repo, ["apply", "-R", "--recount", "--whitespace=nowarn", "-"], {
       input: normalizedDiff,
     });
+  }
+
+  async stageHunk(repo: SelectedRepo, diff: string) {
+    await this.runGit(repo, ["apply", "--cached", "--recount", "--whitespace=nowarn", "-"], {
+      input: normalizePatch(diff),
+    });
+  }
+
+  async unstageHunk(repo: SelectedRepo, diff: string) {
+    await this.runGit(repo, ["apply", "-R", "--cached", "--recount", "--whitespace=nowarn", "-"], {
+      input: normalizePatch(diff),
+    });
+  }
+
+  async stageAll(repo: SelectedRepo) {
+    await this.runGit(repo, ["add", "--all"]);
+  }
+
+  async unstageAll(repo: SelectedRepo) {
+    if (await this.hasHeadCommit(repo)) {
+      await this.runGit(repo, ["reset", "HEAD", "--", "."]);
+      return;
+    }
+
+    await this.runGit(repo, ["read-tree", "--empty"]);
   }
 
   async commit(repo: SelectedRepo, message: string) {
@@ -64,11 +100,10 @@ export class GitService {
       throw new Error("Commit message is required.");
     }
 
-    await this.runGit(repo, ["add", "--all"]);
-    const { stdout: status } = await this.runGit(repo, ["status", "--porcelain"]);
+    const { stdout: status } = await this.runGit(repo, ["diff", "--cached", "--name-only"]);
 
     if (!status.trim()) {
-      throw new Error("No changes to commit.");
+      throw new Error("No staged changes to commit.");
     }
 
     try {
@@ -96,20 +131,14 @@ export class GitService {
     return summarizeSyncOutput("Push completed.", result.stdout, result.stderr);
   }
 
-  private async getTrackedDiff(repo: SelectedRepo) {
-    const hasHead = await this.hasHeadCommit(repo);
+  private async getStagedDiff(repo: SelectedRepo) {
+    const { stdout } = await this.runGit(repo, ["diff", "--cached", ...DIFF_ARGS]);
+    return stdout;
+  }
 
-    if (hasHead) {
-      const { stdout } = await this.runGit(repo, ["diff", ...DIFF_ARGS, "HEAD"]);
-      return stdout;
-    }
-
-    const [unstaged, staged] = await Promise.all([
-      this.runGit(repo, ["diff", ...DIFF_ARGS]),
-      this.runGit(repo, ["diff", "--cached", ...DIFF_ARGS]),
-    ]);
-
-    return `${unstaged.stdout}\n${staged.stdout}`;
+  private async getUnstagedDiff(repo: SelectedRepo) {
+    const { stdout } = await this.runGit(repo, ["diff", ...DIFF_ARGS]);
+    return stdout;
   }
 
   private async getUntrackedDiff(repo: SelectedRepo) {
@@ -154,6 +183,10 @@ export class GitService {
   }
 }
 
+function normalizePatch(diff: string) {
+  return diff.endsWith("\n") ? diff : `${diff}\n`;
+}
+
 function isMissingIdentityError(error: unknown) {
   if (!(error instanceof Error)) {
     return false;
@@ -189,25 +222,40 @@ function parseLeftRightCommitCounts(rawOutput: string): [behind: number, ahead: 
   ];
 }
 
-export function parseUnifiedDiff(input: string): DiffFile[] {
+type ParseDiffOptions = {
+  staged: boolean;
+  idPrefix: string;
+};
+
+const defaultParseDiffOptions: ParseDiffOptions = {
+  staged: false,
+  idPrefix: "hunk",
+};
+
+export function parseUnifiedDiff(input: string, options: Partial<ParseDiffOptions> = {}): DiffFile[] {
   if (!input.trim()) {
     return [];
   }
+
+  const resolvedOptions: ParseDiffOptions = {
+    ...defaultParseDiffOptions,
+    ...options,
+  };
 
   return input
     .split(/(?=^diff --git )/m)
     .map((block) => block.trim())
     .filter(Boolean)
-    .map(parseDiffBlock);
+    .map((block, blockIndex) => parseDiffBlock(block, resolvedOptions, blockIndex));
 }
 
-function parseDiffBlock(block: string): DiffFile {
+function parseDiffBlock(block: string, options: ParseDiffOptions, blockIndex: number): DiffFile {
   const lines = block.split("\n");
   const firstHunkIndex = lines.findIndex((line) => line.startsWith("@@ "));
   const headerLines = firstHunkIndex === -1 ? lines : lines.slice(0, firstHunkIndex);
   const oldPath = extractDiffPath(headerLines, "--- ");
   const newPath = extractDiffPath(headerLines, "+++ ");
-  const hunks = parseHunks(lines, headerLines);
+  const hunks = parseHunks(lines, headerLines, options, blockIndex);
 
   return {
     path: newPath === "/dev/null" ? oldPath : newPath,
@@ -221,7 +269,7 @@ function parseDiffBlock(block: string): DiffFile {
   };
 }
 
-function parseHunks(lines: string[], headerLines: string[]) {
+function parseHunks(lines: string[], headerLines: string[], options: ParseDiffOptions, blockIndex: number) {
   const hunks: DiffHunk[] = [];
   let currentHunk: string[] = [];
 
@@ -234,9 +282,10 @@ function parseHunks(lines: string[], headerLines: string[]) {
     const removedLines = currentHunk.filter((line) => line.startsWith("-") && !line.startsWith("---")).length;
 
     hunks.push({
-      id: `${currentHunk[0] ?? "@@"}:${hunks.length}`,
+      id: `${options.idPrefix}:${blockIndex}:${hunks.length}`,
       header: currentHunk[0] ?? "@@",
       diff: `${[...headerLines, ...currentHunk].join("\n").trimEnd()}\n`,
+      staged: options.staged,
       addedLines,
       removedLines,
     });
@@ -259,6 +308,36 @@ function parseHunks(lines: string[], headerLines: string[]) {
   pushHunk();
 
   return hunks;
+}
+
+function mergeDiffFiles(...groups: DiffFile[][]): DiffFile[] {
+  const merged = new Map<string, DiffFile>();
+  const orderedKeys: string[] = [];
+
+  for (const files of groups) {
+    for (const file of files) {
+      const key = `${file.path}\u0000${file.oldPath}\u0000${file.newPath}`;
+      const existing = merged.get(key);
+
+      if (!existing) {
+        merged.set(key, {
+          ...file,
+          hunks: [...file.hunks],
+        });
+        orderedKeys.push(key);
+        continue;
+      }
+
+      existing.hunks = [...existing.hunks, ...file.hunks];
+      existing.addedLines += file.addedLines;
+      existing.removedLines += file.removedLines;
+      existing.diff = `${existing.diff.trimEnd()}\n${file.diff.trimStart()}`.trimEnd() + "\n";
+    }
+  }
+
+  return orderedKeys
+    .map((key) => merged.get(key))
+    .filter((file): file is DiffFile => Boolean(file));
 }
 
 function extractDiffPath(headerLines: string[], prefix: "--- " | "+++ ") {

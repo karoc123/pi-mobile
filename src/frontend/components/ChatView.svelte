@@ -38,6 +38,7 @@
   export let usage: AgentUsage;
   export let prefillPrompt = '';
   export let prefillToken = 0;
+  export let draftStorageScope = 'default';
 
   const dispatch = createEventDispatcher<{
     submit: { prompt: string };
@@ -58,6 +59,11 @@
   let shouldAutoScroll = true;
   let previousFinalAssistantMessageId: string | null = null;
   let displayEntries: DisplayEntry[] = [];
+  let hiddenEntryMap: Record<string, boolean> = {};
+  let copiedEntryId: string | null = null;
+  let copiedEntryResetTimer: number | null = null;
+  let activePromptDraftStorageKey = '';
+  let hydratedPromptDraftStorageKey = '';
 
   $: statusTitle = lastError
     ? 'Agent needs attention'
@@ -80,6 +86,17 @@
   $: totalToolCount = toolBatches.reduce((sum, batch) => sum + batch.tools.length, 0);
   $: displayEntries = buildDisplayEntries(messages);
   $: latestFinalAssistantMessageId = getLatestFinalAssistantMessageId(messages);
+  $: normalizedDraftStorageScope = draftStorageScope.trim().length > 0 ? draftStorageScope.trim() : 'default';
+  $: nextPromptDraftStorageKey = buildPromptDraftStorageKey(normalizedDraftStorageScope);
+
+  $: if (nextPromptDraftStorageKey !== activePromptDraftStorageKey) {
+    activePromptDraftStorageKey = nextPromptDraftStorageKey;
+    hydratePromptDraft(activePromptDraftStorageKey);
+  }
+
+  $: if (hydratedPromptDraftStorageKey === activePromptDraftStorageKey && activePromptDraftStorageKey.length > 0) {
+    persistPromptDraft(activePromptDraftStorageKey, prompt);
+  }
 
   $: if (prefillToken !== handledPrefillToken) {
     handledPrefillToken = prefillToken;
@@ -112,8 +129,48 @@
 
     return () => {
       window.removeEventListener('scroll', handleWindowScroll);
+
+      if (copiedEntryResetTimer !== null) {
+        window.clearTimeout(copiedEntryResetTimer);
+        copiedEntryResetTimer = null;
+      }
     };
   });
+
+  function buildPromptDraftStorageKey(scope: string) {
+    return `pimobile.chat.prompt-draft.${encodeURIComponent(scope)}`;
+  }
+
+  function hydratePromptDraft(storageKey: string) {
+    if (typeof window === 'undefined') {
+      hydratedPromptDraftStorageKey = storageKey;
+      return;
+    }
+
+    try {
+      prompt = window.localStorage.getItem(storageKey) ?? '';
+    } catch {
+      prompt = '';
+    }
+
+    hydratedPromptDraftStorageKey = storageKey;
+  }
+
+  function persistPromptDraft(storageKey: string, value: string) {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      if (value.length > 0) {
+        window.localStorage.setItem(storageKey, value);
+      } else {
+        window.localStorage.removeItem(storageKey);
+      }
+    } catch {
+      // Ignore storage access failures (private mode, quota, blocked storage).
+    }
+  }
 
   function submit() {
     if (prompt.trim().length === 0) {
@@ -198,6 +255,105 @@
     }
 
     return '$';
+  }
+
+  function displayEntryId(entry: DisplayEntry) {
+    return entry.kind === 'chat' ? `chat:${entry.message.id}` : `tool:${entry.id}`;
+  }
+
+  function describeDisplayEntryPrompt(entry: DisplayEntry) {
+    if (entry.kind === 'chat') {
+      return describeMessagePrompt(entry.message);
+    }
+
+    return 'pi>';
+  }
+
+  function describeDisplayEntryRole(entry: DisplayEntry) {
+    if (entry.kind === 'chat') {
+      return describeMessageRole(entry.message);
+    }
+
+    return 'tools';
+  }
+
+  function toggleDisplayEntryHidden(entry: DisplayEntry) {
+    const entryId = displayEntryId(entry);
+
+    hiddenEntryMap = {
+      ...hiddenEntryMap,
+      [entryId]: !hiddenEntryMap[entryId],
+    };
+  }
+
+  function isDisplayEntryHidden(entry: DisplayEntry) {
+    return !!hiddenEntryMap[displayEntryId(entry)];
+  }
+
+  function isDisplayEntryCopied(entry: DisplayEntry) {
+    return copiedEntryId === displayEntryId(entry);
+  }
+
+  function textForDisplayEntry(entry: DisplayEntry) {
+    if (entry.kind === 'chat') {
+      return entry.message.text;
+    }
+
+    return entry.toolCalls.map((toolCall) => formatToolCallLine(toolCall)).join('\n');
+  }
+
+  async function copyDisplayEntryText(entry: DisplayEntry) {
+    const copied = await writeToClipboard(textForDisplayEntry(entry));
+
+    if (!copied) {
+      return;
+    }
+
+    copiedEntryId = displayEntryId(entry);
+
+    if (copiedEntryResetTimer !== null) {
+      window.clearTimeout(copiedEntryResetTimer);
+    }
+
+    copiedEntryResetTimer = window.setTimeout(() => {
+      copiedEntryId = null;
+      copiedEntryResetTimer = null;
+    }, 1500);
+  }
+
+  async function writeToClipboard(value: string) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch {
+        // Fall through to legacy copy mechanism.
+      }
+    }
+
+    if (typeof document === 'undefined') {
+      return false;
+    }
+
+    const helper = document.createElement('textarea');
+    helper.value = value;
+    helper.setAttribute('readonly', 'true');
+    helper.style.position = 'fixed';
+    helper.style.opacity = '0';
+    helper.style.pointerEvents = 'none';
+    document.body.appendChild(helper);
+    helper.select();
+
+    let copied = false;
+
+    try {
+      copied = document.execCommand('copy');
+    } catch {
+      copied = false;
+    }
+
+    document.body.removeChild(helper);
+    return copied;
   }
 
   function normalizeToolName(toolName: string) {
@@ -480,14 +636,32 @@
     {/if}
 
     {#each displayEntries as entry (entry.kind === 'chat' ? `chat-${entry.message.id}` : entry.id)}
-      {#if entry.kind === 'chat'}
+      {#if isDisplayEntryHidden(entry)}
+        <article class="message-card message-card-hidden">
+          <header>
+            <div class="message-heading">
+              <span class="message-prompt">{describeDisplayEntryPrompt(entry)}</span>
+              <strong>{describeDisplayEntryRole(entry)}</strong>
+            </div>
+            <div class="message-meta-actions">
+              <span class="message-status">hidden</span>
+              <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Show</button>
+            </div>
+          </header>
+          <p class="subdued">Entry hidden. Tap Show to reveal it again.</p>
+        </article>
+      {:else if entry.kind === 'chat'}
         <article class:assistant={entry.message.role === 'assistant'} class:system={entry.message.role === 'system'} class:user={entry.message.role === 'user'} class="message-card">
           <header>
             <div class="message-heading">
               <span class="message-prompt">{describeMessagePrompt(entry.message)}</span>
               <strong>{describeMessageRole(entry.message)}</strong>
             </div>
-            <span class="message-status">{describeMessageStatus(entry.message)}</span>
+            <div class="message-meta-actions">
+              <span class="message-status">{describeMessageStatus(entry.message)}</span>
+              <button class="ghost-button compact message-action" type="button" on:click={() => copyDisplayEntryText(entry)}>{isDisplayEntryCopied(entry) ? 'Copied' : 'Copy'}</button>
+              <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button>
+            </div>
           </header>
           <div class="markdown-body">{@html renderMarkdown(entry.message.text || '_No text returned._')}</div>
         </article>
@@ -498,7 +672,11 @@
               <span class="message-prompt">pi&gt;</span>
               <strong>tools</strong>
             </div>
-            <span class="message-status">{entry.statusLabel}</span>
+            <div class="message-meta-actions">
+              <span class="message-status">{entry.statusLabel}</span>
+              <button class="ghost-button compact message-action" type="button" on:click={() => copyDisplayEntryText(entry)}>{isDisplayEntryCopied(entry) ? 'Copied' : 'Copy'}</button>
+              <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button>
+            </div>
           </header>
 
           <div class="tool-summary-icons">
@@ -586,7 +764,6 @@
         {/if}
       </div>
       <button class="primary-button send-button" type="button" on:click={submit} disabled={prompt.trim().length === 0 || (showKeepRunning && runtimePhase !== 'idle')}>
-        <span>SEND</span>
         <span class="send-button-model">{sendButtonModel}</span>
       </button>
     </div>

@@ -127,6 +127,11 @@ describe("createApp", () => {
     }));
     const gitPull = vi.fn(async () => "Already up to date.");
     const gitPush = vi.fn(async () => "Everything up-to-date");
+    const gitStageHunk = vi.fn(async () => undefined);
+    const gitUnstageHunk = vi.fn(async () => undefined);
+    const gitStageAll = vi.fn(async () => undefined);
+    const gitUnstageAll = vi.fn(async () => undefined);
+    const cloneRepo = vi.fn(async (_remoteUrl: string, _destinationPath?: string) => workspaceService.requireCurrentRepo());
     const createFile = vi
       .fn()
       .mockResolvedValueOnce(undefined)
@@ -139,6 +144,7 @@ describe("createApp", () => {
       workspaceService,
       repositoryRuntimeService: {
         selectRepo: vi.fn(async (relativePath: string) => workspaceService.selectRepo(relativePath)),
+        cloneRepo,
       } as never,
       fileService: {
         browse: vi.fn(async () => []),
@@ -151,6 +157,10 @@ describe("createApp", () => {
         getRemoteSyncStatus: vi.fn(async () => ({ ahead: 0, behind: 0, hasUpstream: true })),
         pull: gitPull,
         push: gitPush,
+        stageHunk: gitStageHunk,
+        unstageHunk: gitUnstageHunk,
+        stageAll: gitStageAll,
+        unstageAll: gitUnstageAll,
         revertHunk: vi.fn(async () => undefined),
       } as never,
       costService: {
@@ -216,6 +226,14 @@ describe("createApp", () => {
     const healthResponse = await request(app).get("/api/health").set("Cookie", cookie);
     const pullResponse = await request(app).post("/api/git/pull").set("Cookie", cookie);
     const pushResponse = await request(app).post("/api/git/push").set("Cookie", cookie);
+    const cloneResponse = await request(app)
+      .post("/api/workspaces/clone")
+      .set("Cookie", cookie)
+      .send({ remoteUrl: "https://github.com/example/repo.git", destinationPath: "repo-clone" });
+    const stageAllResponse = await request(app).post("/api/git/stage-all").set("Cookie", cookie);
+    const unstageAllResponse = await request(app).post("/api/git/unstage-all").set("Cookie", cookie);
+    const stageHunkResponse = await request(app).post("/api/git/stage-hunk").set("Cookie", cookie).send({ diff: "diff --git a/a.txt b/a.txt\n" });
+    const unstageHunkResponse = await request(app).post("/api/git/unstage-hunk").set("Cookie", cookie).send({ diff: "diff --git a/a.txt b/a.txt\n" });
     const createFileResponse = await request(app).post("/api/files/create").set("Cookie", cookie).send({ path: "notes/new-file.md", content: "# hello\n" });
     const createFileConflictResponse = await request(app).post("/api/files/create").set("Cookie", cookie).send({ path: "notes/new-file.md", content: "# hello again\n" });
     const createFileMissingPathResponse = await request(app).post("/api/files/create").set("Cookie", cookie).send({ path: "   " });
@@ -274,6 +292,17 @@ describe("createApp", () => {
     expect(pushResponse.status).toBe(200);
     expect(pushResponse.body.summary).toBe("Everything up-to-date");
     expect(gitPush).toHaveBeenCalledTimes(1);
+    expect(cloneResponse.status).toBe(200);
+    expect(cloneResponse.body.ok).toBe(true);
+    expect(cloneRepo).toHaveBeenCalledWith("https://github.com/example/repo.git", "repo-clone");
+    expect(stageAllResponse.status).toBe(200);
+    expect(gitStageAll).toHaveBeenCalledTimes(1);
+    expect(unstageAllResponse.status).toBe(200);
+    expect(gitUnstageAll).toHaveBeenCalledTimes(1);
+    expect(stageHunkResponse.status).toBe(200);
+    expect(gitStageHunk).toHaveBeenCalledWith(workspaceService.requireCurrentRepo(), "diff --git a/a.txt b/a.txt\n");
+    expect(unstageHunkResponse.status).toBe(200);
+    expect(gitUnstageHunk).toHaveBeenCalledWith(workspaceService.requireCurrentRepo(), "diff --git a/a.txt b/a.txt\n");
     expect(createFileResponse.status).toBe(200);
     expect(createFileResponse.body).toEqual({ ok: true, path: "notes/new-file.md" });
     expect(createFile).toHaveBeenNthCalledWith(1, workspaceService.requireCurrentRepo(), "notes/new-file.md", "# hello\n");

@@ -30,6 +30,7 @@
     SelectedRepo,
     SessionResponse,
     WebsocketEnvelope,
+    WorkspaceCloneResult,
     WorkspaceEntry
   } from '../shared/contracts.js';
   import AppMenu from './components/AppMenu.svelte';
@@ -124,6 +125,7 @@
   let loginError = '';
   let workspaceOpen = false;
   let workspaceLoading = false;
+  let workspaceCloning = false;
   let workspacePath = '.';
   let workspaceEntries: WorkspaceEntry[] = [];
   let currentRepo: SelectedRepo | null = null;
@@ -135,6 +137,10 @@
   let diffRefreshPending = false;
   let diffReloadTimer: number | null = null;
   let revertingHunkId: string | null = null;
+  let stagingHunkId: string | null = null;
+  let unstagingHunkId: string | null = null;
+  let stagingAll = false;
+  let unstagingAll = false;
   let committing = false;
   let pulling = false;
   let pushing = false;
@@ -764,6 +770,7 @@
 
     if (event.type === 'repo_selected') {
       currentRepo = event.payload.repo;
+      workspaceCloning = false;
       commandPaletteOpen = false;
       commandState = null;
       resetToolTraceBatches();
@@ -778,6 +785,11 @@
       draftContent = '';
       editorDirty = false;
       diffRefreshPending = false;
+      stagingHunkId = null;
+      unstagingHunkId = null;
+      stagingAll = false;
+      unstagingAll = false;
+      revertingHunkId = null;
       filePath = '.';
       view = view === 'costs' || view === 'logs' ? view : 'chat';
       void refreshCurrentRepoData();
@@ -823,6 +835,38 @@
       showBanner('Repository activated.', 'success');
     } catch (error) {
       handleApiFailure(error);
+    }
+  }
+
+  async function cloneRepo(remoteUrl: string, destinationPath?: string) {
+    const normalizedRemoteUrl = remoteUrl.trim();
+    const normalizedDestinationPath = destinationPath?.trim();
+
+    if (!normalizedRemoteUrl) {
+      showBanner('Remote URL is required.', 'error');
+      return;
+    }
+
+    workspaceCloning = true;
+
+    try {
+      const response = await apiFetch<WorkspaceCloneResult>('/api/workspaces/clone', {
+        method: 'POST',
+        body: JSON.stringify({
+          remoteUrl: normalizedRemoteUrl,
+          destinationPath: normalizedDestinationPath && normalizedDestinationPath.length > 0 ? normalizedDestinationPath : undefined,
+        })
+      });
+
+      currentRepo = response.repo;
+      menuOpen = false;
+      workspaceOpen = false;
+      await loadWorkspaces(workspacePath);
+      showBanner(`Repository cloned and activated (${response.repo.name}).`, 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      workspaceCloning = false;
     }
   }
 
@@ -1036,7 +1080,7 @@
   async function openFile(path: string) {
     try {
       selectedDocument = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
-      draftContent = selectedDocument.content;
+      draftContent = selectedDocument.kind === 'text' ? selectedDocument.content : '';
       editorDirty = false;
       view = 'editor';
     } catch (error) {
@@ -1473,6 +1517,82 @@
     }
   }
 
+  async function stageHunk(diff: string, hunkId: string) {
+    stagingHunkId = hunkId;
+
+    try {
+      await apiFetch('/api/git/stage-hunk', {
+        method: 'POST',
+        body: JSON.stringify({ diff })
+      });
+      await loadDiff();
+      showBanner('Hunk staged.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      stagingHunkId = null;
+    }
+  }
+
+  async function unstageHunk(diff: string, hunkId: string) {
+    unstagingHunkId = hunkId;
+
+    try {
+      await apiFetch('/api/git/unstage-hunk', {
+        method: 'POST',
+        body: JSON.stringify({ diff })
+      });
+      await loadDiff();
+      showBanner('Hunk unstaged.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      unstagingHunkId = null;
+    }
+  }
+
+  async function stageAllChanges() {
+    if (!currentRepo) {
+      showBanner('Select a repository before staging.', 'error');
+      return;
+    }
+
+    stagingAll = true;
+
+    try {
+      await apiFetch('/api/git/stage-all', {
+        method: 'POST'
+      });
+      await loadDiff();
+      showBanner('All changes staged.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      stagingAll = false;
+    }
+  }
+
+  async function unstageAllChanges() {
+    if (!currentRepo) {
+      showBanner('Select a repository before unstaging.', 'error');
+      return;
+    }
+
+    unstagingAll = true;
+
+    try {
+      await apiFetch('/api/git/unstage-all', {
+        method: 'POST'
+      });
+      await loadDiff();
+      showBanner('All changes unstaged.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      unstagingAll = false;
+    }
+  }
+
   async function loadLogs(refresh = false) {
     if (refresh) {
       logLoading = true;
@@ -1774,11 +1894,17 @@
     commandPaletteOpen = false;
     commandState = null;
     workspaceOpen = false;
+    workspaceCloning = false;
     workspaceEntries = [];
     workspacePath = '.';
     diffFiles = [];
     diffSyncStatus = null;
     diffRefreshPending = false;
+    revertingHunkId = null;
+    stagingHunkId = null;
+    unstagingHunkId = null;
+    stagingAll = false;
+    unstagingAll = false;
 
     if (diffReloadTimer !== null) {
       window.clearTimeout(diffReloadTimer);
@@ -2072,6 +2198,7 @@
           usage={agentSnapshot.usage}
           prefillPrompt={composerPrefill}
           prefillToken={composerPrefillToken}
+          draftStorageScope={currentRepo.relativePath || currentRepo.absolutePath}
           on:submit={(event) => sendPrompt(event.detail.prompt)}
           on:abort={abortRun}
           on:keepRunning={allowKeepRunning}
@@ -2087,12 +2214,20 @@
             loading={diffLoading}
             syncStatus={diffSyncStatus}
             revertingHunkId={revertingHunkId}
+            stagingHunkId={stagingHunkId}
+            unstagingHunkId={unstagingHunkId}
+            stagingAll={stagingAll}
+            unstagingAll={unstagingAll}
             committing={committing}
             pulling={pulling}
             pushing={pushing}
             on:commit={requestCommit}
             on:pull={() => void pullChanges()}
             on:push={() => void pushChanges()}
+            on:stageAll={() => void stageAllChanges()}
+            on:unstageAll={() => void unstageAllChanges()}
+            on:stageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) => stageHunk(event.detail.diff, event.detail.hunkId)}
+            on:unstageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) => unstageHunk(event.detail.diff, event.detail.hunkId)}
             on:revert={(event: CustomEvent<{ diff: string; hunkId: string }>) => revertHunk(event.detail.diff, event.detail.hunkId)}
           />
         {:else if lazyViewLoading === 'diff'}
@@ -2118,6 +2253,8 @@
             currentPath={filePath}
             selectedFilePath={selectedDocument?.path ?? ''}
             content={draftContent}
+            fileKind={selectedDocument?.kind ?? 'text'}
+            imageDataUrl={selectedDocument?.imageDataUrl ?? ''}
             dirty={editorDirty}
             loading={fileLoading}
             saving={savingFile}
@@ -2189,12 +2326,14 @@
     <WorkspacePicker
       open={workspaceOpen}
       loading={workspaceLoading}
+      cloning={workspaceCloning}
       currentPath={workspacePath}
       currentRepo={currentRepo}
       entries={workspaceEntries}
       on:close={() => (workspaceOpen = false)}
       on:browse={(event) => loadWorkspaces(event.detail.path)}
       on:select={(event) => selectRepo(event.detail.path)}
+      on:clone={(event) => cloneRepo(event.detail.remoteUrl, event.detail.destinationPath)}
     />
     <CommandPalette
       open={commandPaletteOpen}

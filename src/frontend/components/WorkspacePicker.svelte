@@ -5,14 +5,19 @@
 
   export let open = false;
   export let loading = false;
+  export let cloning = false;
   export let currentPath = '.';
   export let currentRepo: SelectedRepo | null = null;
   export let entries: WorkspaceEntry[] = [];
+
+  let remoteUrl = '';
+  let destinationPath = '';
 
   const dispatch = createEventDispatcher<{
     close: void;
     browse: { path: string };
     select: { path: string };
+    clone: { remoteUrl: string; destinationPath?: string };
   }>();
 
   function parentPath(pathValue: string) {
@@ -23,6 +28,21 @@
     const parts = pathValue.split('/').filter(Boolean);
     parts.pop();
     return parts.length === 0 ? '.' : parts.join('/');
+  }
+
+  function submitClone() {
+    const trimmedRemoteUrl = remoteUrl.trim();
+
+    if (trimmedRemoteUrl.length === 0) {
+      return;
+    }
+
+    const trimmedDestinationPath = destinationPath.trim();
+
+    dispatch('clone', {
+      remoteUrl: trimmedRemoteUrl,
+      destinationPath: trimmedDestinationPath.length > 0 ? trimmedDestinationPath : undefined,
+    });
   }
 </script>
 
@@ -36,6 +56,36 @@
         </div>
         <button class="ghost-button" type="button" on:click={() => dispatch('close')}>Close</button>
       </div>
+
+      <form class="workspace-clone-form" on:submit|preventDefault={submitClone}>
+        <label class="field-label" for="clone-remote-url">Clone repository URL</label>
+        <input
+          id="clone-remote-url"
+          class="text-input"
+          type="url"
+          bind:value={remoteUrl}
+          placeholder="https://github.com/owner/repo.git"
+          autocapitalize="off"
+          spellcheck="false"
+          disabled={cloning}
+        />
+
+        <label class="field-label" for="clone-destination">Target folder (optional)</label>
+        <input
+          id="clone-destination"
+          class="text-input"
+          type="text"
+          bind:value={destinationPath}
+          placeholder={currentPath === '.' ? 'repo-name' : `${currentPath}/repo-name`}
+          autocapitalize="off"
+          spellcheck="false"
+          disabled={cloning}
+        />
+
+        <button class="primary-button compact" type="submit" disabled={cloning || remoteUrl.trim().length === 0}>
+          {cloning ? 'Cloning…' : 'Clone And Activate'}
+        </button>
+      </form>
 
       {#if currentPath !== '.'}
         <button class="path-button" type="button" on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>

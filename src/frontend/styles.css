@@ -371,6 +371,8 @@ code {
   --cli-accent-strong: var(--terminal-accent-strong);
   --cli-user-panel: var(--terminal-user-panel);
   --cli-system-panel: var(--terminal-system-panel);
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .chat-view,
@@ -388,6 +390,7 @@ code {
   border-color: var(--cli-shell-line);
   border-radius: 0.4rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  min-width: 0;
 }
 
 .chat-view .chat-log,
@@ -399,6 +402,11 @@ code {
 .chat-view .chat-log {
   position: relative;
   gap: 0.75rem;
+  min-width: 0;
+}
+
+.chat-view .chat-log > * {
+  min-width: 0;
 }
 
 .chat-view .chat-log::before {
@@ -477,6 +485,8 @@ code {
   border-color: var(--terminal-panel-border);
   border-radius: 0.22rem;
   color: var(--cli-ink);
+  min-width: 0;
+  overflow-x: hidden;
   box-shadow:
     inset 0 1px 0 var(--terminal-shadow-highlight),
     inset 0 0 0 1px var(--terminal-shadow-inset);
@@ -499,6 +509,8 @@ code {
   padding-bottom: 0.65rem;
   margin-bottom: 0.7rem;
   border-bottom: 1px solid color-mix(in srgb, var(--terminal-panel-border) 30%, transparent);
+  align-items: flex-start;
+  flex-wrap: wrap;
 }
 
 .chat-view .message-heading,
@@ -538,6 +550,33 @@ code {
   color: var(--cli-muted);
 }
 
+.chat-view .message-meta-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.chat-view .message-action {
+  padding: 0.18rem 0.42rem;
+  border-radius: 0.2rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.chat-view .message-card-hidden {
+  border-style: dashed;
+}
+
+.chat-view .message-card-hidden p {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--cli-muted);
+}
+
 .chat-view .tool-chip.running {
   border-color: var(--terminal-warning-border);
 }
@@ -554,7 +593,14 @@ code {
   font-size: 0.96rem;
   line-height: 1.65;
   color: var(--cli-ink);
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-wrap: anywhere;
+}
+
+.chat-view .markdown-body > * {
+  max-width: 100%;
 }
 
 .chat-view .markdown-body > :first-child {
@@ -571,18 +617,39 @@ code {
   border: 1px solid color-mix(in srgb, var(--terminal-panel-border) 38%, transparent);
   background: rgba(255, 255, 255, 0.34);
   color: var(--cli-ink);
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .chat-view .markdown-body code {
+  display: inline-block;
+  max-width: 100%;
   background: color-mix(in srgb, var(--terminal-panel-border) 12%, transparent);
   color: inherit;
   padding: 0.08rem 0.28rem;
   border-radius: 0.18rem;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: bottom;
 }
 
 .chat-view .markdown-body pre code {
+  display: inline;
+  max-width: none;
   background: transparent;
   padding: 0;
+  white-space: inherit;
+  overflow: visible;
+}
+
+.chat-view .markdown-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .chat-view .markdown-body ul,
@@ -602,6 +669,9 @@ code {
 
 .chat-view .composer {
   gap: 0.75rem;
+  position: sticky;
+  bottom: calc(4.8rem + env(safe-area-inset-bottom));
+  z-index: 4;
 }
 
 .chat-view .composer-session-meta {
@@ -771,6 +841,7 @@ code {
 .chat-view .tool-batch-stack {
   display: grid;
   gap: 0.55rem;
+  min-width: 0;
 }
 
 .chat-view .tool-batch {
@@ -780,6 +851,7 @@ code {
   border-radius: 0.22rem;
   border: 1px solid var(--terminal-panel-border);
   background: var(--cli-panel);
+  min-width: 0;
 }
 
 .chat-view .tool-batch-header {
@@ -792,12 +864,13 @@ code {
 .chat-view .tool-inline-list {
   display: grid;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .chat-view .tool-inline-item {
   width: 100%;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.7rem;
   text-align: left;
@@ -806,6 +879,7 @@ code {
   background: var(--cli-panel-strong);
   color: var(--cli-ink);
   padding: 0.35rem 0.5rem;
+  min-width: 0;
 }
 
 .chat-view .tool-inline-item.running {
@@ -821,6 +895,7 @@ code {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+  flex: 1 1 auto;
 }
 
 .chat-view .tool-inline-icon {
@@ -868,9 +943,9 @@ code {
 
 .chat-view .tool-inline-text {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 0.75rem;
 }
 
@@ -880,6 +955,8 @@ code {
   text-transform: uppercase;
   color: var(--cli-muted);
   flex: 0 0 auto;
+  white-space: nowrap;
+  padding-top: 0.15rem;
 }
 
 .chat-view .tool-inline-detail,
@@ -896,6 +973,7 @@ code {
   word-break: break-word;
   overflow-x: hidden;
   max-width: 100%;
+  min-width: 0;
 }
 
 .chat-view .tool-inline-detail {
@@ -1217,6 +1295,26 @@ code {
   border-radius: 0.5rem;
   overflow: hidden;
   border: 1px solid var(--line);
+}
+
+.editor-image-preview {
+  min-height: 56vh;
+  border-radius: 0.5rem;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  padding: 0.65rem;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+}
+
+.editor-image-preview img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(78vh, 56rem);
+  object-fit: contain;
 }
 
 .overlay {
@@ -1683,6 +1781,20 @@ code {
   align-items: center;
 }
 
+.workspace-clone-form {
+  display: grid;
+  gap: 0.55rem;
+  margin-bottom: 0.9rem;
+}
+
+.workspace-clone-form .field-label {
+  margin: 0;
+}
+
+.workspace-clone-form .primary-button {
+  justify-self: start;
+}
+
 .entry-main {
   flex: 1;
 }
@@ -1913,9 +2025,30 @@ code {
 }
 
 .diff-view .hunk-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.55rem;
   padding-bottom: 0.7rem;
   margin-bottom: 0.8rem;
   border-bottom: 1px solid color-mix(in srgb, var(--terminal-panel-border) 30%, transparent);
+}
+
+.diff-view .hunk-toolbar-main {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.diff-view .hunk-toolbar-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .diff-view .hunk-toolbar code {
@@ -1923,6 +2056,30 @@ code {
   background: color-mix(in srgb, var(--terminal-panel-border) 10%, transparent);
   padding: 0.2rem 0.45rem;
   border-radius: 0.2rem;
+}
+
+.diff-view .hunk-stage-badge {
+  border-radius: 999px;
+  border: 1px solid var(--terminal-panel-border);
+  background: var(--terminal-panel);
+  color: var(--terminal-muted);
+  padding: 0.16rem 0.5rem;
+  font-size: 0.67rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.diff-view .hunk-stage-badge.staged {
+  border-color: var(--terminal-diff-added-border);
+  background: color-mix(in srgb, var(--terminal-diff-added-bg) 70%, var(--terminal-panel));
+  color: var(--terminal-diff-added-text);
+}
+
+.diff-view .hunk-stage-badge.unstaged {
+  border-color: color-mix(in srgb, var(--terminal-warning-border) 80%, var(--terminal-panel-border));
+  background: color-mix(in srgb, var(--terminal-diff-change-bg) 68%, var(--terminal-panel));
+  color: var(--terminal-ink);
 }
 
 .diff-view .diff-html {
@@ -2378,6 +2535,10 @@ code {
   .chat-view .composer-session-tags {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
     align-items: stretch;
+  }
+
+  .chat-view .composer {
+    bottom: 1rem;
   }
 
   .chat-view .composer-session-tags .ghost-button {

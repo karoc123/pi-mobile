@@ -10,12 +10,20 @@
   export let loading = false;
   export let syncStatus: GitRemoteSyncStatus | null = null;
   export let revertingHunkId: string | null = null;
+  export let stagingHunkId: string | null = null;
+  export let unstagingHunkId: string | null = null;
+  export let stagingAll = false;
+  export let unstagingAll = false;
   export let committing = false;
   export let pulling = false;
   export let pushing = false;
 
   const dispatch = createEventDispatcher<{
     revert: { diff: string; hunkId: string };
+    stageHunk: { diff: string; hunkId: string };
+    unstageHunk: { diff: string; hunkId: string };
+    stageAll: void;
+    unstageAll: void;
     pull: void;
     push: void;
     commit: void;
@@ -23,7 +31,10 @@
 
   let actionsOpen = false;
 
-  $: actionsBusy = loading || pulling || pushing || committing;
+  $: allHunks = files.flatMap((file) => file.hunks);
+  $: stagedHunkCount = allHunks.filter((hunk) => hunk.staged).length;
+  $: unstagedHunkCount = allHunks.length - stagedHunkCount;
+  $: actionsBusy = loading || pulling || pushing || committing || stagingAll || unstagingAll;
   $: syncHeadline = describeSyncHeadline(syncStatus);
   $: pullLabel = pulling ? 'Pulling…' : buildActionLabel('Pull', '↓', syncStatus?.behind ?? 0, Boolean(syncStatus?.hasUpstream));
   $: pushLabel = pushing ? 'Pushing…' : buildActionLabel('Push', '↑', syncStatus?.ahead ?? 0, Boolean(syncStatus?.hasUpstream));
@@ -41,6 +52,16 @@
   function triggerCommit() {
     actionsOpen = false;
     dispatch('commit');
+  }
+
+  function triggerStageAll() {
+    actionsOpen = false;
+    dispatch('stageAll');
+  }
+
+  function triggerUnstageAll() {
+    actionsOpen = false;
+    dispatch('unstageAll');
   }
 
   function handleWindowClick(event: MouseEvent) {
@@ -96,7 +117,7 @@
       <h2>Review (Sync: {syncHeadline})</h2>
     </div>
     <div class="header-actions">
-      <span class="status-pill">{files.length} file{files.length === 1 ? '' : 's'}</span>
+      <span class="status-pill">{files.length} file{files.length === 1 ? '' : 's'} · staged {stagedHunkCount}</span>
       <div class="diff-actions">
         <button
           class="primary-button"
@@ -111,14 +132,20 @@
 
         {#if actionsOpen}
           <div class="diff-actions-menu" role="menu" aria-label="Git actions">
+            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy || unstagedHunkCount === 0} on:click={triggerStageAll}>
+              {stagingAll ? 'Staging all…' : `Stage all (${unstagedHunkCount})`}
+            </button>
+            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy || stagedHunkCount === 0} on:click={triggerUnstageAll}>
+              {unstagingAll ? 'Unstaging all…' : `Unstage all (${stagedHunkCount})`}
+            </button>
             <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPull}>
               {pullLabel}
             </button>
             <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPush}>
               {pushLabel}
             </button>
-            <button class="primary-button" type="button" role="menuitem" disabled={actionsBusy || files.length === 0} on:click={triggerCommit}>
-              {committing ? 'Committing…' : 'Commit changes'}
+            <button class="primary-button" type="button" role="menuitem" disabled={actionsBusy || stagedHunkCount === 0} on:click={triggerCommit}>
+              {committing ? 'Committing…' : 'Commit staged'}
             </button>
           </div>
         {/if}
@@ -150,10 +177,36 @@
             {#each file.hunks as hunk}
               <section class="hunk-card">
                 <div class="hunk-toolbar">
-                  <code>{hunk.header}</code>
-                  <button class="secondary-button" type="button" disabled={revertingHunkId === hunk.id} on:click={() => dispatch('revert', { diff: hunk.diff, hunkId: hunk.id })}>
-                    {revertingHunkId === hunk.id ? 'Reverting...' : 'Revert hunk'}
-                  </button>
+                  <div class="hunk-toolbar-main">
+                    <code>{hunk.header}</code>
+                    <span class:staged={hunk.staged} class:unstaged={!hunk.staged} class="hunk-stage-badge">
+                      {hunk.staged ? 'staged' : 'unstaged'}
+                    </span>
+                  </div>
+                  <div class="hunk-toolbar-actions">
+                    {#if hunk.staged}
+                      <button
+                        class="secondary-button"
+                        type="button"
+                        disabled={unstagingHunkId === hunk.id || actionsBusy}
+                        on:click={() => dispatch('unstageHunk', { diff: hunk.diff, hunkId: hunk.id })}
+                      >
+                        {unstagingHunkId === hunk.id ? 'Unstaging...' : 'Unstage hunk'}
+                      </button>
+                    {:else}
+                      <button
+                        class="secondary-button"
+                        type="button"
+                        disabled={stagingHunkId === hunk.id || actionsBusy}
+                        on:click={() => dispatch('stageHunk', { diff: hunk.diff, hunkId: hunk.id })}
+                      >
+                        {stagingHunkId === hunk.id ? 'Staging...' : 'Stage hunk'}
+                      </button>
+                    {/if}
+                    <button class="secondary-button" type="button" disabled={revertingHunkId === hunk.id} on:click={() => dispatch('revert', { diff: hunk.diff, hunkId: hunk.id })}>
+                      {revertingHunkId === hunk.id ? 'Reverting...' : 'Revert hunk'}
+                    </button>
+                  </div>
                 </div>
                 <div class="diff-html">{@html renderDiff(hunk.diff)}</div>
               </section>

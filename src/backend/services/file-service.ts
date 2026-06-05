@@ -7,6 +7,19 @@ import type { FileDocument, FileEntry, SelectedRepo } from "../../shared/contrac
 import { relativeFrom, resolveWithin } from "../utils/path-utils.js";
 
 const ignoredEntries = new Set([".git", "node_modules", "dist", "coverage"]);
+const imageMimeTypeByExtension: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".svg": "image/svg+xml",
+  ".avif": "image/avif",
+  ".ico": "image/x-icon",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+};
 
 export class FileService {
   async browse(repo: SelectedRepo, relativePath = ".") {
@@ -39,9 +52,26 @@ export class FileService {
 
   async readFile(repo: SelectedRepo, relativePath: string): Promise<FileDocument> {
     const absolutePath = resolveWithin(repo.absolutePath, relativePath);
+    const imageMimeType = resolveImageMimeType(relativePath);
+
+    if (imageMimeType) {
+      const contentBuffer = await readFile(absolutePath);
+
+      return {
+        path: relativePath,
+        content: "",
+        kind: "image",
+        mimeType: imageMimeType,
+        imageDataUrl: `data:${imageMimeType};base64,${contentBuffer.toString("base64")}`,
+      };
+    }
+
     return {
       path: relativePath,
       content: await readFile(absolutePath, "utf8"),
+      kind: "text",
+      mimeType: null,
+      imageDataUrl: null,
     };
   }
 
@@ -89,4 +119,9 @@ export class FileService {
     const absolutePath = resolveWithin(repo.absolutePath, relativePath);
     await rm(absolutePath, { recursive: true, force: false });
   }
+}
+
+function resolveImageMimeType(relativePath: string) {
+  const extension = path.extname(relativePath).toLowerCase();
+  return imageMimeTypeByExtension[extension] ?? null;
 }

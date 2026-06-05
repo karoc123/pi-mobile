@@ -11,6 +11,16 @@ export type SelectedRepo = {
   absolutePath: string;
 };
 
+export type WorkspaceCloneRequest = {
+  remoteUrl: string;
+  destinationPath?: string;
+};
+
+export type WorkspaceCloneResult = {
+  ok: true;
+  repo: SelectedRepo;
+};
+
 export type FileEntry = {
   name: string;
   relativePath: string;
@@ -20,6 +30,9 @@ export type FileEntry = {
 export type FileDocument = {
   path: string;
   content: string;
+  kind: "text" | "image";
+  mimeType: string | null;
+  imageDataUrl: string | null;
 };
 
 export type FileCreateRequest = {
@@ -75,6 +88,7 @@ export type DiffHunk = {
   id: string;
   header: string;
   diff: string;
+  staged: boolean;
   addedLines: number;
   removedLines: number;
 };
@@ -107,6 +121,10 @@ export type GitDiffResponse = {
 
 export type GitSyncResult = {
   summary: string;
+};
+
+export type GitHunkMutationRequest = {
+  diff: string;
 };
 
 export type ChatRole = "user" | "assistant" | "system";

@@ -13,6 +13,8 @@
   export let currentPath = '.';
   export let selectedFilePath = '';
   export let content = '';
+  export let fileKind: 'text' | 'image' = 'text';
+  export let imageDataUrl = '';
   export let dirty = false;
   export let loading = false;
   export let saving = false;
@@ -204,7 +206,7 @@
     }
   }
 
-  $: if (selectedFilePath) {
+  $: if (selectedFilePath && fileKind === 'text') {
     void ensureCodeEditorLoaded();
   }
 
@@ -388,18 +390,31 @@
 
     <div class="editor-panel card-panel">
       {#if selectedFilePath}
-        {#if codeEditorComponent}
-          <svelte:component this={codeEditorComponent} value={content} filePath={selectedFilePath} on:change={(event) => dispatch('change', { content: event.detail.value })} />
-        {:else if codeEditorPromise}
-          <div class="empty-state-card compact">
-            <h3>Loading editor engine...</h3>
-            <p>CodeMirror is loading only when a file is opened.</p>
-          </div>
+        {#if fileKind === 'image'}
+          {#if imageDataUrl}
+            <div class="editor-image-preview">
+              <img src={imageDataUrl} alt={selectedFilePath} loading="lazy" />
+            </div>
+          {:else}
+            <div class="empty-state-card compact">
+              <h3>Image preview unavailable</h3>
+              <p>The opened image could not be rendered.</p>
+            </div>
+          {/if}
         {:else}
-          <div class="empty-state-card compact">
-            <h3>Could not load editor engine</h3>
-            <p>{codeEditorError || 'Unexpected editor load error.'}</p>
-          </div>
+          {#if codeEditorComponent}
+            <svelte:component this={codeEditorComponent} value={content} filePath={selectedFilePath} on:change={(event) => dispatch('change', { content: event.detail.value })} />
+          {:else if codeEditorPromise}
+            <div class="empty-state-card compact">
+              <h3>Loading editor engine...</h3>
+              <p>CodeMirror is loading only when a file is opened.</p>
+            </div>
+          {:else}
+            <div class="empty-state-card compact">
+              <h3>Could not load editor engine</h3>
+              <p>{codeEditorError || 'Unexpected editor load error.'}</p>
+            </div>
+          {/if}
         {/if}
       {:else}
         <div class="empty-state-card compact">

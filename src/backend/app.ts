@@ -23,6 +23,8 @@ import type {
   FileMoveResult,
   GitDiffResponse,
   GitSyncResult,
+  WorkspaceCloneRequest,
+  WorkspaceCloneResult,
 } from "../shared/contracts.js";
 
 import type { AppConfig } from "./config.js";
@@ -172,6 +174,27 @@ export function createApp(services: AppServices) {
   app.post("/api/workspaces/select", requireAuth(services), async (request, response) => {
     const repo = await services.repositoryRuntimeService.selectRepo(getBodyString(request, "path"));
     response.json({ repo });
+  });
+
+  app.post("/api/workspaces/clone", requireAuth(services), async (request, response) => {
+    const body = getBodyObject<WorkspaceCloneRequest>(request);
+    const remoteUrl = typeof body.remoteUrl === "string" ? body.remoteUrl.trim() : "";
+    const destinationPath = typeof body.destinationPath === "string" ? body.destinationPath.trim() : undefined;
+
+    if (!remoteUrl) {
+      throw new HttpError(400, "bad_request", "Remote URL is required.", { retriable: false });
+    }
+
+    try {
+      const repo = await services.repositoryRuntimeService.cloneRepo(remoteUrl, destinationPath && destinationPath.length > 0 ? destinationPath : undefined);
+      response.json({ ok: true, repo } satisfies WorkspaceCloneResult);
+    } catch (error) {
+      if (isCloneDestinationConflict(error)) {
+        throw new HttpError(409, "conflict", "Destination path already exists.", { retriable: false });
+      }
+
+      throw error;
+    }
   });
 
   app.get("/api/files/browse", requireAuth(services), async (request, response) => {
@@ -366,6 +389,30 @@ export function createApp(services: AppServices) {
     } satisfies GitSyncResult);
   });
 
+  app.post("/api/git/stage-hunk", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    await services.gitService.stageHunk(repo, getBodyString(request, "diff"));
+    response.json({ ok: true });
+  });
+
+  app.post("/api/git/unstage-hunk", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    await services.gitService.unstageHunk(repo, getBodyString(request, "diff"));
+    response.json({ ok: true });
+  });
+
+  app.post("/api/git/stage-all", requireAuth(services), async (_request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    await services.gitService.stageAll(repo);
+    response.json({ ok: true });
+  });
+
+  app.post("/api/git/unstage-all", requireAuth(services), async (_request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    await services.gitService.unstageAll(repo);
+    response.json({ ok: true });
+  });
+
   app.get("/api/costs", requireAuth(services), (request, response) => {
     response.json(
       services.costService.getReport({
@@ -540,6 +587,15 @@ function isNodeFileExistsError(error: unknown) {
 
 function isNodeFileNotFoundError(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+}
+
+function isCloneDestinationConflict(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("destination path already exists") || message.includes("already exists");
 }
 
 function parseLogQuery(request: Request): BackendLogQuery {
