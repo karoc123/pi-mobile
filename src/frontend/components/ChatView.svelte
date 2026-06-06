@@ -52,8 +52,7 @@
   }>();
 
   let prompt = '';
-  let chatViewRoot: HTMLElement | null = null;
-  let chatLogContainer: HTMLDivElement | null = null;
+  let composerPanel: HTMLDivElement | null = null;
   let logEndAnchor: HTMLDivElement | null = null;
   let promptField: HTMLTextAreaElement | null = null;
   let handledPrefillToken = 0;
@@ -128,33 +127,39 @@
 
     if (shouldAutoScroll) {
       requestAnimationFrame(() => {
-        scrollChatLogToBottom();
+        scrollWindowToBottom();
       });
     }
   }
 
   onMount(() => {
+    const handleWindowScroll = () => {
+      shouldAutoScroll = isNearViewportBottom();
+    };
+
     const handleViewportChange = () => {
       updateViewportMetrics();
-      shouldAutoScroll = isNearChatLogBottom();
+      shouldAutoScroll = isNearViewportBottom();
     };
 
     const viewport = window.visualViewport;
     viewport?.addEventListener('resize', handleViewportChange);
     viewport?.addEventListener('scroll', handleViewportChange);
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
     window.addEventListener('resize', handleViewportChange, { passive: true });
 
     handleViewportChange();
 
     if (shouldAutoScroll) {
       requestAnimationFrame(() => {
-        scrollChatLogToBottom();
+        scrollWindowToBottom();
       });
     }
 
     return () => {
       viewport?.removeEventListener('resize', handleViewportChange);
       viewport?.removeEventListener('scroll', handleViewportChange);
+      window.removeEventListener('scroll', handleWindowScroll);
       window.removeEventListener('resize', handleViewportChange);
       document.documentElement.removeAttribute('data-chat-keyboard');
 
@@ -237,10 +242,6 @@
     updatePromptCursorPosition();
   }
 
-  function handleChatLogScroll() {
-    shouldAutoScroll = isNearChatLogBottom();
-  }
-
   async function selectSlashCommandSuggestion(suggestion: SlashCommandSuggestion) {
     const cursorIndex = promptField?.selectionStart ?? promptCursorIndex;
     const nextValue = applySlashCommandSuggestion(prompt, cursorIndex, suggestion);
@@ -286,21 +287,52 @@
     }
   }
 
-  function isNearChatLogBottom() {
-    if (!chatLogContainer) {
+  function isNearViewportBottom() {
+    if (!logEndAnchor) {
       return true;
     }
 
-    const remaining = chatLogContainer.scrollHeight - chatLogContainer.scrollTop - chatLogContainer.clientHeight;
-    return remaining <= 120;
+    const anchorRect = logEndAnchor.getBoundingClientRect();
+    const visibleBottom = window.innerHeight - getViewportBottomObstruction();
+    return anchorRect.top <= visibleBottom + 140;
   }
 
-  function scrollChatLogToBottom() {
-    if (!chatLogContainer) {
+  function scrollWindowToBottom() {
+    if (!logEndAnchor) {
+      window.scrollTo(0, document.documentElement.scrollHeight);
       return;
     }
 
-    chatLogContainer.scrollTo({ top: chatLogContainer.scrollHeight, behavior: 'auto' });
+    const visibleBottom = window.innerHeight - getViewportBottomObstruction();
+    const anchorTop = logEndAnchor.getBoundingClientRect().top;
+    const targetTop = window.scrollY + anchorTop - (visibleBottom - 24);
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
+  }
+
+  function getViewportBottomObstruction() {
+    let obstruction = 0;
+
+    if (composerPanel) {
+      const composerStyle = window.getComputedStyle(composerPanel);
+
+      if (composerStyle.display !== 'none') {
+        const composerRect = composerPanel.getBoundingClientRect();
+        obstruction = Math.max(obstruction, window.innerHeight - composerRect.top);
+      }
+    }
+
+    const bottomNav = document.querySelector<HTMLElement>('.bottom-nav');
+
+    if (bottomNav) {
+      const navStyle = window.getComputedStyle(bottomNav);
+
+      if (navStyle.display !== 'none') {
+        const navRect = bottomNav.getBoundingClientRect();
+        obstruction = Math.max(obstruction, window.innerHeight - navRect.top);
+      }
+    }
+
+    return Math.max(0, obstruction);
   }
 
   function updateViewportMetrics() {
@@ -314,7 +346,6 @@
       document.documentElement.removeAttribute('data-chat-keyboard');
     }
 
-    chatViewRoot?.style.setProperty('--chat-viewport-height', `${Math.round(viewportHeight)}px`);
   }
 
   function describeMessageStatus(message: ChatMessage) {
@@ -652,7 +683,7 @@
   $: sendButtonModel = `(${modelLabelForSendButton(usage?.modelId ?? null)})`;
 </script>
 
-<section class:keyboard-open={keyboardOpen} class="view-shell chat-view" bind:this={chatViewRoot}>
+<section class:keyboard-open={keyboardOpen} class="view-shell chat-view">
   {#if lastError}
     <div class="notice error">{lastError}</div>
   {/if}
@@ -713,7 +744,7 @@
         </p>
       {/if}
     </section>
-  <div class="chat-log" bind:this={chatLogContainer} on:scroll={handleChatLogScroll}>
+  <div class="chat-log">
     {#if messages.length === 0}
       <article class="empty-state-card">
         <h3>No transcript yet</h3>
@@ -792,7 +823,7 @@
     <div class="chat-log-end" aria-hidden="true" bind:this={logEndAnchor}></div>
   </div>
 
-  <div class:meta-hidden={!showComposerMeta} class="composer">
+  <div class:meta-hidden={!showComposerMeta} class="composer" bind:this={composerPanel}>
     {#if showComposerMeta}
       <div class="composer-session-meta">
         <div class="composer-status-row">

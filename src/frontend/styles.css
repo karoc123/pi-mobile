@@ -2264,42 +2264,34 @@ code {
 
 @media (max-width: 859px) {
   .chat-view {
-    --chat-viewport-height: 100dvh;
-    --chat-bottom-nav-reserve: calc(3.6rem + env(safe-area-inset-bottom));
-    --chat-shell-reserve: 2.15rem;
-    height: calc(var(--chat-viewport-height) - var(--chat-bottom-nav-reserve) - var(--chat-shell-reserve));
-    max-height: calc(var(--chat-viewport-height) - var(--chat-bottom-nav-reserve) - var(--chat-shell-reserve));
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    gap: 0.4rem;
+    --chat-composer-bottom-offset: calc(3.45rem + env(safe-area-inset-bottom));
+    --chat-composer-horizontal-offset: 0.45rem;
+    --chat-composer-reserve: clamp(6.5rem, 21vh, 8.8rem);
+    padding-bottom: calc(var(--chat-composer-bottom-offset) + var(--chat-composer-reserve));
     min-height: 0;
   }
 
   .chat-view.keyboard-open {
-    --chat-bottom-nav-reserve: 0.5rem;
+    --chat-composer-bottom-offset: calc(0.35rem + env(safe-area-inset-bottom));
+    --chat-composer-reserve: clamp(5.8rem, 19vh, 7.4rem);
   }
 
   .chat-view .composer {
-    position: static;
-    bottom: auto;
-    z-index: 4;
+    position: fixed;
+    left: var(--chat-composer-horizontal-offset);
+    right: var(--chat-composer-horizontal-offset);
+    bottom: var(--chat-composer-bottom-offset);
+    z-index: 6;
     gap: 0.35rem;
     padding: 0.5rem;
   }
 
   .chat-view .activity-panel {
     padding: 0.55rem;
-    max-height: 22dvh;
-    overflow: auto;
-    min-height: 0;
   }
 
   .chat-view .chat-log {
     padding: 0.55rem;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
   }
 
   .chat-view .composer-session-meta {
