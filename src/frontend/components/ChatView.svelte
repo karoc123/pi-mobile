@@ -52,15 +52,19 @@
   }>();
 
   let prompt = '';
+  let chatViewRoot: HTMLElement | null = null;
+  let chatLogContainer: HTMLDivElement | null = null;
   let logEndAnchor: HTMLDivElement | null = null;
   let promptField: HTMLTextAreaElement | null = null;
-  let composerPanel: HTMLDivElement | null = null;
   let handledPrefillToken = 0;
   let toolTraceExpanded = false;
   let expandedTraceToolMap: Record<string, boolean> = {};
   let expandedMessageToolMap: Record<string, boolean> = {};
   let shouldAutoScroll = true;
-  let previousFinalAssistantMessageId: string | null = null;
+  let keyboardOpen = false;
+  let transcriptSignature = '';
+  let showComposerMeta = true;
+  let previousTranscriptSignature = '';
   let displayEntries: DisplayEntry[] = [];
   let hiddenEntryMap: Record<string, boolean> = {};
   let copiedEntryId: string | null = null;
@@ -93,7 +97,8 @@
   $: statusTone = lastError ? 'error' : runtimePhase === 'idle' ? 'ready' : 'running';
   $: totalToolCount = toolBatches.reduce((sum, batch) => sum + batch.tools.length, 0);
   $: displayEntries = buildDisplayEntries(messages);
-  $: latestFinalAssistantMessageId = getLatestFinalAssistantMessageId(messages);
+  $: transcriptSignature = buildTranscriptSignature(messages, displayEntries.length);
+  $: showComposerMeta = !keyboardOpen && (shouldAutoScroll || runtimePhase !== 'idle' || canAbort || Boolean(lastError));
   $: normalizedDraftStorageScope = draftStorageScope.trim().length > 0 ? draftStorageScope.trim() : 'default';
   $: nextPromptDraftStorageKey = buildPromptDraftStorageKey(normalizedDraftStorageScope);
   $: runtimeSlashCommandSuggestions = toRuntimeSlashCommandSuggestions(availableCommands);
@@ -118,38 +123,40 @@
     void applyPrefill(prefillPrompt);
   }
 
-  $: if (latestFinalAssistantMessageId !== previousFinalAssistantMessageId) {
-    previousFinalAssistantMessageId = latestFinalAssistantMessageId;
+  $: if (transcriptSignature !== previousTranscriptSignature) {
+    previousTranscriptSignature = transcriptSignature;
 
-    if (latestFinalAssistantMessageId && shouldAutoScroll) {
+    if (shouldAutoScroll) {
       requestAnimationFrame(() => {
-        scrollWindowToBottom();
+        scrollChatLogToBottom();
       });
     }
   }
 
   onMount(() => {
-    const handleWindowScroll = () => {
-      shouldAutoScroll = isNearViewportBottom();
+    const handleViewportChange = () => {
+      updateViewportMetrics();
+      shouldAutoScroll = isNearChatLogBottom();
     };
 
-    const handleViewportResize = () => {
-      shouldAutoScroll = isNearViewportBottom();
-    };
+    const viewport = window.visualViewport;
+    viewport?.addEventListener('resize', handleViewportChange);
+    viewport?.addEventListener('scroll', handleViewportChange);
+    window.addEventListener('resize', handleViewportChange, { passive: true });
 
-    window.addEventListener('scroll', handleWindowScroll, { passive: true });
-    window.addEventListener('resize', handleViewportResize, { passive: true });
-    handleWindowScroll();
+    handleViewportChange();
 
     if (shouldAutoScroll) {
       requestAnimationFrame(() => {
-        scrollWindowToBottom();
+        scrollChatLogToBottom();
       });
     }
 
     return () => {
-      window.removeEventListener('scroll', handleWindowScroll);
-      window.removeEventListener('resize', handleViewportResize);
+      viewport?.removeEventListener('resize', handleViewportChange);
+      viewport?.removeEventListener('scroll', handleViewportChange);
+      window.removeEventListener('resize', handleViewportChange);
+      document.documentElement.removeAttribute('data-chat-keyboard');
 
       if (copiedEntryResetTimer !== null) {
         window.clearTimeout(copiedEntryResetTimer);
@@ -230,6 +237,10 @@
     updatePromptCursorPosition();
   }
 
+  function handleChatLogScroll() {
+    shouldAutoScroll = isNearChatLogBottom();
+  }
+
   async function selectSlashCommandSuggestion(suggestion: SlashCommandSuggestion) {
     const cursorIndex = promptField?.selectionStart ?? promptCursorIndex;
     const nextValue = applySlashCommandSuggestion(prompt, cursorIndex, suggestion);
@@ -275,44 +286,35 @@
     }
   }
 
-  function isNearViewportBottom() {
-    if (!logEndAnchor) {
+  function isNearChatLogBottom() {
+    if (!chatLogContainer) {
       return true;
     }
 
-    const anchorRect = logEndAnchor.getBoundingClientRect();
-    const visibleChatBottom = window.innerHeight - getViewportBottomObstruction();
-    return anchorRect.top <= visibleChatBottom + 120;
+    const remaining = chatLogContainer.scrollHeight - chatLogContainer.scrollTop - chatLogContainer.clientHeight;
+    return remaining <= 120;
   }
 
-  function scrollWindowToBottom() {
-    if (!logEndAnchor) {
-      window.scrollTo(0, document.documentElement.scrollHeight);
+  function scrollChatLogToBottom() {
+    if (!chatLogContainer) {
       return;
     }
 
-    const visibleChatBottom = window.innerHeight - getViewportBottomObstruction();
-    const anchorTop = logEndAnchor.getBoundingClientRect().top;
-    const targetTop = window.scrollY + anchorTop - (visibleChatBottom - 16);
-    window.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
+    chatLogContainer.scrollTo({ top: chatLogContainer.scrollHeight, behavior: 'auto' });
   }
 
-  function getViewportBottomObstruction() {
-    let obstruction = 0;
+  function updateViewportMetrics() {
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const keyboardDelta = window.innerHeight - viewportHeight;
+    keyboardOpen = keyboardDelta > 120;
 
-    if (composerPanel) {
-      const composerRect = composerPanel.getBoundingClientRect();
-      obstruction = Math.max(obstruction, window.innerHeight - composerRect.top);
+    if (keyboardOpen) {
+      document.documentElement.setAttribute('data-chat-keyboard', 'open');
+    } else {
+      document.documentElement.removeAttribute('data-chat-keyboard');
     }
 
-    const bottomNav = document.querySelector<HTMLElement>('.bottom-nav');
-
-    if (bottomNav) {
-      const navRect = bottomNav.getBoundingClientRect();
-      obstruction = Math.max(obstruction, window.innerHeight - navRect.top);
-    }
-
-    return Math.max(0, obstruction);
+    chatViewRoot?.style.setProperty('--chat-viewport-height', `${Math.round(viewportHeight)}px`);
   }
 
   function describeMessageStatus(message: ChatMessage) {
@@ -323,26 +325,14 @@
     return new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  function getLatestFinalAssistantMessageId(messageList: ChatMessage[]) {
-    for (let index = messageList.length - 1; index >= 0; index -= 1) {
-      const message = messageList[index];
+  function buildTranscriptSignature(messageList: ChatMessage[], entryCount: number) {
+    const lastMessage = messageList[messageList.length - 1];
 
-      if (message.role !== 'assistant') {
-        continue;
-      }
-
-      if (message.status !== 'complete') {
-        continue;
-      }
-
-      if (message.text.trim().length === 0) {
-        continue;
-      }
-
-      return message.id;
+    if (!lastMessage) {
+      return `${entryCount}:empty`;
     }
 
-    return null;
+    return `${entryCount}:${messageList.length}:${lastMessage.id}:${lastMessage.status}:${lastMessage.text.length}`;
   }
 
   function describeMessageRole(message: ChatMessage) {
@@ -678,7 +668,7 @@
   $: sendButtonModel = `(${modelLabelForSendButton(usage?.modelId ?? null)})`;
 </script>
 
-<section class="view-shell chat-view">
+<section class:keyboard-open={keyboardOpen} class="view-shell chat-view" bind:this={chatViewRoot}>
   {#if lastError}
     <div class="notice error">{lastError}</div>
   {/if}
@@ -739,7 +729,7 @@
         </p>
       {/if}
     </section>
-  <div class="chat-log">
+  <div class="chat-log" bind:this={chatLogContainer} on:scroll={handleChatLogScroll}>
     {#if messages.length === 0}
       <article class="empty-state-card">
         <h3>No transcript yet</h3>
@@ -818,25 +808,27 @@
     <div class="chat-log-end" aria-hidden="true" bind:this={logEndAnchor}></div>
   </div>
 
-  <div class="composer" bind:this={composerPanel}>
-    <div class="composer-session-meta">
-      <div class="composer-status-row">
-        <span class:ready={statusTone === 'ready'} class:error={statusTone === 'error'} class:running={statusTone === 'running'} class="live-dot"></span>
-        <strong class="composer-status-title">{statusTitle}</strong>
-        <div class="composer-status-spacer"></div>
-        <div class="usage-rail">
-          <span class="usage-chip">↑ {formatCompactTokenCount(usage.inputTokens)}</span>
-          <span class="usage-chip">↓ {formatCompactTokenCount(usage.outputTokens)}</span>
-          <span class="usage-chip usage-context" title={formatContextChipTitle(usage)}>{formatContextChip(usage)}</span>
-          <span class="usage-chip usage-cost">{formatUsageCost(usage.totalCost)}</span>
+  <div class:meta-hidden={!showComposerMeta} class="composer">
+    {#if showComposerMeta}
+      <div class="composer-session-meta">
+        <div class="composer-status-row">
+          <span class:ready={statusTone === 'ready'} class:error={statusTone === 'error'} class:running={statusTone === 'running'} class="live-dot"></span>
+          <strong class="composer-status-title">{statusTitle}</strong>
+          <div class="composer-status-spacer"></div>
+          <div class="usage-rail">
+            <span class="usage-chip">↑ {formatCompactTokenCount(usage.inputTokens)}</span>
+            <span class="usage-chip">↓ {formatCompactTokenCount(usage.outputTokens)}</span>
+            <span class="usage-chip usage-context" title={formatContextChipTitle(usage)}>{formatContextChip(usage)}</span>
+            <span class="usage-chip usage-cost">{formatUsageCost(usage.totalCost)}</span>
+          </div>
+          {#if canAbort}
+            <button class="ghost-button compact" type="button" on:click={() => dispatch('abort')}>
+              Stop
+            </button>
+          {/if}
         </div>
-        {#if canAbort}
-          <button class="ghost-button compact" type="button" on:click={() => dispatch('abort')}>
-            Stop
-          </button>
-        {/if}
       </div>
-    </div>
+    {/if}
 
     <label class="composer-terminal-input">
       <span class="composer-prefix">$</span>
