@@ -2272,8 +2272,8 @@ code {
   }
 
   .chat-view.keyboard-open {
-    --chat-composer-bottom-offset: calc(0.35rem + env(safe-area-inset-bottom));
-    --chat-composer-reserve: clamp(5.8rem, 19vh, 7.4rem);
+    --chat-composer-bottom-offset: env(safe-area-inset-bottom);
+    --chat-composer-reserve: clamp(5.2rem, 17vh, 6.9rem);
   }
 
   .chat-view .composer {

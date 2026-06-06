@@ -61,6 +61,8 @@
   let expandedMessageToolMap: Record<string, boolean> = {};
   let shouldAutoScroll = true;
   let keyboardOpen = false;
+  let composerFocused = false;
+  let baseViewportHeight = 0;
   let transcriptSignature = '';
   let showComposerMeta = true;
   let previousTranscriptSignature = '';
@@ -97,7 +99,7 @@
   $: totalToolCount = toolBatches.reduce((sum, batch) => sum + batch.tools.length, 0);
   $: displayEntries = buildDisplayEntries(messages);
   $: transcriptSignature = buildTranscriptSignature(messages, displayEntries.length);
-  $: showComposerMeta = !keyboardOpen && (shouldAutoScroll || runtimePhase !== 'idle' || canAbort || Boolean(lastError));
+  $: showComposerMeta = !keyboardOpen && !composerFocused && (shouldAutoScroll || runtimePhase !== 'idle' || canAbort || Boolean(lastError));
   $: normalizedDraftStorageScope = draftStorageScope.trim().length > 0 ? draftStorageScope.trim() : 'default';
   $: nextPromptDraftStorageKey = buildPromptDraftStorageKey(normalizedDraftStorageScope);
   $: runtimeSlashCommandSuggestions = toRuntimeSlashCommandSuggestions(availableCommands);
@@ -143,6 +145,7 @@
     };
 
     const viewport = window.visualViewport;
+    baseViewportHeight = viewport?.height ?? window.innerHeight;
     viewport?.addEventListener('resize', handleViewportChange);
     viewport?.addEventListener('scroll', handleViewportChange);
     window.addEventListener('scroll', handleWindowScroll, { passive: true });
@@ -242,6 +245,20 @@
     updatePromptCursorPosition();
   }
 
+  function handleComposerFocus() {
+    composerFocused = true;
+    slashSuggestionsDismissed = false;
+    updatePromptCursorPosition();
+    shouldAutoScroll = isNearViewportBottom();
+  }
+
+  function handleComposerBlur() {
+    composerFocused = false;
+    slashSuggestionsDismissed = false;
+    updatePromptCursorPosition();
+    shouldAutoScroll = isNearViewportBottom();
+  }
+
   async function selectSlashCommandSuggestion(suggestion: SlashCommandSuggestion) {
     const cursorIndex = promptField?.selectionStart ?? promptCursorIndex;
     const nextValue = applySlashCommandSuggestion(prompt, cursorIndex, suggestion);
@@ -293,7 +310,7 @@
     }
 
     const anchorRect = logEndAnchor.getBoundingClientRect();
-    const visibleBottom = window.innerHeight - getViewportBottomObstruction();
+    const visibleBottom = getVisibleViewportBottom();
     return anchorRect.top <= visibleBottom + 140;
   }
 
@@ -303,21 +320,22 @@
       return;
     }
 
-    const visibleBottom = window.innerHeight - getViewportBottomObstruction();
+    const visibleBottom = getVisibleViewportBottom();
     const anchorTop = logEndAnchor.getBoundingClientRect().top;
     const targetTop = window.scrollY + anchorTop - (visibleBottom - 24);
     window.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
   }
 
-  function getViewportBottomObstruction() {
-    let obstruction = 0;
+  function getVisibleViewportBottom() {
+    const viewport = window.visualViewport;
+    let visibleBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
 
     if (composerPanel) {
       const composerStyle = window.getComputedStyle(composerPanel);
 
       if (composerStyle.display !== 'none') {
         const composerRect = composerPanel.getBoundingClientRect();
-        obstruction = Math.max(obstruction, window.innerHeight - composerRect.top);
+        visibleBottom = Math.min(visibleBottom, composerRect.top);
       }
     }
 
@@ -328,17 +346,25 @@
 
       if (navStyle.display !== 'none') {
         const navRect = bottomNav.getBoundingClientRect();
-        obstruction = Math.max(obstruction, window.innerHeight - navRect.top);
+        visibleBottom = Math.min(visibleBottom, navRect.top);
       }
     }
 
-    return Math.max(0, obstruction);
+    return Math.max(0, visibleBottom);
   }
 
   function updateViewportMetrics() {
-    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    const keyboardDelta = window.innerHeight - viewportHeight;
-    keyboardOpen = keyboardDelta > 120;
+    const viewport = window.visualViewport;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+
+    if (viewportHeight > baseViewportHeight) {
+      baseViewportHeight = viewportHeight;
+    }
+
+    const keyboardDelta = Math.max(0, baseViewportHeight - viewportHeight);
+    const activeElement = document.activeElement;
+    const inputFocused = activeElement === promptField;
+    keyboardOpen = inputFocused && keyboardDelta > 90;
 
     if (keyboardOpen) {
       document.documentElement.setAttribute('data-chat-keyboard', 'open');
@@ -854,7 +880,8 @@
         placeholder="Ask pi to change the active repository..."
         on:input={handleComposerInput}
         on:click={handleComposerCursorActivity}
-        on:focus={handleComposerCursorActivity}
+        on:focus={handleComposerFocus}
+        on:blur={handleComposerBlur}
         on:keyup={handleComposerCursorActivity}
         on:keydown={handleComposerKeydown}
       ></textarea>
