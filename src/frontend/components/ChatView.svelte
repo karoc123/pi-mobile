@@ -804,7 +804,7 @@
       <textarea
         bind:this={promptField}
         bind:value={prompt}
-        rows="4"
+        rows="3"
         placeholder="Ask pi to change the active repository..."
         on:input={handleComposerInput}
         on:click={handleComposerCursorActivity}
@@ -813,7 +813,6 @@
         on:keydown={handleComposerKeydown}
       ></textarea>
     </label>
-
     {#if slashCommandSuggestions.length > 0}
       <div class="composer-suggestion-list" role="listbox" aria-label="Slash command suggestions">
         {#each slashCommandSuggestions as suggestion, index (`${suggestion.command}-${index}`)}

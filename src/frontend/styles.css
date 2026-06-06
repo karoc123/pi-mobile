@@ -758,46 +758,6 @@ code {
   color: var(--cli-muted);
 }
 
-.chat-view .composer-suggestion-list {
-  display: grid;
-  gap: 0.4rem;
-  border: 1px solid var(--terminal-panel-border);
-  border-radius: 0.22rem;
-  background: var(--cli-panel);
-  color: var(--cli-ink);
-  padding: 0.6rem;
-  box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
-}
-
-.chat-view .composer-suggestion {
-  display: grid;
-  gap: 0.15rem;
-  text-align: left;
-  border: 1px solid color-mix(in srgb, var(--terminal-panel-border) 75%, transparent);
-  border-radius: 0.2rem;
-  background: color-mix(in srgb, var(--terminal-panel-background) 82%, transparent);
-  color: inherit;
-  padding: 0.45rem 0.55rem;
-}
-
-.chat-view .composer-suggestion strong {
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-}
-
-.chat-view .composer-suggestion span {
-  font-size: 0.75rem;
-  color: var(--cli-muted);
-  overflow-wrap: anywhere;
-}
-
-.chat-view .composer-suggestion.selected {
-  border-color: var(--cli-accent-strong);
-  background: color-mix(in srgb, var(--cli-accent-soft) 20%, var(--terminal-panel-background));
-}
-
 .chat-view .composer-session-meta {
   display: grid;
   gap: 0.55rem;
@@ -2299,6 +2259,69 @@ code {
 }
 
 @media (max-width: 859px) {
+  .chat-view {
+    --chat-composer-bottom-offset: calc(4.2rem + env(safe-area-inset-bottom));
+    --chat-composer-horizontal-offset: 0.5rem;
+    --chat-composer-reserve: clamp(10.75rem, 33vh, 14.25rem);
+    padding-bottom: calc(var(--chat-composer-bottom-offset) + var(--chat-composer-reserve));
+  }
+
+  .chat-view .composer {
+    position: fixed;
+    left: var(--chat-composer-horizontal-offset);
+    right: var(--chat-composer-horizontal-offset);
+    bottom: var(--chat-composer-bottom-offset);
+    z-index: 6;
+    gap: 0.55rem;
+    padding: 0.7rem;
+  }
+
+  .chat-view .activity-panel,
+  .chat-view .chat-log {
+    padding: 0.75rem;
+  }
+
+  .chat-view .composer-session-meta {
+    gap: 0.45rem;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .chat-view .composer-terminal-input {
+    gap: 0.55rem;
+    padding: 0.65rem;
+  }
+
+  .chat-view .composer textarea {
+    min-height: calc(1.45em * 3);
+    line-height: 1.45;
+  }
+
+  .chat-view .composer-footer {
+    gap: 0.55rem;
+  }
+
+  .chat-view .composer-actions {
+    gap: 0.45rem;
+  }
+
+  .chat-view .composer .compact,
+  .chat-view .composer-footer .send-button {
+    padding-top: 0.58rem;
+    padding-bottom: 0.58rem;
+  }
+
+  .bottom-nav {
+    bottom: 0.65rem;
+    width: min(32rem, calc(100vw - 0.8rem));
+    gap: 0.4rem;
+    padding: 0.5rem;
+  }
+
+  .bottom-nav button {
+    padding: 0.55rem 0.6rem;
+    font-size: 0.82rem;
+  }
+
   .diff-view .diff-card,
   .diff-view .hunk-card {
     padding: 0.75rem;
