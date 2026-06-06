@@ -388,14 +388,6 @@
     };
   }
 
-  function isDisplayEntryHidden(entry: DisplayEntry) {
-    return !!hiddenEntryMap[displayEntryId(entry)];
-  }
-
-  function isDisplayEntryCopied(entry: DisplayEntry) {
-    return copiedEntryId === displayEntryId(entry);
-  }
-
   function textForDisplayEntry(entry: DisplayEntry) {
     if (entry.kind === 'chat') {
       return entry.message.text;
@@ -635,10 +627,6 @@
     };
   }
 
-  function isTraceToolExpanded(toolId: string) {
-    return !!expandedTraceToolMap[toolId];
-  }
-
   function messageToolKey(groupId: string, toolCallId: string) {
     return `${groupId}::${toolCallId}`;
   }
@@ -650,10 +638,6 @@
       ...expandedMessageToolMap,
       [key]: !expandedMessageToolMap[key],
     };
-  }
-
-  function isMessageToolExpanded(groupId: string, toolCallId: string) {
-    return !!expandedMessageToolMap[messageToolKey(groupId, toolCallId)];
   }
 
   function modelLabelForSendButton(modelId: string | null) {
@@ -701,7 +685,7 @@
                     class:success={tool.status === 'complete'}
                     class="tool-inline-item"
                     type="button"
-                    aria-expanded={isTraceToolExpanded(tool.id)}
+                    aria-expanded={!!expandedTraceToolMap[tool.id]}
                     on:click={() => toggleTraceToolDetail(tool.id)}
                   >
                     <span class="tool-inline-main">
@@ -715,7 +699,7 @@
                     <span class="tool-inline-status">{describeToolState(tool.status)}</span>
                   </button>
 
-                  {#if isTraceToolExpanded(tool.id)}
+                  {#if expandedTraceToolMap[tool.id]}
                     <pre class="tool-inline-detail">{tool.detail || 'No detail returned.'}</pre>
                   {/if}
                 {/each}
@@ -738,7 +722,7 @@
     {/if}
 
     {#each displayEntries as entry (entry.kind === 'chat' ? `chat-${entry.message.id}` : entry.id)}
-      {#if isDisplayEntryHidden(entry)}
+      {#if hiddenEntryMap[displayEntryId(entry)]}
         <article class="message-card message-card-hidden">
           <header>
             <div class="message-heading">
@@ -761,7 +745,7 @@
             </div>
             <div class="message-meta-actions">
               <span class="message-status">{describeMessageStatus(entry.message)}</span>
-              <button class="ghost-button compact message-action" type="button" on:click={() => copyDisplayEntryText(entry)}>{isDisplayEntryCopied(entry) ? 'Copied' : 'Copy'}</button>
+              <button class="ghost-button compact message-action" type="button" on:click={() => copyDisplayEntryText(entry)}>{copiedEntryId === displayEntryId(entry) ? 'Copied' : 'Copy'}</button>
               <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button>
             </div>
           </header>
@@ -776,7 +760,7 @@
             </div>
             <div class="message-meta-actions">
               <span class="message-status">{entry.statusLabel}</span>
-              <button class="ghost-button compact message-action" type="button" on:click={() => copyDisplayEntryText(entry)}>{isDisplayEntryCopied(entry) ? 'Copied' : 'Copy'}</button>
+              <button class="ghost-button compact message-action" type="button" on:click={() => copyDisplayEntryText(entry)}>{copiedEntryId === displayEntryId(entry) ? 'Copied' : 'Copy'}</button>
               <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button>
             </div>
           </header>
@@ -787,7 +771,7 @@
                 class="tool-summary-icon icon-{resolveToolIcon(toolCall.toolName)}"
                 type="button"
                 title={formatToolCallLine(toolCall)}
-                aria-expanded={isMessageToolExpanded(entry.id, toolCall.id)}
+                aria-expanded={!!expandedMessageToolMap[`${entry.id}::${toolCall.id}`]}
                 on:click={() => toggleMessageToolDetail(entry.id, toolCall.id)}
               >
                 <svg viewBox="0 0 24 24" width="14" height="14" focusable="false" aria-hidden="true">
@@ -798,7 +782,7 @@
           </div>
 
           {#each entry.toolCalls as toolCall (toolCall.id)}
-            {#if isMessageToolExpanded(entry.id, toolCall.id)}
+            {#if expandedMessageToolMap[`${entry.id}::${toolCall.id}`]}
               <pre class="tool-summary-detail">{formatToolCallLine(toolCall)}</pre>
             {/if}
           {/each}
