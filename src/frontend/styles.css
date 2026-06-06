@@ -372,7 +372,6 @@ code {
   --cli-user-panel: var(--terminal-user-panel);
   --cli-system-panel: var(--terminal-system-panel);
   min-width: 0;
-  overflow-x: hidden;
 }
 
 .chat-view,
