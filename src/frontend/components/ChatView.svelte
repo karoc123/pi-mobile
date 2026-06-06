@@ -54,6 +54,7 @@
   let prompt = '';
   let logEndAnchor: HTMLDivElement | null = null;
   let promptField: HTMLTextAreaElement | null = null;
+  let composerPanel: HTMLDivElement | null = null;
   let handledPrefillToken = 0;
   let toolTraceExpanded = false;
   let expandedTraceToolMap: Record<string, boolean> = {};
@@ -132,7 +133,12 @@
       shouldAutoScroll = isNearViewportBottom();
     };
 
+    const handleViewportResize = () => {
+      shouldAutoScroll = isNearViewportBottom();
+    };
+
     window.addEventListener('scroll', handleWindowScroll, { passive: true });
+    window.addEventListener('resize', handleViewportResize, { passive: true });
     handleWindowScroll();
 
     if (shouldAutoScroll) {
@@ -143,6 +149,7 @@
 
     return () => {
       window.removeEventListener('scroll', handleWindowScroll);
+      window.removeEventListener('resize', handleViewportResize);
 
       if (copiedEntryResetTimer !== null) {
         window.clearTimeout(copiedEntryResetTimer);
@@ -269,11 +276,43 @@
   }
 
   function isNearViewportBottom() {
-    return window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 140;
+    if (!logEndAnchor) {
+      return true;
+    }
+
+    const anchorRect = logEndAnchor.getBoundingClientRect();
+    const visibleChatBottom = window.innerHeight - getViewportBottomObstruction();
+    return anchorRect.top <= visibleChatBottom + 120;
   }
 
   function scrollWindowToBottom() {
-    window.scrollTo(0, document.documentElement.scrollHeight);
+    if (!logEndAnchor) {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      return;
+    }
+
+    const visibleChatBottom = window.innerHeight - getViewportBottomObstruction();
+    const anchorTop = logEndAnchor.getBoundingClientRect().top;
+    const targetTop = window.scrollY + anchorTop - (visibleChatBottom - 16);
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
+  }
+
+  function getViewportBottomObstruction() {
+    let obstruction = 0;
+
+    if (composerPanel) {
+      const composerRect = composerPanel.getBoundingClientRect();
+      obstruction = Math.max(obstruction, window.innerHeight - composerRect.top);
+    }
+
+    const bottomNav = document.querySelector<HTMLElement>('.bottom-nav');
+
+    if (bottomNav) {
+      const navRect = bottomNav.getBoundingClientRect();
+      obstruction = Math.max(obstruction, window.innerHeight - navRect.top);
+    }
+
+    return Math.max(0, obstruction);
   }
 
   function describeMessageStatus(message: ChatMessage) {
@@ -779,7 +818,7 @@
     <div class="chat-log-end" aria-hidden="true" bind:this={logEndAnchor}></div>
   </div>
 
-  <div class="composer">
+  <div class="composer" bind:this={composerPanel}>
     <div class="composer-session-meta">
       <div class="composer-status-row">
         <span class:ready={statusTone === 'ready'} class:error={statusTone === 'error'} class:running={statusTone === 'running'} class="live-dot"></span>
