@@ -871,7 +871,7 @@
   }
 
   async function refreshCurrentRepoData() {
-    await Promise.all([loadDiff(), loadFiles('.'), loadAgentState()]);
+    await Promise.all([loadDiff(), loadFiles('.'), loadAgentState(), loadCommandState()]);
   }
 
   async function openCostView() {
@@ -1383,6 +1383,8 @@
           localSystemMessages = [];
           clearKeepRunningGate();
         }
+
+        await loadCommandState();
       }
     } catch (error) {
       handleApiFailure(error);
@@ -2198,6 +2200,7 @@
           usage={agentSnapshot.usage}
           prefillPrompt={composerPrefill}
           prefillToken={composerPrefillToken}
+          availableCommands={commandState?.availableCommands ?? []}
           draftStorageScope={currentRepo.relativePath || currentRepo.absolutePath}
           on:submit={(event) => sendPrompt(event.detail.prompt)}
           on:abort={abortRun}
@@ -2346,6 +2349,10 @@
       on:close={() => (commandPaletteOpen = false)}
       on:copy={copyLastAssistantReply}
       on:execute={(event) => executePaletteCommand(event.detail.request)}
+      on:prefillPrompt={(event) => {
+        seedComposer(event.detail.value);
+        commandPaletteOpen = false;
+      }}
       on:setTheme={(event) => setTheme(event.detail.value)}
     />
   </main>

@@ -1,3 +1,5 @@
+import type { AgentSlashCommand } from "../../shared/contracts.js";
+
 export type SlashCommandSuggestion = {
   command: string;
   description: string;
@@ -32,11 +34,37 @@ export type SubmittedSlashCommand = {
   args: string;
 };
 
+export function toRuntimeSlashCommandSuggestions(commands: AgentSlashCommand[]): SlashCommandSuggestion[] {
+  const deduped = new Map<string, SlashCommandSuggestion>();
+
+  for (const command of commands) {
+    const normalizedName = command.name.trim();
+
+    if (normalizedName.length === 0) {
+      continue;
+    }
+
+    const slashCommand = normalizedName.startsWith("/") ? normalizedName : `/${normalizedName}`;
+    const normalizedKey = slashCommand.toLowerCase();
+
+    if (deduped.has(normalizedKey)) {
+      continue;
+    }
+
+    deduped.set(normalizedKey, {
+      command: slashCommand,
+      description: command.description ?? `${command.source} command`,
+    });
+  }
+
+  return [...deduped.values()].sort((left, right) => left.command.localeCompare(right.command));
+}
+
 export function findSlashCommandQuery(prompt: string, cursorIndex: number): SlashCommandQuery | null {
   const safeCursorIndex = Math.max(0, Math.min(cursorIndex, prompt.length));
   const beforeCursor = prompt.slice(0, safeCursorIndex);
   const afterCursor = prompt.slice(safeCursorIndex);
-  const match = /(^|\s)(\/[a-z-]*)$/i.exec(beforeCursor);
+  const match = /(^|\s)(\/[a-z0-9:_-]*)$/i.exec(beforeCursor);
 
   if (!match) {
     return null;
@@ -44,7 +72,7 @@ export function findSlashCommandQuery(prompt: string, cursorIndex: number): Slas
 
   const value = match[2];
   const start = beforeCursor.length - value.length;
-  const afterMatch = /^[a-z-]*/i.exec(afterCursor)?.[0] ?? "";
+  const afterMatch = /^[a-z0-9:_-]*/i.exec(afterCursor)?.[0] ?? "";
 
   return {
     value,
@@ -53,7 +81,7 @@ export function findSlashCommandQuery(prompt: string, cursorIndex: number): Slas
   };
 }
 
-export function getSlashCommandSuggestions(prompt: string, cursorIndex: number) {
+export function getSlashCommandSuggestions(prompt: string, cursorIndex: number, suggestions: SlashCommandSuggestion[] = SLASH_COMMANDS) {
   const query = findSlashCommandQuery(prompt, cursorIndex);
 
   if (!query) {
@@ -62,7 +90,7 @@ export function getSlashCommandSuggestions(prompt: string, cursorIndex: number) 
 
   const normalizedQuery = query.value.toLowerCase();
 
-  return SLASH_COMMANDS.filter((entry) => entry.command.startsWith(normalizedQuery)).slice(0, 6);
+  return suggestions.filter((entry) => entry.command.toLowerCase().startsWith(normalizedQuery)).slice(0, 6);
 }
 
 export function applySlashCommandSuggestion(prompt: string, cursorIndex: number, suggestion: SlashCommandSuggestion) {
@@ -84,16 +112,16 @@ export function applySlashCommandSuggestion(prompt: string, cursorIndex: number,
   };
 }
 
-export function getSubmittedSlashCommand(prompt: string): SubmittedSlashCommand | null {
+export function getSubmittedSlashCommand(prompt: string, suggestions: SlashCommandSuggestion[] = SLASH_COMMANDS): SubmittedSlashCommand | null {
   const trimmedPrompt = prompt.trim();
-  const match = /^(\/[a-z-]+)(?:\s+(.*))?$/i.exec(trimmedPrompt);
+  const match = /^(\/[a-z0-9:_-]+)(?:\s+(.*))?$/i.exec(trimmedPrompt);
 
   if (!match) {
     return null;
   }
 
   const normalizedCommand = match[1].toLowerCase();
-  const suggestion = SLASH_COMMANDS.find((entry) => entry.command === normalizedCommand);
+  const suggestion = suggestions.find((entry) => entry.command.toLowerCase() === normalizedCommand);
 
   if (!suggestion) {
     return null;

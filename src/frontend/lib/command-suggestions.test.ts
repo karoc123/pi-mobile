@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { applySlashCommandSuggestion, findSlashCommandQuery, getSlashCommandSuggestions, getSubmittedSlashCommand } from "./command-suggestions.js";
+import {
+  applySlashCommandSuggestion,
+  findSlashCommandQuery,
+  getSlashCommandSuggestions,
+  getSubmittedSlashCommand,
+  toRuntimeSlashCommandSuggestions,
+} from "./command-suggestions.js";
 
 describe("slash command suggestions", () => {
   it("detects the active slash query near the cursor", () => {
@@ -29,5 +35,30 @@ describe("slash command suggestions", () => {
       args: "keep file history",
     });
     expect(getSubmittedSlashCommand("write a summary")).toBeNull();
+  });
+
+  it("supports runtime slash commands with skill prefixes", () => {
+    const runtimeSuggestions = toRuntimeSlashCommandSuggestions([
+      {
+        name: "skill:repo-review",
+        description: "Review repository health",
+        source: "skill",
+      },
+    ]);
+
+    expect(getSlashCommandSuggestions("/skill:r", 8, runtimeSuggestions)).toEqual([
+      {
+        command: "/skill:repo-review",
+        description: "Review repository health",
+      },
+    ]);
+
+    expect(getSubmittedSlashCommand("/skill:repo-review run", runtimeSuggestions)).toEqual({
+      suggestion: {
+        command: "/skill:repo-review",
+        description: "Review repository health",
+      },
+      args: "run",
+    });
   });
 });

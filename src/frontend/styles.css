@@ -758,6 +758,46 @@ code {
   color: var(--cli-muted);
 }
 
+.chat-view .composer-suggestion-list {
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid var(--terminal-panel-border);
+  border-radius: 0.22rem;
+  background: var(--cli-panel);
+  color: var(--cli-ink);
+  padding: 0.6rem;
+  box-shadow:
+    inset 0 1px 0 var(--terminal-shadow-highlight),
+    inset 0 0 0 1px var(--terminal-shadow-inset);
+}
+
+.chat-view .composer-suggestion {
+  display: grid;
+  gap: 0.15rem;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--terminal-panel-border) 75%, transparent);
+  border-radius: 0.2rem;
+  background: color-mix(in srgb, var(--terminal-panel-background) 82%, transparent);
+  color: inherit;
+  padding: 0.45rem 0.55rem;
+}
+
+.chat-view .composer-suggestion strong {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.chat-view .composer-suggestion span {
+  font-size: 0.75rem;
+  color: var(--cli-muted);
+  overflow-wrap: anywhere;
+}
+
+.chat-view .composer-suggestion.selected {
+  border-color: var(--cli-accent-strong);
+  background: color-mix(in srgb, var(--cli-accent-soft) 20%, var(--terminal-panel-background));
+}
+
 .chat-view .composer-session-meta {
   display: grid;
   gap: 0.55rem;

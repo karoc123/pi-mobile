@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, tick } from 'svelte';
 
-  import type { AgentRuntimePhase, AgentUsage, ChatMessage, ToolActivity } from '../../../src/shared/contracts.js';
+  import type { AgentRuntimePhase, AgentSlashCommand, AgentUsage, ChatMessage, ToolActivity } from '../../../src/shared/contracts.js';
   import { formatCompactTokenCount, formatUsageCost } from '../lib/agent-usage.js';
+  import { applySlashCommandSuggestion, getSlashCommandSuggestions, toRuntimeSlashCommandSuggestions, type SlashCommandSuggestion } from '../lib/command-suggestions.js';
   import { renderMarkdown } from '../lib/markdown.js';
 
   type ToolTraceBatch = {
@@ -38,6 +39,7 @@
   export let usage: AgentUsage;
   export let prefillPrompt = '';
   export let prefillToken = 0;
+  export let availableCommands: AgentSlashCommand[] = [];
   export let draftStorageScope = 'default';
 
   const dispatch = createEventDispatcher<{
@@ -64,6 +66,11 @@
   let copiedEntryResetTimer: number | null = null;
   let activePromptDraftStorageKey = '';
   let hydratedPromptDraftStorageKey = '';
+  let promptCursorIndex = 0;
+  let runtimeSlashCommandSuggestions: SlashCommandSuggestion[] = [];
+  let slashCommandSuggestions: SlashCommandSuggestion[] = [];
+  let selectedSlashSuggestionIndex = 0;
+  let slashSuggestionsDismissed = false;
 
   $: statusTitle = lastError
     ? 'Agent needs attention'
@@ -88,6 +95,13 @@
   $: latestFinalAssistantMessageId = getLatestFinalAssistantMessageId(messages);
   $: normalizedDraftStorageScope = draftStorageScope.trim().length > 0 ? draftStorageScope.trim() : 'default';
   $: nextPromptDraftStorageKey = buildPromptDraftStorageKey(normalizedDraftStorageScope);
+  $: runtimeSlashCommandSuggestions = toRuntimeSlashCommandSuggestions(availableCommands);
+  $: slashCommandSuggestions = slashSuggestionsDismissed ? [] : getSlashCommandSuggestions(prompt, promptCursorIndex, runtimeSlashCommandSuggestions);
+  $: if (slashCommandSuggestions.length === 0) {
+    selectedSlashSuggestionIndex = 0;
+  } else if (selectedSlashSuggestionIndex >= slashCommandSuggestions.length) {
+    selectedSlashSuggestionIndex = slashCommandSuggestions.length - 1;
+  }
 
   $: if (nextPromptDraftStorageKey !== activePromptDraftStorageKey) {
     activePromptDraftStorageKey = nextPromptDraftStorageKey;
@@ -179,6 +193,7 @@
 
     dispatch('submit', { prompt: prompt.trim() });
     prompt = '';
+    promptCursorIndex = 0;
   }
 
   async function applyPrefill(nextPrompt: string) {
@@ -186,9 +201,67 @@
     await tick();
     promptField?.focus();
     promptField?.setSelectionRange(nextPrompt.length, nextPrompt.length);
+    promptCursorIndex = nextPrompt.length;
+  }
+
+  function updatePromptCursorPosition() {
+    if (promptField) {
+      promptCursorIndex = promptField.selectionStart ?? prompt.length;
+      return;
+    }
+
+    promptCursorIndex = prompt.length;
+  }
+
+  function handleComposerInput() {
+    slashSuggestionsDismissed = false;
+    updatePromptCursorPosition();
+  }
+
+  function handleComposerCursorActivity() {
+    slashSuggestionsDismissed = false;
+    updatePromptCursorPosition();
+  }
+
+  async function selectSlashCommandSuggestion(suggestion: SlashCommandSuggestion) {
+    const cursorIndex = promptField?.selectionStart ?? promptCursorIndex;
+    const nextValue = applySlashCommandSuggestion(prompt, cursorIndex, suggestion);
+    prompt = nextValue.prompt;
+    await tick();
+    promptField?.focus();
+    promptField?.setSelectionRange(nextValue.cursorIndex, nextValue.cursorIndex);
+    promptCursorIndex = nextValue.cursorIndex;
+    selectedSlashSuggestionIndex = 0;
+    slashSuggestionsDismissed = false;
   }
 
   function handleComposerKeydown(event: KeyboardEvent) {
+    if (slashCommandSuggestions.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        selectedSlashSuggestionIndex = (selectedSlashSuggestionIndex + 1) % slashCommandSuggestions.length;
+        return;
+      }
+
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        selectedSlashSuggestionIndex = (selectedSlashSuggestionIndex - 1 + slashCommandSuggestions.length) % slashCommandSuggestions.length;
+        return;
+      }
+
+      if ((event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) || event.key === 'Tab') {
+        event.preventDefault();
+        void selectSlashCommandSuggestion(slashCommandSuggestions[selectedSlashSuggestionIndex]);
+        return;
+      }
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        slashSuggestionsDismissed = true;
+        return;
+      }
+    }
+
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit();
@@ -733,9 +806,32 @@
         bind:value={prompt}
         rows="4"
         placeholder="Ask pi to change the active repository..."
+        on:input={handleComposerInput}
+        on:click={handleComposerCursorActivity}
+        on:focus={handleComposerCursorActivity}
+        on:keyup={handleComposerCursorActivity}
         on:keydown={handleComposerKeydown}
       ></textarea>
     </label>
+
+    {#if slashCommandSuggestions.length > 0}
+      <div class="composer-suggestion-list" role="listbox" aria-label="Slash command suggestions">
+        {#each slashCommandSuggestions as suggestion, index (`${suggestion.command}-${index}`)}
+          <button
+            class:selected={index === selectedSlashSuggestionIndex}
+            class="composer-suggestion"
+            type="button"
+            role="option"
+            aria-selected={index === selectedSlashSuggestionIndex}
+            on:mousedown|preventDefault
+            on:click={() => void selectSlashCommandSuggestion(suggestion)}
+          >
+            <strong>{suggestion.command}</strong>
+            <span>{suggestion.description}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
 
     <div class="composer-footer">
       <div class="composer-actions">

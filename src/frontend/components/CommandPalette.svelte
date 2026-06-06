@@ -17,6 +17,7 @@
     close: void;
     copy: void;
     execute: { request: AgentCommandRequest };
+    prefillPrompt: { value: string };
     setTheme: { value: ThemeName };
   }>();
 
@@ -443,10 +444,18 @@
                   <p class="empty-state small">No runtime slash commands discovered for this repository yet.</p>
                 {:else}
                   {#each state.availableCommands as command}
-                    <article class="command-summary-card">
-                      <strong>/{command.name}</strong>
-                      <span>{command.description ?? 'No description available'} · {command.source}</span>
-                    </article>
+                    <button
+                      class="command-option"
+                      type="button"
+                      disabled={busy}
+                      on:click={() => dispatch('prefillPrompt', { value: `/${command.name} ` })}
+                    >
+                      <div class="command-option-main">
+                        <strong>/{command.name}</strong>
+                        <span>{command.description ?? 'No description available'} · {command.source}</span>
+                      </div>
+                      <span class="command-meta">Insert</span>
+                    </button>
                   {/each}
                 {/if}
               </div>
