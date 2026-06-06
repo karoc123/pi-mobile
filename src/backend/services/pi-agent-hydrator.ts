@@ -105,7 +105,12 @@ function toChatMessage(entry: unknown): ChatMessage | null {
     return null;
   }
 
-  const candidate = entry as { role?: string; createdAt?: string; content?: unknown[] };
+  const candidate = entry as {
+    role?: string;
+    createdAt?: unknown;
+    timestamp?: unknown;
+    content?: unknown[];
+  };
 
   if (candidate.role !== "user" && candidate.role !== "assistant") {
     return null;
@@ -116,6 +121,40 @@ function toChatMessage(entry: unknown): ChatMessage | null {
     role: candidate.role,
     text: flattenMessageText(candidate),
     status: "complete",
-    timestamp: candidate.createdAt ?? new Date().toISOString(),
+    timestamp: resolveMessageTimestamp(candidate),
   };
+}
+
+function resolveMessageTimestamp(candidate: { createdAt?: unknown; timestamp?: unknown }) {
+  return normalizeTimestampValue(candidate.createdAt) ?? normalizeTimestampValue(candidate.timestamp) ?? new Date().toISOString();
+}
+
+function normalizeTimestampValue(value: unknown) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (trimmed.length === 0) {
+      return null;
+    }
+
+    const parsed = Date.parse(trimmed);
+
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+
+    return new Date(parsed).toISOString();
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const milliseconds = Math.abs(value) < 1_000_000_000_000 ? value * 1000 : value;
+
+    if (!Number.isFinite(milliseconds)) {
+      return null;
+    }
+
+    return new Date(milliseconds).toISOString();
+  }
+
+  return null;
 }

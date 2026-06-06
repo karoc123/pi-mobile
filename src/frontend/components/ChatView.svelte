@@ -765,7 +765,7 @@
               <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Show</button>
             </div>
           </header>
-          <p class="subdued">Entry hidden. Tap Show to reveal it again.</p>
+          <p class="subdued">Entry hidden.</p>
         </article>
       {:else if entry.kind === 'chat'}
         <article class:assistant={entry.message.role === 'assistant'} class:system={entry.message.role === 'system'} class:user={entry.message.role === 'user'} class="message-card">
