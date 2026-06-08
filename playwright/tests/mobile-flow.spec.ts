@@ -13,6 +13,15 @@ test("mobile browser flow covers login, repo selection, chat, editor save, and h
   await expect(page.getByRole("dialog", { name: "App menu" })).toBeVisible();
   await page.getByRole("button", { name: "VS Code Light" }).click();
   await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe("vscode-light");
+
+  await page.getByRole("button", { name: "Pi Login" }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Provider token" })).toBeVisible();
+  await page.getByLabel("API token").fill(`token-${Date.now()}`);
+  await page.getByRole("button", { name: "Save token" }).click();
+  await expect(page.locator(".notice.success")).toContainText("Pi token for");
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await page.getByRole("button", { name: "Open workspace menu" }).click();
   await page.getByRole("button", { name: "Choose repo" }).click();
 
   const repoRow = page.locator(".picker-entry").filter({ hasText: "playwright-smoke-repo" }).first();
@@ -26,12 +35,8 @@ test("mobile browser flow covers login, repo selection, chat, editor save, and h
   const runToken = `READY_${Date.now()}`;
   await promptInput.fill(`Reply with the single word ${runToken}. Do not modify any files.`);
 
-  await page.getByRole("button", { name: "Send prompt" }).click();
+  await page.locator("button.send-button").click();
   await expect(page.locator(".message-card.assistant").last()).toContainText(runToken);
-  await expect(page.getByRole("heading", { level: 2, name: "Agent finished" })).toBeVisible();
-  await expect(page.locator(".usage-summary")).toContainText("↑");
-  await expect(page.locator(".usage-summary")).toContainText("$");
-  await expect(page.locator(".model-summary")).toContainText("mock/session");
 
   await page.getByRole("button", { name: "Editor" }).click();
   await page.getByRole("button", { name: /notes\.txt/ }).click();

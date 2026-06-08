@@ -27,6 +27,9 @@
     GitDiffResponse,
     GitRemoteSyncStatus,
     GitSyncResult,
+    PiAuthLoginTokenResponse,
+    PiAuthProviderState,
+    PiAuthStatusResponse,
     SelectedRepo,
     SessionResponse,
     WebsocketEnvelope,
@@ -40,6 +43,7 @@
   import CostView from './components/CostView.svelte';
   import LogView from './components/LogView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
+  import PiLoginModal from './components/PiLoginModal.svelte';
   import SystemStatusBar from './components/SystemStatusBar.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
   import { ApiRequestError, apiFetch } from './lib/api.js';
@@ -185,6 +189,11 @@
   let bannerMessage = '';
   let bannerTone: 'info' | 'success' | 'error' = 'info';
   let menuOpen = false;
+  let piLoginOpen = false;
+  let piAuthProviders: PiAuthProviderState[] = [];
+  let piAuthLoading = false;
+  let piAuthSubmitting = false;
+  let piAuthError = '';
   let lazyViewLoading: AsyncViewName | null = null;
   let lazyViewError = '';
   let diffViewComponent: any = null;
@@ -500,6 +509,67 @@
       }
     } finally {
       resetAuthenticatedState('');
+    }
+  }
+
+  async function openPiLogin() {
+    piLoginOpen = true;
+    await loadPiAuthStatus();
+  }
+
+  async function loadPiAuthStatus() {
+    piAuthLoading = true;
+    piAuthError = '';
+
+    try {
+      const response = await apiFetch<PiAuthStatusResponse>('/api/pi/auth/status');
+      piAuthProviders = response.providers;
+    } catch (error) {
+      piAuthError = toErrorMessage(error);
+    } finally {
+      piAuthLoading = false;
+    }
+  }
+
+  async function loginPiToken(provider: string, token: string) {
+    piAuthSubmitting = true;
+    piAuthError = '';
+
+    try {
+      const response = await apiFetch<PiAuthLoginTokenResponse>('/api/pi/auth/login-token', {
+        method: 'POST',
+        body: JSON.stringify({ provider, token })
+      });
+
+      showBanner(`Pi token for ${response.provider} saved.`, 'success');
+      await loadPiAuthStatus();
+    } catch (error) {
+      const message = toErrorMessage(error);
+      piAuthError = message;
+      showBanner(message, 'error');
+    } finally {
+      piAuthSubmitting = false;
+    }
+  }
+
+  async function logoutPiProvider(provider: string) {
+    piAuthSubmitting = true;
+    piAuthError = '';
+
+    try {
+      await apiFetch('/api/pi/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({ provider })
+      });
+
+      showBanner(`Pi auth for ${provider} removed.`, 'success');
+      await loadPiAuthStatus();
+    } catch (error) {
+      const message = toErrorMessage(error);
+      piAuthError = message;
+      showBanner(message, 'error');
+    } finally {
+      piAuthSubmitting = false;
     }
   }
 
@@ -2319,12 +2389,30 @@
       }}
       on:openCosts={() => void openCostView()}
       on:openLogs={() => void openLogView()}
+      on:openPiLogin={() => {
+        menuOpen = false;
+        void openPiLogin();
+      }}
       on:setTheme={(event) => setTheme(event.detail.value)}
       on:setFollowUpCostGuardEnabled={(event) => setFollowUpCostGuardEnabled(event.detail.value)}
       on:resetFollowUpCostGuardEnabled={resetFollowUpCostGuardEnabled}
       on:setFollowUpCostSoftLimitUsd={(event) => setFollowUpCostSoftLimitUsd(event.detail.value)}
       on:resetFollowUpCostSoftLimitUsd={resetFollowUpCostSoftLimitUsd}
       on:logout={logout}
+    />
+    <PiLoginModal
+      open={piLoginOpen}
+      loading={piAuthLoading}
+      submitting={piAuthSubmitting}
+      providers={piAuthProviders}
+      errorMessage={piAuthError}
+      on:close={() => {
+        piLoginOpen = false;
+        piAuthError = '';
+      }}
+      on:refresh={() => void loadPiAuthStatus()}
+      on:submit={(event) => loginPiToken(event.detail.provider, event.detail.token)}
+      on:logout={(event) => logoutPiProvider(event.detail.provider)}
     />
     <WorkspacePicker
       open={workspaceOpen}

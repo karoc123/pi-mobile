@@ -19,6 +19,7 @@
     chooseRepo: void;
     openCosts: void;
     openLogs: void;
+    openPiLogin: void;
     logout: void;
     setTheme: { value: ThemeName };
     setFollowUpCostGuardEnabled: { value: boolean };
@@ -112,7 +113,10 @@
 
       <section class="menu-section">
         <p class="eyebrow">Session</p>
-        <button class="ghost-button danger-button" type="button" on:click={() => dispatch('logout')}>Logout</button>
+        <div class="menu-insight-actions">
+          <button class="secondary-button" type="button" on:click={() => dispatch('openPiLogin')}>Pi Login</button>
+          <button class="ghost-button danger-button" type="button" on:click={() => dispatch('logout')}>Logout</button>
+        </div>
       </section>
     </div>
   </div>

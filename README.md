@@ -83,12 +83,7 @@ Login with APP_PASSWORD, select a repository, and start.
 ```env
 APP_PASSWORD=your-local-password
 SESSION_COOKIE_SECURE=false
-WORKSPACE_HOST_PATH=/home/your-user/dev
-PI_HOME_HOST_PATH=/home/your-user/.pi
-GITCONFIG_HOST_PATH=/home/your-user/.gitconfig
-SSH_HOST_PATH=/home/your-user/.ssh
-HOST_UID=1000
-HOST_GID=1000
+SSH_PRIVATE_KEY_FILE=/home/your-user/.ssh/id_ed25519
 ```
 
 2. Build and run:
@@ -96,6 +91,14 @@ HOST_GID=1000
 ```bash
 docker compose up --build
 ```
+
+PiMobile now keeps runtime state in three named Docker volumes:
+
+- `workspace` for cloned repositories and file edits
+- `db` for `costs.sqlite`, logs, and `known_hosts`
+- `pi` for Pi auth, model metadata, and session files
+
+The SSH private key is injected as a Compose secret at startup and copied into the container runtime. No host workspace, `~/.pi`, or `~/.ssh` directory is mounted into the container.
 
 3. Open:
 
@@ -106,9 +109,10 @@ http://localhost:3000
 ## Day-to-Day Commands
 
 ```bash
-npm run dev      # frontend + backend watch mode
-npm test         # test suite
-npm run build    # production build
+npm run dev           # frontend + backend watch mode
+npm test              # test suite
+npm run build         # production build
+npm run verify:phase7 # container hardening smoke (fresh volumes + persistence)
 ```
 
 During `npm run dev`, open `http://localhost:5173` (or `http://<your-host>:5173` from mobile).
@@ -118,8 +122,10 @@ During `npm run dev`, open `http://localhost:5173` (or `http://<your-host>:5173`
 
 - APP_PASSWORD missing:
   - Ensure .env exists and APP_PASSWORD is non-empty.
-- Docker file permission issues:
-  - Set HOST_UID and HOST_GID to your user IDs.
+- Docker secret issues:
+  - Ensure `SSH_PRIVATE_KEY_FILE` points to an existing private key readable by Docker Compose.
+- SSH host trust:
+  - Unknown SSH hosts are accepted automatically on first use and persisted in the `db` volume `known_hosts` file.
 
 ## Where To Go Next
 

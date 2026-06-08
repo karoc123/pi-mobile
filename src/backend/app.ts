@@ -23,6 +23,9 @@ import type {
   FileMoveResult,
   GitDiffResponse,
   GitSyncResult,
+  PiAuthLoginTokenRequest,
+  PiAuthLogoutRequest,
+  PiAuthStatusResponse,
   WorkspaceCloneRequest,
   WorkspaceCloneResult,
 } from "../shared/contracts.js";
@@ -33,6 +36,7 @@ import { FileService } from "./services/file-service.js";
 import { GitService } from "./services/git-service.js";
 import { LogService } from "./services/log-service.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
+import { PiAuthService, PiAuthServiceError } from "./services/pi-auth-service.js";
 import { RepositoryRuntimeService } from "./services/repository-runtime-service.js";
 import { CostService } from "./services/cost-service.js";
 import { ResourceHealthService } from "./services/resource-health-service.js";
@@ -50,6 +54,7 @@ type AppServices = {
   costService: CostService;
   resourceHealthService: ResourceHealthService;
   piAgentService: PiAgentService;
+  piAuthService: PiAuthService;
   serverStartedAt: Date;
 };
 
@@ -160,6 +165,50 @@ export function createApp(services: AppServices) {
     services.authService.logout(request.cookies?.[services.config.sessionCookieName]);
     response.clearCookie(services.config.sessionCookieName, { path: "/" });
     response.json({ authenticated: false });
+  });
+
+  app.get("/api/pi/auth/status", requireAuth(services), (_request, response) => {
+    response.json(services.piAuthService.getStatus() satisfies PiAuthStatusResponse);
+  });
+
+  app.post("/api/pi/auth/login-token", requireAuth(services), async (request, response) => {
+    const body = getBodyObject<PiAuthLoginTokenRequest>(request);
+    const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+    const token = typeof body.token === "string" ? body.token.trim() : "";
+
+    if (!provider || !token) {
+      throw new HttpError(400, "bad_request", "Provider and token are required.", { retriable: false });
+    }
+
+    try {
+      response.json(await services.piAuthService.loginToken(provider, token));
+    } catch (error) {
+      if (error instanceof PiAuthServiceError) {
+        const statusCode = error.code === "unknown_provider" ? 400 : 401;
+        throw new HttpError(statusCode, "validation_error", error.message, { retriable: false });
+      }
+
+      throw error;
+    }
+  });
+
+  app.post("/api/pi/auth/logout", requireAuth(services), (request, response) => {
+    const body = getBodyObject<PiAuthLogoutRequest>(request);
+    const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+
+    if (!provider) {
+      throw new HttpError(400, "bad_request", "Provider is required.", { retriable: false });
+    }
+
+    try {
+      response.json(services.piAuthService.logout(provider));
+    } catch (error) {
+      if (error instanceof PiAuthServiceError && error.code === "unknown_provider") {
+        throw new HttpError(400, "validation_error", error.message, { retriable: false });
+      }
+
+      throw error;
+    }
   });
 
   app.get("/api/workspaces/browse", requireAuth(services), async (request, response) => {

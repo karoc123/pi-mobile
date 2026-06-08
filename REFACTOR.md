@@ -97,6 +97,8 @@ Abnahme:
 
 Ziel: Host-Mount-Freiheit im Laufbetrieb.
 
+Status: abgeschlossen
+
 Dateien:
 
 - `Dockerfile`
@@ -135,6 +137,14 @@ Abnahme:
 
 Ziel: clone, pull, push laufen ohne interaktive SSH Prompts.
 
+Status: abgeschlossen
+
+Fortschritt:
+
+- zentrale Git-Env-Fabrik fuer SSH + optionale Commit-Identity ist angelegt
+- `WorkspaceService.cloneRepo` und `GitService` nutzen denselben Runtime-Env-Pfad
+- fokussierte Tests fuer clone sowie pull/push mit `GIT_SSH_COMMAND` sind angelegt
+
 Dateien:
 
 - `src/backend/services/workspace-service.ts`
@@ -167,6 +177,8 @@ Abnahme:
 ## Phase 3: Pi Token Login API im Backend
 
 Ziel: API-Endpunkte fuer Token-Login, Logout und Status.
+
+Status: abgeschlossen
 
 Dateien:
 
@@ -205,6 +217,8 @@ Abnahme:
 
 Ziel: Token-Login direkt aus der bestehenden UI-Steuerung.
 
+Status: abgeschlossen
+
 Dateien:
 
 - `src/frontend/components/AppMenu.svelte`
@@ -241,6 +255,16 @@ Abnahme:
 ## Phase 5: Tests (TDD-orientiert)
 
 Ziel: Refactor durch Tests absichern, inklusive Kompatibilitaet bestehender Flows.
+
+Status: abgeschlossen
+
+Fortschritt:
+
+- Backend API-Service-Tests fuer Pi Token Login/Logout/Status sind vorhanden
+- App-Route-Tests decken neue auth-geschuetzte Endpoints ab
+- SSH Policy Tests fuer clone/pull/push sind vorhanden
+- Frontend Component-Tests decken Menu-Action und Pi-Login-Modal-Zustaende ab
+- Mobile E2E-Spec enthaelt Pi-Login-Modal-Flow (oeffnen + token submit)
 
 ### Backend Unit/Integration
 
@@ -288,6 +312,8 @@ Abnahme:
 
 Ziel: keine Diskrepanz zwischen Architektur, README und Runtime.
 
+Status: abgeschlossen
+
 Dateien:
 
 - `README.md`
@@ -323,6 +349,14 @@ Abnahme:
 
 Ziel: stabiler Betrieb ueber Rebuild/Restart.
 
+Status: abgeschlossen
+
+Fortschritt:
+
+- lokaler E2E Smoke (`npm run test:e2e`) laeuft mit aktualisierten production-env Overrides fuer Testpfade
+- reproduzierbarer Container-Hardening-Check vorhanden: `npm run verify:phase7`
+- Script prueft Fresh Start, Clone/Pull/Push-Routen, Persistenz (workspace/db/pi) und Pi-Auth-Rehydrate nach Restart
+
 Checks:
 
 1. Fresh start
@@ -349,7 +383,7 @@ Abnahme:
 
 - alle oben genannten checks bestanden und dokumentiert.
 
-## 6. API Aenderungen (geplant)
+## 6. API Aenderungen
 
 Neue Endpoints:
 
@@ -369,7 +403,7 @@ Contract-Hinweis:
 - SSH key material nur in runtime path halten, nicht persistieren.
 - known_hosts bewusst persistent im `db`-Volume.
 
-## 8. Offene Huerden: Status nach Entscheidungen
+## 8. Entscheidungen: Status nach Umsetzung
 
 1. SSH Trust UX
 
@@ -381,13 +415,13 @@ Contract-Hinweis:
 
 3. Pi Login im UI
 
-- Status: offen, aber klar implementierbar (Token-only).
+- Status: geloest, Token-only Login ist im Menu integriert.
 
 4. Host-Unabhaengigkeit
 
 - Status: geloest im Zielbetrieb nach Phase 1.
 
-## 9. Umsetzungsreihenfolge (empfohlen)
+## 9. Umsetzungsreihenfolge (abgeschlossen)
 
 1. Phase 1 (Container/Compose/EntryPoint)
 2. Phase 2 (Git SSH policy)

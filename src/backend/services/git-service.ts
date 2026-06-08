@@ -12,7 +12,12 @@ const DIFF_ARGS = ["--no-ext-diff", "--patch", "--unified=3", "--no-color"];
 export class GitService {
   private readonly gitEnv?: NodeJS.ProcessEnv;
 
-  constructor(identity?: GitIdentity) {
+  constructor(identity?: GitIdentity, gitEnv?: NodeJS.ProcessEnv) {
+    if (gitEnv) {
+      this.gitEnv = gitEnv;
+      return;
+    }
+
     if (identity) {
       this.gitEnv = {
         ...process.env,
@@ -25,11 +30,7 @@ export class GitService {
   }
 
   async getDiff(repo: SelectedRepo) {
-    const [stagedDiff, unstagedDiff, untrackedDiff] = await Promise.all([
-      this.getStagedDiff(repo),
-      this.getUnstagedDiff(repo),
-      this.getUntrackedDiff(repo),
-    ]);
+    const [stagedDiff, unstagedDiff, untrackedDiff] = await Promise.all([this.getStagedDiff(repo), this.getUnstagedDiff(repo), this.getUntrackedDiff(repo)]);
 
     const stagedFiles = parseUnifiedDiff(stagedDiff, { staged: true, idPrefix: "staged" });
     const unstagedFiles = parseUnifiedDiff([unstagedDiff, untrackedDiff].filter(Boolean).join("\n"), {
@@ -154,11 +155,7 @@ export class GitService {
 
     const diffs = await Promise.all(
       untrackedPaths.map(async (relativePath) => {
-        const result = await this.runGit(
-          repo,
-          ["diff", ...DIFF_ARGS, "--", "/dev/null", relativePath],
-          { allowedExitCodes: [0, 1] },
-        );
+        const result = await this.runGit(repo, ["diff", ...DIFF_ARGS, "--", "/dev/null", relativePath], { allowedExitCodes: [0, 1] });
         return result.stdout;
       }),
     );
@@ -216,10 +213,7 @@ function parseLeftRightCommitCounts(rawOutput: string): [behind: number, ahead: 
   const behind = Number.parseInt(behindRaw, 10);
   const ahead = Number.parseInt(aheadRaw, 10);
 
-  return [
-    Number.isFinite(behind) ? behind : 0,
-    Number.isFinite(ahead) ? ahead : 0,
-  ];
+  return [Number.isFinite(behind) ? behind : 0, Number.isFinite(ahead) ? ahead : 0];
 }
 
 type ParseDiffOptions = {
@@ -335,9 +329,7 @@ function mergeDiffFiles(...groups: DiffFile[][]): DiffFile[] {
     }
   }
 
-  return orderedKeys
-    .map((key) => merged.get(key))
-    .filter((file): file is DiffFile => Boolean(file));
+  return orderedKeys.map((key) => merged.get(key)).filter((file): file is DiffFile => Boolean(file));
 }
 
 function extractDiffPath(headerLines: string[], prefix: "--- " | "+++ ") {
