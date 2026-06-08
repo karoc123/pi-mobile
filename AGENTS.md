@@ -66,7 +66,6 @@ All contributions must adhere to principles that ensure the system remains extre
 
 ## Style Instructions
 
-- **Minimal Diffs**: Prefer targeted, clean updates. Refrain from massive refactoring loops unless specifically prompted.
 - **Naming Conventions**: Use crisp, domain-driven terminology matching the spec (e.g., `HunkPayload`, `AgentSession`, `RevertService`).
 - **Comments**: Write self-documenting code. Use comments exclusively to document _Why_ a complex regular expression or Git binary pipeline pipe was introduced, not _What_ the syntax does.
 
