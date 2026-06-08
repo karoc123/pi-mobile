@@ -27,12 +27,20 @@ services:
       PI_MODEL: ${PI_MODEL:-}
       PI_THINKING_LEVEL: ${PI_THINKING_LEVEL:-}
     volumes:
-      - ./.docker-volumes/workspace:/workspace
-      - ./.docker-volumes/db:/data/db
-      - ./.docker-volumes/pi:/data/pi
+      - workspace:/workspace
+      - db:/data/db
+      - pi:/data/pi
     secrets:
       - source: ssh_private_key
         target: /run/secrets/ssh_private_key
+
+volumes:
+  workspace:
+    name: pi-mobile-workspace
+  db:
+    name: pi-mobile-db
+  pi:
+    name: pi-mobile-pi
 
 secrets:
   ssh_private_key:

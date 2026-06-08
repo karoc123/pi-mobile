@@ -16,7 +16,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "verify:phase7": "bash scripts/phase7-container-smoke.sh"
+    "verify:container": "bash scripts/container-smoke.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

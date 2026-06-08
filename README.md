@@ -1,134 +1,119 @@
 # PiMobile
 
-PiMobile turns a local Git workspace into a mobile-first coding cockpit.
+PiMobile turns a local Git workspace into a **mobile-first coding cockpit** (chat, diffs, edits, commits) with a password-protected web UI.
 
-You can run it either:
+## Quickstart (Docker, recommended)
 
-- locally with npm start
-- containerized with docker compose up
-
-The goal is simple: clone, configure once, and start working from your phone in minutes.
-
-## Why This Repo
-
-- Fast local setup for Raspberry Pi and Linux hosts
-- Password-gated web UI for chat, diffs, and editing
-- Works against real repositories on your filesystem
-
-## Prerequisites
-
-- Node.js 22+
-- npm 10+
-- Git
-- Existing pi.dev auth under ~/.pi/agent
-
-If pi.dev is not authenticated yet:
+If you just want it running fast:
 
 ```bash
-npx @earendil-works/pi-coding-agent
-```
-
-Then run /login once and exit.
-
-## 5-Minute Local Quickstart
-
-1. Clone and enter the repo.
-
-```bash
-git clone git@github.com:karoc123/pi-mobile.git
+git clone https://github.com/karoc123/pi-mobile.git
 cd pi-mobile
-```
-
-2. Create environment file.
-
-```bash
 cp .env.example .env
+# edit .env (minimum: APP_PASSWORD)
+docker compose up --build
 ```
 
-3. Edit .env and set at minimum:
+Open: <http://localhost:3000>
 
-```env
-APP_PASSWORD=your-local-password
-WORKSPACE_ROOT=/home/your-user/dev
-PI_AGENT_DIR=/home/your-user/.pi/agent
-PI_SESSION_DIR=/home/your-user/.pi/agent/sessions
-```
+Log in with `APP_PASSWORD`, clone a repo, start coding.
 
-Optional but recommended for commits:
+---
 
-```env
-GIT_USER_NAME=Your Name
-GIT_USER_EMAIL=you@example.com
-```
+## Why Docker is the default path
 
-4. Install and start.
+- No local Node/npm setup required
+- Reproducible runtime
+- Isolated state in named Docker volumes
+- No bind-mount of your full `~/.ssh` or `~/.pi` directories
 
-```bash
-npm install
-npm start
-```
+PiMobile persists data in named volumes:
 
-5. Open:
+- `workspace` (`pi-mobile-workspace`) → repositories + file edits
+- `db` (`pi-mobile-db`) → `costs.sqlite`, logs, `known_hosts`
+- `pi` (`pi-mobile-pi`) → Pi auth/session data
 
-```text
-http://localhost:3000
-```
+---
 
-Login with APP_PASSWORD, select a repository, and start.
+## Required `.env` values for Docker
 
-## Docker Quickstart
-
-1. Create .env from template and set at minimum:
+At minimum:
 
 ```env
 APP_PASSWORD=your-local-password
 SESSION_COOKIE_SECURE=false
-SSH_PRIVATE_KEY_FILE=/home/your-user/.ssh/id_ed25519
+SSH_PRIVATE_KEY_FILE=/home/your-user/.ssh/id_ed25519 # if you want to use Git SSH auth (recommended)
 ```
 
-2. Build and run:
+Optional:
+
+```env
+HOST_PORT=3000
+DEFAULT_REPO=
+GIT_USER_NAME=Your Name
+GIT_USER_EMAIL=you@example.com
+PI_PROVIDER=
+PI_MODEL=
+PI_THINKING_LEVEL=
+```
+
+---
+
+## Local dev mode (alternative, no Docker)
+
+> If Pi is not authenticated yet:
+>
+> ```bash
+> npx @earendil-works/pi-coding-agent
+> ```
+>
+> Then run `/login` once and exit.
+
+Use this if you want hot reload and to contribute to PiMobile itself or use self evolving Pi agents:
 
 ```bash
-docker compose up --build
+git clone https://github.com/karoc123/pi-mobile.git
+cd pi-mobile
+cp .env.example .env
+npm install
+npm run dev
 ```
 
-PiMobile now keeps runtime state in three named Docker volumes:
+- Frontend (Vite): <http://localhost:5173>
+- Backend/API: <http://localhost:3000>
 
-- `workspace` for cloned repositories and file edits
-- `db` for `costs.sqlite`, logs, and `known_hosts`
-- `pi` for Pi auth, model metadata, and session files
-
-The SSH private key is injected as a Compose secret at startup and copied into the container runtime. No host workspace, `~/.pi`, or `~/.ssh` directory is mounted into the container.
-
-3. Open:
-
-```text
-http://localhost:3000
-```
-
-## Day-to-Day Commands
+Production local run:
 
 ```bash
-npm run dev           # frontend + backend watch mode
-npm test              # test suite
+npm start
+```
+
+---
+
+## Common commands
+
+```bash
+npm test              # unit/integration tests
+npm run test:e2e      # playwright e2e
 npm run build         # production build
-npm run verify:phase7 # container hardening smoke (fresh volumes + persistence)
+npm run verify:container # container hardening smoke test
 ```
 
-During `npm run dev`, open `http://localhost:5173` (or `http://<your-host>:5173` from mobile).
-`http://localhost:3000` remains the backend/API server and will redirect to Vite in development.
+---
 
-## Common First-Run Issues
+## Troubleshooting
 
-- APP_PASSWORD missing:
-  - Ensure .env exists and APP_PASSWORD is non-empty.
-- Docker secret issues:
-  - Ensure `SSH_PRIVATE_KEY_FILE` points to an existing private key readable by Docker Compose.
-- SSH host trust:
-  - Unknown SSH hosts are accepted automatically on first use and persisted in the `db` volume `known_hosts` file.
+- **APP_PASSWORD missing**
+  - Ensure `.env` exists and `APP_PASSWORD` is set.
+- **Docker secret error for SSH key**
+  - Ensure `SSH_PRIVATE_KEY_FILE` points to an existing readable private key.
+- **First SSH clone fails due to host trust**
+  - `known_hosts` is persisted in the `db` volume at `/data/db/known_hosts` after first acceptance.
 
-## Where To Go Next
+---
 
-- Architecture overview: docs/ARCHITECTURE.md
-- Product scope: docs/VISION.md
-- Runtime/domain context: CONTEXT.md
+## Docs
+
+- Architecture: `docs/ARCHITECTURE.md`
+- Product vision: `docs/VISION.md`
+- Runtime/domain context: `CONTEXT.md`
