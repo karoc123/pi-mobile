@@ -60,6 +60,7 @@
   let expandedTraceToolMap: Record<string, boolean> = {};
   let expandedMessageToolMap: Record<string, boolean> = {};
   let shouldAutoScroll = true;
+  let isNearBottom = true;
   let keyboardOpen = false;
   let composerFocused = false;
   let baseViewportHeight = 0;
@@ -99,7 +100,7 @@
   $: totalToolCount = toolBatches.reduce((sum, batch) => sum + batch.tools.length, 0);
   $: displayEntries = buildDisplayEntries(messages);
   $: transcriptSignature = buildTranscriptSignature(messages, displayEntries.length);
-  $: showComposerMeta = !keyboardOpen && !composerFocused && (shouldAutoScroll || runtimePhase !== 'idle' || canAbort || Boolean(lastError));
+  $: showComposerMeta = !keyboardOpen && (isNearBottom || runtimePhase !== 'idle' || canAbort || Boolean(lastError));
   $: normalizedDraftStorageScope = draftStorageScope.trim().length > 0 ? draftStorageScope.trim() : 'default';
   $: nextPromptDraftStorageKey = buildPromptDraftStorageKey(normalizedDraftStorageScope);
   $: runtimeSlashCommandSuggestions = toRuntimeSlashCommandSuggestions(availableCommands);
@@ -136,12 +137,16 @@
 
   onMount(() => {
     const handleWindowScroll = () => {
-      shouldAutoScroll = isNearViewportBottom();
+      refreshScrollPositionState();
     };
 
     const handleViewportChange = () => {
       updateViewportMetrics();
-      shouldAutoScroll = isNearViewportBottom();
+      refreshScrollPositionState();
+    };
+
+    const handlePointerRelease = () => {
+      refreshScrollPositionState();
     };
 
     const viewport = window.visualViewport;
@@ -150,6 +155,8 @@
     viewport?.addEventListener('scroll', handleViewportChange);
     window.addEventListener('scroll', handleWindowScroll, { passive: true });
     window.addEventListener('resize', handleViewportChange, { passive: true });
+    window.addEventListener('touchend', handlePointerRelease, { passive: true });
+    window.addEventListener('pointerup', handlePointerRelease, { passive: true });
 
     handleViewportChange();
 
@@ -164,6 +171,8 @@
       viewport?.removeEventListener('scroll', handleViewportChange);
       window.removeEventListener('scroll', handleWindowScroll);
       window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('touchend', handlePointerRelease);
+      window.removeEventListener('pointerup', handlePointerRelease);
       document.documentElement.removeAttribute('data-chat-keyboard');
 
       if (copiedEntryResetTimer !== null) {
@@ -249,14 +258,29 @@
     composerFocused = true;
     slashSuggestionsDismissed = false;
     updatePromptCursorPosition();
-    shouldAutoScroll = isNearViewportBottom();
+    refreshScrollPositionState();
   }
 
   function handleComposerBlur() {
     composerFocused = false;
     slashSuggestionsDismissed = false;
     updatePromptCursorPosition();
-    shouldAutoScroll = isNearViewportBottom();
+    refreshScrollPositionState();
+  }
+
+  function refreshScrollPositionState() {
+    const nearBottom = isNearViewportBottom();
+    isNearBottom = nearBottom;
+    shouldAutoScroll = nearBottom;
+  }
+
+  function handleSendPointerDown(event: PointerEvent) {
+    if (event.pointerType !== 'touch') {
+      return;
+    }
+
+    event.preventDefault();
+    submit();
   }
 
   async function selectSlashCommandSuggestion(suggestion: SlashCommandSuggestion) {
@@ -931,7 +955,13 @@
           </button>
         {/if}
       </div>
-      <button class="primary-button send-button" type="button" on:click={submit} disabled={prompt.trim().length === 0 || (showKeepRunning && runtimePhase !== 'idle')}>
+      <button
+        class="primary-button send-button"
+        type="button"
+        on:pointerdown={handleSendPointerDown}
+        on:click={submit}
+        disabled={prompt.trim().length === 0 || (showKeepRunning && runtimePhase !== 'idle')}
+      >
         <span class="send-button-model">{sendButtonModel}</span>
       </button>
     </div>
