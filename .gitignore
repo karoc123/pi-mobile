@@ -10,3 +10,6 @@ playwright-report/
 test-results/
 .vitest-cache/
 .docker-volumes/
+db/
+workspace/
+pi/

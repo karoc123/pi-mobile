@@ -27,9 +27,9 @@ services:
       PI_MODEL: ${PI_MODEL:-}
       PI_THINKING_LEVEL: ${PI_THINKING_LEVEL:-}
     volumes:
-      - workspace:/workspace
-      - db:/data/db
-      - pi:/data/pi
+      - ./workspace:/workspace
+      - ./db:/data/db
+      - ./pi:/data/pi
     secrets:
       - source: ssh_private_key
         target: /run/secrets/ssh_private_key
