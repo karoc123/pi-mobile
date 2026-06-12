@@ -515,7 +515,7 @@ export type WebsocketEnvelope =
     }
   | {
       type: "agent_status";
-      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "runtimePhase" | "pendingMessageCount" | "isCompacting" | "isRetrying" | "isBashRunning" | "lastError" | "repo" | "usage" | "interactivePrompt">;
+      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "runtimePhase" | "pendingMessageCount" | "isCompacting" | "isRetrying" | "isBashRunning" | "lastError" | "repo" | "usage">;
     }
   | {
       type: "chat_message_added";

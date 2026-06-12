@@ -398,6 +398,9 @@ export class PiAgentService {
       throw new Error("The prompt was rejected by the pi runtime.");
     }
 
+    // Clear any pending interactive prompt – the user is responding (or starting fresh).
+    this.interactivePrompt = null;
+
     const userMessage: ChatMessage = {
       id: randomUUID(),
       role: "user",
@@ -699,7 +702,6 @@ export class PiAgentService {
       lastError: this.lastError,
       repo: this.currentRepo,
       usage: this.getUsageSummary(),
-      interactivePrompt: this.interactivePrompt,
     });
   }
 

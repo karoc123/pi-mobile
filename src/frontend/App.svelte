@@ -236,6 +236,7 @@
   let clearingLogs = false;
 
   let systemStatusVisible = false;
+  let dismissedPromptId: string | null = null;
 
   onMount(() => {
     initializeTheme();
@@ -768,11 +769,17 @@
   function handleSocketMessage(event: WebsocketEnvelope) {
     if (event.type === 'connected') {
       const mergedUsage = coalesceUsageCost(event.payload.usage, agentSnapshot.usage);
+      // On reconnect, do not restore a prompt the user already dismissed.
+      const serverPrompt = event.payload.interactivePrompt ?? null;
+      const interactivePrompt =
+        serverPrompt && serverPrompt.promptId === dismissedPromptId
+          ? null
+          : serverPrompt;
 
       agentSnapshot = {
         ...event.payload,
         usage: mergedUsage,
-        interactivePrompt: event.payload.interactivePrompt ?? null,
+        interactivePrompt,
       };
       currentRepo = event.payload.repo;
       syncToolTraceFromSnapshot(event.payload);
@@ -783,14 +790,15 @@
 
     if (event.type === 'agent_status') {
       const mergedUsage = coalesceUsageCost(event.payload.usage, agentSnapshot.usage);
-      const interactivePrompt = event.payload.interactivePrompt ?? agentSnapshot.interactivePrompt;
 
+      // agent_status intentionally excludes interactivePrompt.
+      // Interactive prompts arrive exclusively via the dedicated
+      // interactive_prompt event (and the connected snapshot on reconnect).
       agentSnapshot = {
         ...agentSnapshot,
         ...event.payload,
         usage: mergedUsage,
         repo: event.payload.repo ?? agentSnapshot.repo,
-        interactivePrompt,
       };
       currentRepo = event.payload.repo ?? currentRepo;
 
@@ -844,15 +852,13 @@
     }
 
     if (event.type === 'interactive_prompt') {
-      // Nur anzeigen, wenn Agent idle ist (sonst überschreibt seine
-      // Antwort auf unseren Submit die gerade beantwortete Karte)
-      if (agentSnapshot.runtimePhase === 'idle') {
-        dismissedPromptId = null;
-        agentSnapshot = {
-          ...agentSnapshot,
-          interactivePrompt: event.payload,
-        };
-      }
+      // Always accept the dedicated prompt event (it represents a fresh ask_user call).
+      // Clear any previous dismiss so it can be shown.
+      dismissedPromptId = null;
+      agentSnapshot = {
+        ...agentSnapshot,
+        interactivePrompt: event.payload,
+      };
       return;
     }
 
@@ -1360,6 +1366,7 @@
 
   /** Prüft ob ein InteractivePrompt angezeigt werden soll (nicht dismissed). */
   function handleGlobalSubmit(prompt: string) {
+    dismissedPromptId = null;
     if (agentSnapshot.interactivePrompt) {
       agentSnapshot = { ...agentSnapshot, interactivePrompt: null };
     }
@@ -2310,6 +2317,7 @@
           on:openCommands={() => void openCommandPalette()}
           on:openModelCommands={() => void openCommandPalette('/model')}
           on:interactiveDismiss={() => {
+            dismissedPromptId = agentSnapshot.interactivePrompt?.promptId ?? null;
             agentSnapshot = { ...agentSnapshot, interactivePrompt: null };
           }}
         />
