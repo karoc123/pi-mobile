@@ -617,6 +617,7 @@ export class PiAgentService {
       const prompt = parseInteractivePromptArgs(event.args);
 
       if (prompt) {
+        this.interactivePrompt = prompt;
         this.broadcaster.interactivePrompt(prompt);
       } else {
         this.logger.warn("Invalid ask_user tool arguments – skipping interactive prompt.", {
@@ -626,11 +627,11 @@ export class PiAgentService {
         });
       }
 
-      // Still record the tool activity so it appears in the trace
+      // Record the tool activity so it appears in the trace
       const tool: ToolActivity = {
         id: event.toolCallId,
         toolName: event.toolName,
-        status: "complete",
+        status: "running",
         detail: `ask_user: ${summarizePayload(event.args, null)}`,
       };
 
