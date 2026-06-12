@@ -162,7 +162,6 @@
 
   let agentSnapshot: AgentSnapshot = emptyAgentSnapshot;
   let localSystemMessages: ChatMessage[] = [];
-  let dismissedPromptId: string | null = null;
   let chatMessages: ChatMessage[] = [];
   let toolTraceBatches: ToolTraceBatch[] = [];
   let toolTraceBoundary = 0;
@@ -773,7 +772,7 @@
       agentSnapshot = {
         ...event.payload,
         usage: mergedUsage,
-        interactivePrompt: shouldShowInteractivePrompt(event.payload.interactivePrompt) ? event.payload.interactivePrompt : null,
+        interactivePrompt: event.payload.interactivePrompt ?? null,
       };
       currentRepo = event.payload.repo;
       syncToolTraceFromSnapshot(event.payload);
@@ -784,7 +783,7 @@
 
     if (event.type === 'agent_status') {
       const mergedUsage = coalesceUsageCost(event.payload.usage, agentSnapshot.usage);
-      const interactivePrompt = shouldShowInteractivePrompt(event.payload.interactivePrompt) ? event.payload.interactivePrompt : agentSnapshot.interactivePrompt;
+      const interactivePrompt = event.payload.interactivePrompt ?? agentSnapshot.interactivePrompt;
 
       agentSnapshot = {
         ...agentSnapshot,
@@ -845,8 +844,10 @@
     }
 
     if (event.type === 'interactive_prompt') {
-      if (shouldShowInteractivePrompt(event.payload)) {
-        dismissedPromptId = null; // Neuer Prompt → alten Dismiss-Status löschen
+      // Nur anzeigen, wenn Agent idle ist (sonst überschreibt seine
+      // Antwort auf unseren Submit die gerade beantwortete Karte)
+      if (agentSnapshot.runtimePhase === 'idle') {
+        dismissedPromptId = null;
         agentSnapshot = {
           ...agentSnapshot,
           interactivePrompt: event.payload,
@@ -1358,17 +1359,8 @@
   }
 
   /** Prüft ob ein InteractivePrompt angezeigt werden soll (nicht dismissed). */
-  function shouldShowInteractivePrompt(prompt: InteractivePrompt | null | undefined): boolean {
-    if (!prompt) return false;
-    if (dismissedPromptId && prompt.promptId === dismissedPromptId) return false;
-    return true;
-  }
-
   function handleGlobalSubmit(prompt: string) {
-    // Bei interaktiven Antworten: PromptId merken, damit WS-Broadcasts
-    // mit demselben Prompt ignoriert werden
     if (agentSnapshot.interactivePrompt) {
-      dismissedPromptId = agentSnapshot.interactivePrompt.promptId;
       agentSnapshot = { ...agentSnapshot, interactivePrompt: null };
     }
     void sendPrompt(prompt);
