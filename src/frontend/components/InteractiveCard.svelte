@@ -7,6 +7,7 @@
     onDismiss: () => void;
   } = $props();
 
+  let visible = $state(true);
   let answers: Record<string, string | string[]> = $state({});
   let freeTextValues: Record<string, string> = $state({});
   let showFreeText: Record<string, boolean> = $state({});
@@ -65,6 +66,8 @@
       lines.push(`- ${q.label} → ${formatValue(val)}`);
     }
 
+    // Karte sofort ausblenden und Parent benachrichtigen
+    visible = false;
     onSubmit(lines.join('\n'));
   }
 
@@ -74,6 +77,7 @@
   }
 </script>
 
+{#if visible}
 <section class="interactive-card">
   <header class="interactive-header">
     <span class="interactive-icon" aria-hidden="true">🤔</span>
@@ -155,6 +159,7 @@
     </button>
   </footer>
 </section>
+{/if}
 
 <style>
   .interactive-card {
