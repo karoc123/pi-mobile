@@ -15,9 +15,11 @@ export const askUserTool = defineTool({
   description: "Ask the user a structured multiple-choice question (or multiple questions at once). Use this when you need the user to pick from predefined options.",
   promptSnippet: "ask_user: Ask structured multiple-choice questions to the user",
   promptGuidelines: [
-    "Use `ask_user` to present the user with a structured question that has predefined answers.",
+    "Use `ask_user` ONCE per question set. After calling it, wait for the user's response before proceeding.",
+    "Call `ask_user` only when you need the user to pick from predefined options.",
     "Provide a clear title for the question group and at least one option per question.",
     "If applicable, set allowFreeText: true so the user can type a custom answer.",
+    "After the user responds, do NOT call `ask_user` again with the same questions.",
   ],
   parameters: Type.Object({
     title: Type.String({
@@ -66,8 +68,9 @@ export const askUserTool = defineTool({
     // and broadcast via WebSocket as an interactive_prompt event.
     // The handler here just returns a confirmation.
     return {
-      content: [{ type: "text", text: `Interactive prompt "${params.title}" sent. Waiting for response...` }],
+      content: [{ type: "text", text: `Interactive prompt "${params.title}" sent to user. Waiting for response...` }],
       details: undefined,
+      terminate: true,
     };
   },
 });
