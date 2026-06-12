@@ -1,51 +1,57 @@
 <script lang="ts">
-  import type { InteractivePrompt, InteractiveResponse, InteractiveAnswer } from '../../../src/shared/contracts.js';
+  import type { InteractivePrompt, InteractiveAnswer } from '../../../src/shared/contracts.js';
 
-  export let prompt: InteractivePrompt;
-  export let onSubmit: (response: InteractiveResponse) => void = () => {};
-  export let onDismiss: () => void = () => {};
+  let { prompt, onSubmit, onDismiss }: {
+    prompt: InteractivePrompt;
+    onSubmit: (formattedText: string) => void;
+    onDismiss: () => void;
+  } = $props();
 
-  let answers: Record<string, string | string[]> = {};
-  let freeTextValues: Record<string, string> = {};
-  let showFreeText: Record<string, boolean> = {};
-  let submitted = false;
+  let answers: Record<string, string | string[]> = $state({});
+  let freeTextValues: Record<string, string> = $state({});
+  let showFreeText: Record<string, boolean> = $state({});
+  let submitted = $state(false);
+
+  function formatValue(value: string | string[]): string {
+    if (Array.isArray(value)) return value.filter((v) => v.trim().length > 0).join(', ');
+    return value;
+  }
 
   function selectOption(questionId: string, option: string, multiple?: boolean) {
     if (submitted) return;
 
     if (multiple) {
-      const current = (answers[questionId] as string[]) || [];
+      const current: string[] = Array.isArray(answers[questionId]) ? (answers[questionId] as string[]) : [];
       const next = current.includes(option)
         ? current.filter((o) => o !== option)
         : [...current, option];
-      answers = { ...answers, [questionId]: next };
+      answers[questionId] = next;
     } else {
-      answers = { ...answers, [questionId]: option };
+      answers[questionId] = option;
     }
-    showFreeText = { ...showFreeText, [questionId]: false };
+    showFreeText[questionId] = false;
   }
 
   function isSelected(questionId: string, option: string, multiple?: boolean) {
     if (multiple) {
-      const current = (answers[questionId] as string[]) || [];
+      const current: string[] = Array.isArray(answers[questionId]) ? (answers[questionId] as string[]) : [];
       return current.includes(option);
     }
-    return answers[questionId] === option && !showFreeText[questionId];
+    return !showFreeText[questionId] && answers[questionId] === option;
   }
 
   function toggleFreeText(questionId: string) {
     if (submitted) return;
-    const nextVisible = !showFreeText[questionId];
-    showFreeText = { ...showFreeText, [questionId]: nextVisible };
-    if (nextVisible) {
-      answers = { ...answers, [questionId]: freeTextValues[questionId] || '' };
+    showFreeText[questionId] = !showFreeText[questionId];
+    if (showFreeText[questionId]) {
+      answers[questionId] = freeTextValues[questionId] || '';
     }
   }
 
   function handleFreeTextInput(questionId: string, value: string) {
-    freeTextValues = { ...freeTextValues, [questionId]: value };
+    freeTextValues[questionId] = value;
     if (showFreeText[questionId]) {
-      answers = { ...answers, [questionId]: value };
+      answers[questionId] = value;
     }
   }
 
@@ -53,15 +59,13 @@
     if (submitted) return;
     submitted = true;
 
-    const answerList: InteractiveAnswer[] = prompt.questions.map((q) => ({
-      questionId: q.id,
-      value: answers[q.id] !== undefined ? answers[q.id] : '',
-    }));
+    const lines: string[] = [`Antworten auf: "${prompt.title}"`, ''];
+    for (const q of prompt.questions) {
+      const val = answers[q.id] !== undefined ? answers[q.id] : '';
+      lines.push(`- ${q.label} → ${formatValue(val)}`);
+    }
 
-    onSubmit({
-      promptId: prompt.promptId,
-      answers: answerList,
-    });
+    onSubmit(lines.join('\n'));
   }
 
   function dismiss() {
@@ -93,7 +97,7 @@
               class="option-chip"
               type="button"
               disabled={submitted}
-              on:click={() => selectOption(question.id, option, question.multiple)}
+              onclick={() => selectOption(question.id, option, question.multiple)}
             >
               {#if isSelected(question.id, option, question.multiple)}
                 <span class="chip-check" aria-hidden="true">✓</span>
@@ -108,7 +112,7 @@
               class="option-chip option-chip-freetext"
               type="button"
               disabled={submitted}
-              on:click={() => toggleFreeText(question.id)}
+              onclick={() => toggleFreeText(question.id)}
             >
               {#if showFreeText[question.id]}
                 <span class="chip-check" aria-hidden="true">✓</span>
@@ -125,7 +129,7 @@
             placeholder={question.placeholder || 'Freitext eingeben...'}
             value={freeTextValues[question.id] || ''}
             disabled={submitted}
-            on:input={(e) => handleFreeTextInput(question.id, (e.target as HTMLInputElement).value)}
+            oninput={(e) => handleFreeTextInput(question.id, (e.target as HTMLInputElement).value)}
           />
         {/if}
       </div>
@@ -137,7 +141,7 @@
       class="primary-button submit-button"
       type="button"
       disabled={submitted}
-      on:click={submit}
+      onclick={submit}
     >
       {submitted ? 'Gesendet ✓' : 'Antwort senden'}
     </button>
@@ -145,7 +149,7 @@
       class="ghost-button compact dismiss-button"
       type="button"
       disabled={submitted}
-      on:click={dismiss}
+      onclick={dismiss}
     >
       abbrechen
     </button>

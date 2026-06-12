@@ -51,12 +51,12 @@
     openCommands: void;
     openModelCommands: void;
     newSession: void;
-    interactiveSubmit: { response: InteractiveResponse };
+    submit: { prompt: string };
     interactiveDismiss: void;
   }>();
 
-  function onSubmit(response: InteractiveResponse) {
-    dispatch('interactiveSubmit', { response });
+  function onSubmit(formattedText: string) {
+    dispatch('submit', { prompt: formattedText });
   }
 
   function onDismiss() {
