@@ -205,6 +205,7 @@ export type AgentSnapshot = {
   tools: ToolActivity[];
   lastError: string | null;
   usage: AgentUsage;
+  interactivePrompt: InteractivePrompt | null;
 };
 
 export type CostFilterOption = {
@@ -327,6 +328,11 @@ export type InteractiveQuestion = {
   options: string[];
   allowFreeText: boolean;
   placeholder?: string;
+  /**
+   * If true, the user can select multiple options.
+   * Defaults to false (single-select).
+   */
+  multiple?: boolean;
 };
 
 /** Vollständiger interaktiver Prompt */
@@ -343,9 +349,14 @@ export type InteractiveResponse = {
 };
 
 /** Antwort auf eine einzelne Frage */
+/**
+ * Antwort auf eine einzelne Frage.
+ * `value` ist ein String bei Single-Select oder Freitext,
+ * ein String-Array bei Multi-Select.
+ */
 export type InteractiveAnswer = {
   questionId: string;
-  value: string;
+  value: string | string[];
 };
 
 export type AgentThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -504,7 +515,7 @@ export type WebsocketEnvelope =
     }
   | {
       type: "agent_status";
-      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "runtimePhase" | "pendingMessageCount" | "isCompacting" | "isRetrying" | "isBashRunning" | "lastError" | "repo" | "usage">;
+      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "runtimePhase" | "pendingMessageCount" | "isCompacting" | "isRetrying" | "isBashRunning" | "lastError" | "repo" | "usage" | "interactivePrompt">;
     }
   | {
       type: "chat_message_added";

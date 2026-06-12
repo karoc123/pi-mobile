@@ -106,6 +106,7 @@
     tools: [],
     lastError: null,
     usage: emptyUsage,
+    interactivePrompt: null,
   };
 
   const emptyCostReport: CostReport = {
@@ -159,8 +160,6 @@
   let editorDirty = false;
   let savingFile = false;
   let creatingFile = false;
-
-  let interactivePrompt: InteractivePrompt | null = null;
 
   let agentSnapshot: AgentSnapshot = emptyAgentSnapshot;
   let localSystemMessages: ChatMessage[] = [];
@@ -843,7 +842,10 @@
     }
 
     if (event.type === 'interactive_prompt') {
-      interactivePrompt = event.payload;
+      agentSnapshot = {
+        ...agentSnapshot,
+        interactivePrompt: event.payload,
+      };
       return;
     }
 
@@ -855,7 +857,6 @@
       resetToolTraceBatches();
       localSystemMessages = [];
       clearKeepRunningGate();
-      interactivePrompt = null;
       agentSnapshot = {
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
@@ -1350,24 +1351,38 @@
     }
   }
 
-  function formatInteractiveResponse(response: InteractiveResponse, promptTitle: string) {
+  function formatAnswerValue(value: string | string[]): string {
+    if (Array.isArray(value)) {
+      return value.filter((v) => v.trim().length > 0).join(', ');
+    }
+    return value;
+  }
+
+  function formatInteractiveResponse(response: InteractiveResponse, promptTitle: string, promptQuestions: InteractivePrompt['questions']) {
     const lines: string[] = [];
     lines.push(`Antworten auf: "${promptTitle}"`);
     lines.push('');
 
     for (const answer of response.answers) {
-      const question = interactivePrompt?.questions.find((q) => q.id === answer.questionId);
+      const question = promptQuestions.find((q) => q.id === answer.questionId);
       const label = question?.label ?? answer.questionId;
-      lines.push(`- ${label} → ${answer.value}`);
+      const formattedValue = formatAnswerValue(answer.value);
+      lines.push(`- ${label} → ${formattedValue}`);
     }
 
     return lines.join('\n');
   }
 
   async function handleInteractiveSubmit(response: InteractiveResponse) {
-    const title = interactivePrompt?.title ?? 'Interaktive Fragen';
-    const answerText = formatInteractiveResponse(response, title);
-    interactivePrompt = null;
+    const currentPrompt = agentSnapshot.interactivePrompt;
+    if (!currentPrompt) return;
+
+    const title = currentPrompt.title;
+    const answerText = formatInteractiveResponse(response, title, currentPrompt.questions);
+    agentSnapshot = {
+      ...agentSnapshot,
+      interactivePrompt: null,
+    };
     await sendPrompt(answerText);
   }
 
@@ -1483,7 +1498,6 @@
           resetToolTraceBatches();
           localSystemMessages = [];
           clearKeepRunningGate();
-          interactivePrompt = null;
         }
 
         await loadCommandState();
@@ -2025,7 +2039,6 @@
     localSystemMessages = [];
     chatMessages = [];
     clearKeepRunningGate();
-    interactivePrompt = null;
     lastKnownGlobalCostUsd = 0;
     costReport = emptyCostReport;
     costRepoFilter = '';
@@ -2305,7 +2318,7 @@
           prefillToken={composerPrefillToken}
           availableCommands={commandState?.availableCommands ?? []}
           draftStorageScope={currentRepo.relativePath || currentRepo.absolutePath}
-          interactivePrompt={interactivePrompt}
+          interactivePrompt={agentSnapshot.interactivePrompt}
           on:submit={(event) => sendPrompt(event.detail.prompt)}
           on:abort={abortRun}
           on:keepRunning={allowKeepRunning}
@@ -2313,7 +2326,9 @@
           on:openCommands={() => void openCommandPalette()}
           on:openModelCommands={() => void openCommandPalette('/model')}
           on:interactiveSubmit={(event) => handleInteractiveSubmit(event.detail.response)}
-          on:interactiveDismiss={() => { interactivePrompt = null; }}
+          on:interactiveDismiss={() => {
+            agentSnapshot = { ...agentSnapshot, interactivePrompt: null };
+          }}
         />
       {:else if view === 'diff'}
         {#if diffViewComponent}

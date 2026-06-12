@@ -10,24 +10,53 @@
     dismiss: void;
   }>();
 
-  let answers: Record<string, string> = {};
+  let answers: Record<string, string | string[]> = {};
   let freeTextValues: Record<string, string> = {};
   let showFreeText: Record<string, boolean> = {};
   let submitted = false;
 
-  function isAnswered(questionId: string) {
-    return typeof answers[questionId] === 'string' && answers[questionId].trim().length > 0;
+  function hasAnyAnswer(questionId: string) {
+    const val = answers[questionId];
+    if (val === undefined || val === null) return false;
+    if (Array.isArray(val)) return val.length > 0;
+    return val.trim().length > 0;
   }
 
-  function selectOption(questionId: string, option: string) {
-    answers = {
-      ...answers,
-      [questionId]: option,
-    };
-    showFreeText = {
-      ...showFreeText,
-      [questionId]: false,
-    };
+  function selectOption(questionId: string, option: string, multiple?: boolean) {
+    if (multiple) {
+      // Multi-Select: toggle
+      const current = (answers[questionId] as string[]) || [];
+      const next = current.includes(option)
+        ? current.filter((o) => o !== option)
+        : [...current, option];
+      answers = {
+        ...answers,
+        [questionId]: next,
+      };
+      // Keep free text closed when using chips
+      showFreeText = {
+        ...showFreeText,
+        [questionId]: false,
+      };
+    } else {
+      // Single-Select: replace
+      answers = {
+        ...answers,
+        [questionId]: option,
+      };
+      showFreeText = {
+        ...showFreeText,
+        [questionId]: false,
+      };
+    }
+  }
+
+  function isSelected(questionId: string, option: string, multiple?: boolean) {
+    if (multiple) {
+      const current = (answers[questionId] as string[]) || [];
+      return current.includes(option);
+    }
+    return answers[questionId] === option && !showFreeText[questionId];
   }
 
   function toggleFreeText(questionId: string) {
@@ -38,11 +67,6 @@
     };
 
     if (nextVisible) {
-      answers = {
-        ...answers,
-        [questionId]: freeTextValues[questionId] || '',
-      };
-    } else {
       answers = {
         ...answers,
         [questionId]: freeTextValues[questionId] || '',
@@ -64,10 +88,10 @@
     }
   }
 
-  $: allAnswered = prompt.questions.every((q) => isAnswered(q.id));
+  $: hasAnyAnswerInForm = prompt.questions.some((q) => hasAnyAnswer(q.id));
 
   function submit() {
-    if (!allAnswered || submitted) {
+    if (submitted) {
       return;
     }
 
@@ -75,7 +99,7 @@
 
     const answerList: InteractiveAnswer[] = prompt.questions.map((q) => ({
       questionId: q.id,
-      value: answers[q.id] || '',
+      value: answers[q.id] !== undefined ? answers[q.id] : '',
     }));
 
     dispatch('submit', {
@@ -104,16 +128,21 @@
   <div class="interactive-questions">
     {#each prompt.questions as question (question.id)}
       <div class="interactive-question">
-        <p class="interactive-label">{question.label}</p>
+        <p class="interactive-label">
+          {question.label}
+          {#if question.multiple}
+            <span class="interactive-hint">(Mehrfachauswahl)</span>
+          {/if}
+        </p>
 
         <div class="interactive-options">
           {#each question.options as option (option)}
             <button
-              class:selected={answers[question.id] === option && !showFreeText[question.id]}
+              class:selected={isSelected(question.id, option, question.multiple)}
               class="option-chip"
               type="button"
               disabled={submitted}
-              on:click={() => selectOption(question.id, option)}
+              on:click={() => selectOption(question.id, option, question.multiple)}
             >
               {option}
             </button>
@@ -150,7 +179,7 @@
     <button
       class="primary-button submit-button"
       type="button"
-      disabled={!allAnswered || submitted}
+      disabled={submitted}
       on:click={submit}
     >
       {submitted ? 'Gesendet ✓' : 'Antwort senden'}
@@ -215,6 +244,13 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--terminal-ink);
+  }
+
+  .interactive-hint {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--terminal-muted);
+    font-style: italic;
   }
 
   .interactive-options {

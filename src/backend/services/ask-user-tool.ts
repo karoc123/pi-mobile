@@ -42,6 +42,12 @@ export const askUserTool = defineTool({
           description: "Whether the user can type a custom answer instead of picking an option",
           default: false,
         }),
+        multiple: Type.Optional(
+          Type.Boolean({
+            description: "If true, the user can select multiple options",
+            default: false,
+          }),
+        ),
         placeholder: Type.Optional(
           Type.String({
             description: "Placeholder text for the free-text input field",

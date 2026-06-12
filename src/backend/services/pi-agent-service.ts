@@ -33,6 +33,7 @@ export class PiAgentService {
   private tools: ToolActivity[] = [];
   private lastError: string | null = null;
   private activeAssistantMessageId: string | null = null;
+  private interactivePrompt: InteractivePrompt | null = null;
   private readonly broadcaster: PiAgentBroadcaster;
   private readonly mockAdapter = new PiAgentMockAdapter();
   private readonly sessionAdapter: PiAgentSessionAdapter;
@@ -68,6 +69,7 @@ export class PiAgentService {
       tools: this.tools,
       lastError: this.lastError,
       usage: this.getUsageSummary(),
+      interactivePrompt: this.interactivePrompt,
     };
   }
 
@@ -345,6 +347,7 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
+    this.interactivePrompt = null;
 
     if (this.config.piMockMode) {
       this.mockAdapter.resetForRepoSelection();
@@ -431,6 +434,7 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
+    this.interactivePrompt = null;
 
     if (this.config.piMockMode) {
       this.mockAdapter.resetForNewSession();
@@ -694,6 +698,7 @@ export class PiAgentService {
       lastError: this.lastError,
       repo: this.currentRepo,
       usage: this.getUsageSummary(),
+      interactivePrompt: this.interactivePrompt,
     });
   }
 
@@ -1033,6 +1038,7 @@ function parseInteractivePromptArgs(args: unknown): InteractivePrompt | null {
       label: qRaw.label.trim(),
       options: qRaw.options as string[],
       allowFreeText: qRaw.allowFreeText === true,
+      multiple: qRaw.multiple === true,
       placeholder: typeof qRaw.placeholder === "string" && qRaw.placeholder.trim().length > 0 ? qRaw.placeholder.trim() : undefined,
     });
   }
