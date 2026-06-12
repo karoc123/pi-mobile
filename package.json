@@ -36,14 +36,15 @@
     "marked": "^18.0.4",
     "simple-git": "^3.36.0",
     "svelte": "^5.55.10",
+    "typebox": "^1.2.8",
     "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/svelte": "^5.3.1",
-    "@playwright/test": "^1.56.1",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/node": "^25.9.1",
