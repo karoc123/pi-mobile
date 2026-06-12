@@ -162,6 +162,7 @@
 
   let agentSnapshot: AgentSnapshot = emptyAgentSnapshot;
   let localSystemMessages: ChatMessage[] = [];
+  let dismissedPromptId: string | null = null;
   let chatMessages: ChatMessage[] = [];
   let toolTraceBatches: ToolTraceBatch[] = [];
   let toolTraceBoundary = 0;
@@ -772,6 +773,7 @@
       agentSnapshot = {
         ...event.payload,
         usage: mergedUsage,
+        interactivePrompt: shouldShowInteractivePrompt(event.payload.interactivePrompt) ? event.payload.interactivePrompt : null,
       };
       currentRepo = event.payload.repo;
       syncToolTraceFromSnapshot(event.payload);
@@ -782,12 +784,14 @@
 
     if (event.type === 'agent_status') {
       const mergedUsage = coalesceUsageCost(event.payload.usage, agentSnapshot.usage);
+      const interactivePrompt = shouldShowInteractivePrompt(event.payload.interactivePrompt) ? event.payload.interactivePrompt : agentSnapshot.interactivePrompt;
 
       agentSnapshot = {
         ...agentSnapshot,
         ...event.payload,
         usage: mergedUsage,
-        repo: event.payload.repo ?? agentSnapshot.repo
+        repo: event.payload.repo ?? agentSnapshot.repo,
+        interactivePrompt,
       };
       currentRepo = event.payload.repo ?? currentRepo;
 
@@ -841,10 +845,13 @@
     }
 
     if (event.type === 'interactive_prompt') {
-      agentSnapshot = {
-        ...agentSnapshot,
-        interactivePrompt: event.payload,
-      };
+      if (shouldShowInteractivePrompt(event.payload)) {
+        dismissedPromptId = null; // Neuer Prompt → alten Dismiss-Status löschen
+        agentSnapshot = {
+          ...agentSnapshot,
+          interactivePrompt: event.payload,
+        };
+      }
       return;
     }
 
@@ -1350,10 +1357,18 @@
     }
   }
 
+  /** Prüft ob ein InteractivePrompt angezeigt werden soll (nicht dismissed). */
+  function shouldShowInteractivePrompt(prompt: InteractivePrompt | null | undefined): boolean {
+    if (!prompt) return false;
+    if (dismissedPromptId && prompt.promptId === dismissedPromptId) return false;
+    return true;
+  }
+
   function handleGlobalSubmit(prompt: string) {
-    // InteractiveCard- und Composer-Submits landen hier
-    // Bei interaktiven Antworten vorher den Prompt clearen
+    // Bei interaktiven Antworten: PromptId merken, damit WS-Broadcasts
+    // mit demselben Prompt ignoriert werden
     if (agentSnapshot.interactivePrompt) {
+      dismissedPromptId = agentSnapshot.interactivePrompt.promptId;
       agentSnapshot = { ...agentSnapshot, interactivePrompt: null };
     }
     void sendPrompt(prompt);
@@ -2015,6 +2030,7 @@
     localSystemMessages = [];
     chatMessages = [];
     clearKeepRunningGate();
+    dismissedPromptId = null;
     lastKnownGlobalCostUsd = 0;
     costReport = emptyCostReport;
     costRepoFilter = '';
