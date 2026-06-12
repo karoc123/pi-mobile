@@ -28,6 +28,8 @@ const configSchema = z.object({
   PI_MOCK_MODE: optionalEnvString,
   GIT_USER_NAME: optionalEnvString,
   GIT_USER_EMAIL: optionalEnvString,
+  SSH_PRIVATE_KEY_TARGET: optionalEnvString,
+  SSH_KNOWN_HOSTS_PATH: optionalEnvString,
 });
 
 export type AppConfig = {
@@ -50,6 +52,8 @@ export type AppConfig = {
   piMockMode: boolean;
   gitUserName?: string;
   gitUserEmail?: string;
+  sshPrivateKeyTarget?: string;
+  sshKnownHostsPath?: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -70,20 +74,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     host: parsed.HOST,
     port: parsed.PORT,
     appPassword: parsed.APP_PASSWORD,
-    costsDbPath: parsed.COSTS_DB_PATH ? path.resolve(parsed.COSTS_DB_PATH) : path.resolve(parsed.WORKSPACE_ROOT, ".pi-mobile", "costs.sqlite"),
-    logsDirPath: parsed.LOGS_DIR ? path.resolve(parsed.LOGS_DIR) : path.resolve(parsed.WORKSPACE_ROOT, ".pi-mobile", "logs"),
+    costsDbPath: parsed.COSTS_DB_PATH ? path.resolve(parsed.COSTS_DB_PATH) : resolveDefaultCostsDbPath(parsed.WORKSPACE_ROOT, parsed.NODE_ENV),
+    logsDirPath: parsed.LOGS_DIR ? path.resolve(parsed.LOGS_DIR) : resolveDefaultLogsDirPath(parsed.WORKSPACE_ROOT, parsed.NODE_ENV),
     logLevel: parsed.LOG_LEVEL,
     defaultRepo: parsed.DEFAULT_REPO,
     sessionCookieName: parsed.SESSION_COOKIE_NAME,
     sessionCookieSecure: parsed.SESSION_COOKIE_SECURE ? asBoolean(parsed.SESSION_COOKIE_SECURE) : parsed.NODE_ENV === "production",
-    piAgentDir: parsed.PI_AGENT_DIR ? path.resolve(parsed.PI_AGENT_DIR) : undefined,
-    piSessionDir: parsed.PI_SESSION_DIR ? path.resolve(parsed.PI_SESSION_DIR) : undefined,
+    piAgentDir: parsed.PI_AGENT_DIR ? path.resolve(parsed.PI_AGENT_DIR) : resolveDefaultPiAgentDir(parsed.NODE_ENV),
+    piSessionDir: parsed.PI_SESSION_DIR ? path.resolve(parsed.PI_SESSION_DIR) : resolveDefaultPiSessionDir(parsed.NODE_ENV),
     piProvider: parsed.PI_PROVIDER,
     piModel: parsed.PI_MODEL,
     piThinkingLevel: parsed.PI_THINKING_LEVEL,
     piMockMode: asBoolean(parsed.PI_MOCK_MODE),
     gitUserName: parsed.GIT_USER_NAME,
     gitUserEmail: parsed.GIT_USER_EMAIL,
+    sshPrivateKeyTarget: parsed.SSH_PRIVATE_KEY_TARGET ? path.resolve(parsed.SSH_PRIVATE_KEY_TARGET) : resolveDefaultSshPrivateKeyTarget(parsed.NODE_ENV),
+    sshKnownHostsPath: parsed.SSH_KNOWN_HOSTS_PATH ? path.resolve(parsed.SSH_KNOWN_HOSTS_PATH) : resolveDefaultSshKnownHostsPath(parsed.NODE_ENV),
   };
 }
 
@@ -115,4 +121,52 @@ function emptyStringToUndefined(value: unknown) {
   }
 
   return value;
+}
+
+function resolveDefaultCostsDbPath(workspaceRoot: string, nodeEnv: AppConfig["nodeEnv"]) {
+  if (nodeEnv === "production") {
+    return path.resolve("/data/db/costs.sqlite");
+  }
+
+  return path.resolve(workspaceRoot, ".pi-mobile", "costs.sqlite");
+}
+
+function resolveDefaultLogsDirPath(workspaceRoot: string, nodeEnv: AppConfig["nodeEnv"]) {
+  if (nodeEnv === "production") {
+    return path.resolve("/data/db/logs");
+  }
+
+  return path.resolve(workspaceRoot, ".pi-mobile", "logs");
+}
+
+function resolveDefaultPiAgentDir(nodeEnv: AppConfig["nodeEnv"]) {
+  if (nodeEnv === "production") {
+    return path.resolve("/data/pi/agent");
+  }
+
+  return undefined;
+}
+
+function resolveDefaultPiSessionDir(nodeEnv: AppConfig["nodeEnv"]) {
+  if (nodeEnv === "production") {
+    return path.resolve("/data/pi/sessions");
+  }
+
+  return undefined;
+}
+
+function resolveDefaultSshPrivateKeyTarget(nodeEnv: AppConfig["nodeEnv"]) {
+  if (nodeEnv === "production") {
+    return path.resolve("/home/node/.ssh/id_ed25519");
+  }
+
+  return undefined;
+}
+
+function resolveDefaultSshKnownHostsPath(nodeEnv: AppConfig["nodeEnv"]) {
+  if (nodeEnv === "production") {
+    return path.resolve("/data/db/known_hosts");
+  }
+
+  return undefined;
 }

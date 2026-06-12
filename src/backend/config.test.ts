@@ -38,4 +38,19 @@ describe("loadConfig", () => {
     expect(productionConfig.sessionCookieSecure).toBe(true);
     expect(overriddenConfig.sessionCookieSecure).toBe(false);
   });
+
+  it("uses container persistence defaults in production when explicit paths are missing", () => {
+    const config = loadConfig({
+      APP_PASSWORD: "secret-pass",
+      WORKSPACE_ROOT: "/workspace",
+      NODE_ENV: "production",
+    });
+
+    expect(config.costsDbPath).toBe("/data/db/costs.sqlite");
+    expect(config.logsDirPath).toBe("/data/db/logs");
+    expect(config.piAgentDir).toBe("/data/pi/agent");
+    expect(config.piSessionDir).toBe("/data/pi/sessions");
+    expect(config.sshPrivateKeyTarget).toBe("/home/node/.ssh/id_ed25519");
+    expect(config.sshKnownHostsPath).toBe("/data/db/known_hosts");
+  });
 });

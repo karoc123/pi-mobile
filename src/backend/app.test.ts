@@ -132,6 +132,19 @@ describe("createApp", () => {
     const gitStageAll = vi.fn(async () => undefined);
     const gitUnstageAll = vi.fn(async () => undefined);
     const cloneRepo = vi.fn(async (_remoteUrl: string, _destinationPath?: string) => workspaceService.requireCurrentRepo());
+    const getPiAuthStatus = vi.fn(() => ({
+      providers: [{ provider: "anthropic", label: "Anthropic", configured: false }],
+    }));
+    const loginPiToken = vi.fn(async () => ({
+      ok: true,
+      provider: "anthropic",
+      configured: true,
+    }));
+    const logoutPiProvider = vi.fn(() => ({
+      ok: true,
+      provider: "anthropic",
+      configured: false,
+    }));
     const createFile = vi
       .fn()
       .mockResolvedValueOnce(undefined)
@@ -202,12 +215,19 @@ describe("createApp", () => {
         prompt: vi.fn(async () => undefined),
         abort: vi.fn(async () => undefined),
       } as never,
+      piAuthService: {
+        getStatus: getPiAuthStatus,
+        loginToken: loginPiToken,
+        logout: logoutPiProvider,
+      } as never,
       serverStartedAt: new Date("2026-01-01T00:00:00.000Z"),
     });
 
     const unauthorized = await request(app).get("/api/workspaces/browse");
+    const unauthorizedPiAuth = await request(app).get("/api/pi/auth/status");
 
     expect(unauthorized.status).toBe(401);
+    expect(unauthorizedPiAuth.status).toBe(401);
     expect(unauthorized.body.error.code).toBe("unauthorized");
     expect(typeof unauthorized.headers["x-request-id"]).toBe("string");
 
@@ -230,6 +250,9 @@ describe("createApp", () => {
       .post("/api/workspaces/clone")
       .set("Cookie", cookie)
       .send({ remoteUrl: "https://github.com/example/repo.git", destinationPath: "repo-clone" });
+    const piAuthStatusResponse = await request(app).get("/api/pi/auth/status").set("Cookie", cookie);
+    const piAuthLoginResponse = await request(app).post("/api/pi/auth/login-token").set("Cookie", cookie).send({ provider: "anthropic", token: "test-token" });
+    const piAuthLogoutResponse = await request(app).post("/api/pi/auth/logout").set("Cookie", cookie).send({ provider: "anthropic" });
     const stageAllResponse = await request(app).post("/api/git/stage-all").set("Cookie", cookie);
     const unstageAllResponse = await request(app).post("/api/git/unstage-all").set("Cookie", cookie);
     const stageHunkResponse = await request(app).post("/api/git/stage-hunk").set("Cookie", cookie).send({ diff: "diff --git a/a.txt b/a.txt\n" });
@@ -295,6 +318,13 @@ describe("createApp", () => {
     expect(cloneResponse.status).toBe(200);
     expect(cloneResponse.body.ok).toBe(true);
     expect(cloneRepo).toHaveBeenCalledWith("https://github.com/example/repo.git", "repo-clone");
+    expect(piAuthStatusResponse.status).toBe(200);
+    expect(piAuthStatusResponse.body.providers).toEqual([{ provider: "anthropic", label: "Anthropic", configured: false }]);
+    expect(getPiAuthStatus).toHaveBeenCalledTimes(1);
+    expect(piAuthLoginResponse.status).toBe(200);
+    expect(loginPiToken).toHaveBeenCalledWith("anthropic", "test-token");
+    expect(piAuthLogoutResponse.status).toBe(200);
+    expect(logoutPiProvider).toHaveBeenCalledWith("anthropic");
     expect(stageAllResponse.status).toBe(200);
     expect(gitStageAll).toHaveBeenCalledTimes(1);
     expect(unstageAllResponse.status).toBe(200);

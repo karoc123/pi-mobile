@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "verify:container": "bash scripts/container-smoke.sh"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",

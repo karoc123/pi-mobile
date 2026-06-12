@@ -1,0 +1,29 @@
+#!/bin/sh
+
+set -eu
+
+WORKSPACE_ROOT_PATH="${WORKSPACE_ROOT:-/workspace}"
+DATA_ROOT_PATH="${DATA_ROOT:-/data}"
+DB_ROOT_PATH="${DB_ROOT:-${DATA_ROOT_PATH}/db}"
+PI_ROOT_PATH="${PI_ROOT:-${DATA_ROOT_PATH}/pi}"
+SSH_HOME_PATH="${SSH_HOME:-/home/node/.ssh}"
+SSH_PRIVATE_KEY_TARGET="${SSH_PRIVATE_KEY_TARGET:-${SSH_HOME_PATH}/id_ed25519}"
+SSH_PRIVATE_KEY_SECRET_PATH="${SSH_PRIVATE_KEY_SECRET_PATH:-}"
+SSH_KNOWN_HOSTS_PATH="${SSH_KNOWN_HOSTS_PATH:-${DB_ROOT_PATH}/known_hosts}"
+
+mkdir -p "${WORKSPACE_ROOT_PATH}" "${DB_ROOT_PATH}" "${PI_ROOT_PATH}" "${SSH_HOME_PATH}"
+
+touch "${SSH_KNOWN_HOSTS_PATH}"
+chmod 600 "${SSH_KNOWN_HOSTS_PATH}"
+
+if [ -n "${SSH_PRIVATE_KEY_SECRET_PATH}" ]; then
+  if [ ! -f "${SSH_PRIVATE_KEY_SECRET_PATH}" ]; then
+    echo "SSH private key secret file not found: ${SSH_PRIVATE_KEY_SECRET_PATH}" >&2
+    exit 1
+  fi
+
+  cp "${SSH_PRIVATE_KEY_SECRET_PATH}" "${SSH_PRIVATE_KEY_TARGET}"
+  chmod 600 "${SSH_PRIVATE_KEY_TARGET}"
+fi
+
+exec "$@"

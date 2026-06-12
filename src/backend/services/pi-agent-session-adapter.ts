@@ -104,6 +104,12 @@ export class PiAgentSessionAdapter {
 
   async getCommandState(repo: SelectedRepo): Promise<AgentCommandState> {
     const session = await this.ensureSession(repo);
+
+    // Login/logout happens through a separate service instance.
+    // Reload auth + models so command palette availability reflects changes immediately.
+    session.modelRegistry.authStorage.reload();
+    session.modelRegistry.refresh();
+
     const sessionStats = session.getSessionStats();
     const currentModel = session.model;
     const currentSessionFile = session.sessionFile;
@@ -128,7 +134,7 @@ export class PiAgentSessionAdapter {
           provider: model.provider,
           modelId: model.id,
           name: model.name,
-          available: session.modelRegistry.hasConfiguredAuth(model),
+          available: isModelReadyForSelection(session.modelRegistry, model.provider),
           isCurrent: currentModel?.provider === model.provider && currentModel.id === model.id,
           usingSubscription: session.modelRegistry.isUsingOAuth(model),
         }))
@@ -298,6 +304,18 @@ function flattenTreeEntries(nodes: ReturnType<SessionManager["getTree"]>, curren
       ...children,
     ];
   });
+}
+
+function isModelReadyForSelection(modelRegistry: AgentSession["modelRegistry"], provider: string) {
+  const status = modelRegistry.getProviderAuthStatus(provider);
+
+  return (
+    status.source === "stored" ||
+    status.source === "environment" ||
+    status.source === "models_json_key" ||
+    status.source === "models_json_command" ||
+    status.source === "fallback"
+  );
 }
 
 function deriveRuntimePhase(input: { isStreaming: boolean; isCompacting: boolean; isRetrying: boolean; isBashRunning: boolean; pendingMessageCount: number }): AgentRuntimePhase {

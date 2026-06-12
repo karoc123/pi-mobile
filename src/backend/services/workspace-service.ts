@@ -12,6 +12,7 @@ export class WorkspaceService {
   constructor(
     private readonly rootPath: string,
     private readonly defaultRepo?: string,
+    private readonly gitEnv?: NodeJS.ProcessEnv,
   ) {}
 
   async initializeDefaultRepo() {
@@ -71,9 +72,9 @@ export class WorkspaceService {
       throw new Error("Destination path already exists.");
     }
 
-    await runCommand("git", ["clone", normalizedRemoteUrl, absoluteDestinationPath]);
+    await runCommand("git", ["clone", normalizedRemoteUrl, absoluteDestinationPath], { env: this.gitEnv });
 
-    const { root: repositoryRoot, errorMessage } = await getGitRootWithDiagnostics(absoluteDestinationPath);
+    const { root: repositoryRoot, errorMessage } = await getGitRootWithDiagnostics(absoluteDestinationPath, this.gitEnv);
 
     if (!repositoryRoot) {
       const hint = errorMessage ? `\n\nGit error:\n${errorMessage}` : "";
@@ -81,7 +82,8 @@ export class WorkspaceService {
     }
 
     resolveWithin(this.rootPath, relativeFrom(this.rootPath, repositoryRoot));
-    return createSelectedRepo(this.rootPath, repositoryRoot);
+    this.currentRepo = createSelectedRepo(this.rootPath, repositoryRoot);
+    return this.currentRepo;
   }
 
   requireCurrentRepo() {
@@ -100,7 +102,7 @@ export class WorkspaceService {
       throw new Error("Selected path is not a directory.");
     }
 
-    const { root: repositoryRoot, errorMessage } = await getGitRootWithDiagnostics(absolutePath);
+    const { root: repositoryRoot, errorMessage } = await getGitRootWithDiagnostics(absolutePath, this.gitEnv);
 
     if (!repositoryRoot) {
       const hint = errorMessage ? `\n\nGit error:\n${errorMessage}` : "";
@@ -129,13 +131,13 @@ async function isGitRepo(candidatePath: string) {
   return (await getGitRoot(candidatePath)) !== null;
 }
 
-async function getGitRoot(candidatePath: string): Promise<string | null> {
-  return (await getGitRootWithDiagnostics(candidatePath)).root;
+async function getGitRoot(candidatePath: string, gitEnv?: NodeJS.ProcessEnv): Promise<string | null> {
+  return (await getGitRootWithDiagnostics(candidatePath, gitEnv)).root;
 }
 
-async function getGitRootWithDiagnostics(candidatePath: string): Promise<{ root: string | null; errorMessage?: string }> {
+async function getGitRootWithDiagnostics(candidatePath: string, gitEnv?: NodeJS.ProcessEnv): Promise<{ root: string | null; errorMessage?: string }> {
   try {
-    const { stdout } = await runCommand("git", ["-C", candidatePath, "rev-parse", "--show-toplevel"]);
+    const { stdout } = await runCommand("git", ["-C", candidatePath, "rev-parse", "--show-toplevel"], { env: gitEnv });
     return { root: stdout.trim() };
   } catch (unknownError) {
     const message = unknownError instanceof Error ? unknownError.message : String(unknownError);
@@ -143,8 +145,8 @@ async function getGitRootWithDiagnostics(candidatePath: string): Promise<{ root:
 
     if (unsafeRepositoryPath) {
       try {
-        await runCommand("git", ["config", "--global", "--add", "safe.directory", unsafeRepositoryPath]);
-        const { stdout } = await runCommand("git", ["-C", candidatePath, "rev-parse", "--show-toplevel"]);
+        await runCommand("git", ["config", "--global", "--add", "safe.directory", unsafeRepositoryPath], { env: gitEnv });
+        const { stdout } = await runCommand("git", ["-C", candidatePath, "rev-parse", "--show-toplevel"], { env: gitEnv });
         return { root: stdout.trim() };
       } catch (configError) {
         const configMessage = configError instanceof Error ? configError.message : String(configError);

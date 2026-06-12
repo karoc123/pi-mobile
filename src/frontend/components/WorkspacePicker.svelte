@@ -58,13 +58,13 @@
       </div>
 
       <form class="workspace-clone-form" on:submit|preventDefault={submitClone}>
-        <label class="field-label" for="clone-remote-url">Clone repository URL</label>
+        <label class="field-label" for="clone-remote-url">Clone repository URL / SSH target</label>
         <input
           id="clone-remote-url"
           class="text-input"
-          type="url"
+          type="text"
           bind:value={remoteUrl}
-          placeholder="https://github.com/owner/repo.git"
+          placeholder="git@github.com:owner/repo.git"
           autocapitalize="off"
           spellcheck="false"
           disabled={cloning}

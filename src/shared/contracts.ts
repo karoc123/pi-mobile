@@ -21,6 +21,37 @@ export type WorkspaceCloneResult = {
   repo: SelectedRepo;
 };
 
+export type PiAuthProviderState = {
+  provider: string;
+  label: string;
+  configured: boolean;
+};
+
+export type PiAuthStatusResponse = {
+  providers: PiAuthProviderState[];
+};
+
+export type PiAuthLoginTokenRequest = {
+  provider: string;
+  token: string;
+};
+
+export type PiAuthLoginTokenResponse = {
+  ok: true;
+  provider: string;
+  configured: true;
+};
+
+export type PiAuthLogoutRequest = {
+  provider: string;
+};
+
+export type PiAuthLogoutResponse = {
+  ok: true;
+  provider: string;
+  configured: false;
+};
+
 export type FileEntry = {
   name: string;
   relativePath: string;

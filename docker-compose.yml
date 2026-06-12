@@ -5,26 +5,43 @@ services:
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-3000}:3000"
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
+      HOME: /home/node
       APP_PASSWORD: ${APP_PASSWORD}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      WORKSPACE_ROOT: /workspace
+      COSTS_DB_PATH: /data/db/costs.sqlite
+      LOGS_DIR: /data/db/logs
+      PI_AGENT_DIR: /data/pi/agent
+      PI_SESSION_DIR: /data/pi/sessions
+      SSH_PRIVATE_KEY_TARGET: /home/node/.ssh/id_ed25519
+      SSH_PRIVATE_KEY_SECRET_PATH: /run/secrets/ssh_private_key
+      SSH_KNOWN_HOSTS_PATH: /data/db/known_hosts
+      DEFAULT_REPO: ${DEFAULT_REPO:-}
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
-      WORKSPACE_ROOT: /workspace
-      COSTS_DB_PATH: ${COSTS_DB_PATH:-/workspace/pi-mobile/.pi-mobile/costs.sqlite}
-      LOGS_DIR: ${LOGS_DIR:-/workspace/pi-mobile/.pi-mobile/logs}
-      DEFAULT_REPO: ${DEFAULT_REPO:-}
-      PI_AGENT_DIR: /home/node/.pi/agent
-      PI_SESSION_DIR: ${PI_SESSION_DIR:-/workspace/pi-mobile/.pi-mobile/sessions}
       PI_PROVIDER: ${PI_PROVIDER:-}
       PI_MODEL: ${PI_MODEL:-}
       PI_THINKING_LEVEL: ${PI_THINKING_LEVEL:-}
     volumes:
-      - ${WORKSPACE_HOST_PATH}:/workspace
-      - ${PI_HOME_HOST_PATH}:/home/node/.pi
-      - ${GITCONFIG_HOST_PATH}:/home/node/.gitconfig:ro
-      - ${SSH_HOST_PATH}:/home/node/.ssh:ro
+      - ./workspace:/workspace
+      - ./db:/data/db
+      - ./pi:/data/pi
+    secrets:
+      - source: ssh_private_key
+        target: /run/secrets/ssh_private_key
+
+volumes:
+  workspace:
+    name: pi-mobile-workspace
+  db:
+    name: pi-mobile-db
+  pi:
+    name: pi-mobile-pi
+
+secrets:
+  ssh_private_key:
+    file: ${SSH_PRIVATE_KEY_FILE}

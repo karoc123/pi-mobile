@@ -1,10 +1,10 @@
 # ARCHITECTURE.md — System and Software Architecture
 
-This document outlines the technical design of the **PiMobile Agent Server**. The system integrates the official `pi.dev` core engine directly inside a custom Node.js/TypeScript backend wrapper, packaged into a lightweight, secured Docker container optimized for the ARM architecture of a Raspberry Pi.
-
----
-
-## 1. System Topology
+| | Persistent Volumes / Secrets v |
+| | • `workspace` <=======> /workspace |
+| | • `db` <=======> /data/db |
+| | • `pi` <=======> /data/pi |
+| | • `ssh_private_key` secret -> runtime `/home/node/.ssh/id_ed25519` |
 
 +------------------------------------------------------------------------+
 | SMARTPHONE / CLIENT |
@@ -79,7 +79,7 @@ To minimize memory footprint and execution latency on the Raspberry Pi, the fron
 
 Written in TypeScript running on Node.js, the backend acts as a high-fidelity router orchestrating the host environment, Git states, and the `pi` runtime.
 
-- **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process, while `~/.pi/agent` from the host is mounted into the container so the runtime inherits existing pi.dev logins and model configuration. CLI JSON/RPC modes remain possible fallbacks, but are not the primary kickoff integration.
+- **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process, while Pi auth/model/session data persists inside the dedicated `pi` Docker volume. CLI JSON/RPC modes remain possible fallbacks, but are not the primary kickoff integration.
 - **`GitService`:** Parses the standard stream of `git diff -U3` into structural JSON objects, making raw line offsets and hunk chunks readable for the frontend.
 - **`FileService`:** Directs file writing from the mobile editor and monitors directory workspaces dynamically using `chokidar` for seamless change synchronization.
 - **`Watcher Guardrails`:** Internal runtime directories (`.pi-mobile`, `.pi`) plus configured logs/session paths are ignored by the filesystem watcher so backend artifacts cannot trigger feedback loops (for example repeated diff reload cascades).
@@ -204,32 +204,37 @@ CMD ["node", "dist/backend/index.js"]
 The compose topology ensures network reachability across your network interfaces while enforcing volume isolation and environmental configuration.
 
 ```yaml
-version: "3.8"
-
 services:
   pi-mobile-server:
     build: .
-    container_name: pi-mobile-server
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=production
-      - WORKSPACE_ROOT=/workspace
-      - COSTS_DB_PATH=/workspace/pi-mobile/.pi-mobile/costs.sqlite
-      - LOGS_DIR=/workspace/pi-mobile/.pi-mobile/logs
-      - PI_AGENT_DIR=/home/node/.pi/agent
-      - PI_SESSION_DIR=/workspace/pi-mobile/.pi-mobile/sessions
-      # Password protection gate for mobile access
-      - APP_PASSWORD=DeinSicheresPasswortHier # Change this value before deployment
+      NODE_ENV: production
+      WORKSPACE_ROOT: /workspace
+      COSTS_DB_PATH: /data/db/costs.sqlite
+      LOGS_DIR: /data/db/logs
+      PI_AGENT_DIR: /data/pi/agent
+      PI_SESSION_DIR: /data/pi/sessions
+      SSH_KNOWN_HOSTS_PATH: /data/db/known_hosts
+      APP_PASSWORD: DeinSicheresPasswortHier
+      SSH_PRIVATE_KEY_SECRET_PATH: /run/secrets/ssh_private_key
     volumes:
-      # Active development repositories living on the Pi host
-      - /home/pi/projects:/workspace
-      # Preserved pi.dev authentication matrices (Claude Code, Token states)
-      - /home/pi/.pi:/home/node/.pi
-      # Shared Git user profile configuration for correct commit tracking
-      - /home/pi/.gitconfig:/home/node/.gitconfig:ro
-      # Bound host SSH credentials to sign commits or pull/push to remote origins
-      - /home/pi/.ssh:/home/node/.ssh:ro
-    user: "${UID}:${GID}" # Runs with identical host IDs to negate Docker root permission locking
+      - workspace:/workspace
+      - db:/data/db
+      - pi:/data/pi
+    secrets:
+      - ssh_private_key
+
+volumes:
+  workspace:
+  db:
+  pi:
+
+secrets:
+  ssh_private_key:
+    file: /path/to/id_ed25519
 ```
+
+The container entrypoint copies the SSH private key secret into the runtime filesystem, initializes the persistent `known_hosts` file under `/data/db/known_hosts`, and keeps all mutable app state inside the named Docker volumes.

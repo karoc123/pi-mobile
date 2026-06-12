@@ -414,6 +414,10 @@ export class PiAgentService {
     }
 
     await this.session?.abort();
+
+    // Also clear queued steering/follow-up prompts so UI can't remain stuck in `queued`.
+    this.session?.clearQueue?.();
+
     this.emitStatus();
   }
 
