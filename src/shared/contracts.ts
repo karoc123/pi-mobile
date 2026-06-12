@@ -320,6 +320,34 @@ export type ApiErrorResponse = {
   };
 };
 
+/** Eine einzelne Frage mit Auswahlmöglichkeiten */
+export type InteractiveQuestion = {
+  id: string;
+  label: string;
+  options: string[];
+  allowFreeText: boolean;
+  placeholder?: string;
+};
+
+/** Vollständiger interaktiver Prompt */
+export type InteractivePrompt = {
+  promptId: string;
+  title: string;
+  questions: InteractiveQuestion[];
+};
+
+/** Antwort auf einen interaktiven Prompt */
+export type InteractiveResponse = {
+  promptId: string;
+  answers: InteractiveAnswer[];
+};
+
+/** Antwort auf eine einzelne Frage */
+export type InteractiveAnswer = {
+  questionId: string;
+  value: string;
+};
+
 export type AgentThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export type AgentModelOption = {
@@ -516,6 +544,10 @@ export type WebsocketEnvelope =
       payload: {
         message: string;
       };
+    }
+  | {
+      type: "interactive_prompt";
+      payload: InteractivePrompt;
     };
 
 export type SessionResponse = {

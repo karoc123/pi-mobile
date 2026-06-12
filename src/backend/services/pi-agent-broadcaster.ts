@@ -1,4 +1,4 @@
-import type { AgentSnapshot, ChatMessage, ToolActivity, WebsocketEnvelope } from "../../shared/contracts.js";
+import type { AgentSnapshot, ChatMessage, InteractivePrompt, ToolActivity, WebsocketEnvelope } from "../../shared/contracts.js";
 
 type Broadcast = (event: WebsocketEnvelope) => void;
 
@@ -40,6 +40,13 @@ export class PiAgentBroadcaster {
     this.broadcast({
       type: "agent_error",
       payload: { message },
+    });
+  }
+
+  interactivePrompt(prompt: InteractivePrompt) {
+    this.broadcast({
+      type: "interactive_prompt",
+      payload: prompt,
     });
   }
 

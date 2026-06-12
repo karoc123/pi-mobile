@@ -11,6 +11,7 @@ import type {
   AgentThinkingLevel,
   AgentUsage,
   ChatMessage,
+  InteractivePrompt,
   SelectedRepo,
   ToolActivity,
   WebsocketEnvelope,
@@ -608,6 +609,33 @@ export class PiAgentService {
       return;
     }
 
+    if (event.type === "tool_execution_start" && event.toolName === "ask_user") {
+      const prompt = parseInteractivePromptArgs(event.args);
+
+      if (prompt) {
+        this.broadcaster.interactivePrompt(prompt);
+      } else {
+        this.logger.warn("Invalid ask_user tool arguments – skipping interactive prompt.", {
+          event: "ask_user_invalid",
+          repo: this.currentRepo?.absolutePath ?? null,
+          details: { args: event.args },
+        });
+      }
+
+      // Still record the tool activity so it appears in the trace
+      const tool: ToolActivity = {
+        id: event.toolCallId,
+        toolName: event.toolName,
+        status: "complete",
+        detail: `ask_user: ${summarizePayload(event.args, null)}`,
+      };
+
+      this.tools = upsertTool(this.tools, tool);
+      this.broadcaster.toolActivity(tool);
+      this.emitStatus();
+      return;
+    }
+
     if (event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
       const tool: ToolActivity = {
         id: event.toolCallId,
@@ -958,6 +986,62 @@ function formatBashResultMessage(exitCode: number | undefined, cancelled: boolea
   }
 
   return `Bash run finished with exit ${exitLabel}.${suffix}`;
+}
+
+/**
+ * Parse and validate the args of the "ask_user" tool into an InteractivePrompt.
+ * Returns null if the payload is malformed.
+ */
+function parseInteractivePromptArgs(args: unknown): InteractivePrompt | null {
+  if (!args || typeof args !== "object") {
+    return null;
+  }
+
+  const raw = args as Record<string, unknown>;
+
+  if (typeof raw.title !== "string" || raw.title.trim().length === 0) {
+    return null;
+  }
+
+  if (!Array.isArray(raw.questions) || raw.questions.length === 0) {
+    return null;
+  }
+
+  const questions: InteractivePrompt["questions"] = [];
+
+  for (const q of raw.questions) {
+    if (!q || typeof q !== "object") {
+      return null;
+    }
+
+    const qRaw = q as Record<string, unknown>;
+
+    if (typeof qRaw.id !== "string" || qRaw.id.trim().length === 0) {
+      return null;
+    }
+
+    if (typeof qRaw.label !== "string" || qRaw.label.trim().length === 0) {
+      return null;
+    }
+
+    if (!Array.isArray(qRaw.options) || qRaw.options.length === 0 || !qRaw.options.every((opt: unknown) => typeof opt === "string")) {
+      return null;
+    }
+
+    questions.push({
+      id: qRaw.id.trim(),
+      label: qRaw.label.trim(),
+      options: qRaw.options as string[],
+      allowFreeText: qRaw.allowFreeText === true,
+      placeholder: typeof qRaw.placeholder === "string" && qRaw.placeholder.trim().length > 0 ? qRaw.placeholder.trim() : undefined,
+    });
+  }
+
+  return {
+    promptId: randomUUID(),
+    title: raw.title.trim(),
+    questions,
+  };
 }
 
 function createNoopLogger(): LogChannel {

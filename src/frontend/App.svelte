@@ -8,6 +8,8 @@
     AgentSnapshot,
     AgentUsage,
     ChatMessage,
+    InteractivePrompt,
+    InteractiveResponse,
     ToolActivity,
     BackendHealthResponse,
     BackendResourceCheck,
@@ -157,6 +159,8 @@
   let editorDirty = false;
   let savingFile = false;
   let creatingFile = false;
+
+  let interactivePrompt: InteractivePrompt | null = null;
 
   let agentSnapshot: AgentSnapshot = emptyAgentSnapshot;
   let localSystemMessages: ChatMessage[] = [];
@@ -838,6 +842,11 @@
       return;
     }
 
+    if (event.type === 'interactive_prompt') {
+      interactivePrompt = event.payload;
+      return;
+    }
+
     if (event.type === 'repo_selected') {
       currentRepo = event.payload.repo;
       workspaceCloning = false;
@@ -846,6 +855,7 @@
       resetToolTraceBatches();
       localSystemMessages = [];
       clearKeepRunningGate();
+      interactivePrompt = null;
       agentSnapshot = {
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
@@ -1340,6 +1350,27 @@
     }
   }
 
+  function formatInteractiveResponse(response: InteractiveResponse, promptTitle: string) {
+    const lines: string[] = [];
+    lines.push(`Antworten auf: "${promptTitle}"`);
+    lines.push('');
+
+    for (const answer of response.answers) {
+      const question = interactivePrompt?.questions.find((q) => q.id === answer.questionId);
+      const label = question?.label ?? answer.questionId;
+      lines.push(`- ${label} → ${answer.value}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  async function handleInteractiveSubmit(response: InteractiveResponse) {
+    const title = interactivePrompt?.title ?? 'Interaktive Fragen';
+    const answerText = formatInteractiveResponse(response, title);
+    interactivePrompt = null;
+    await sendPrompt(answerText);
+  }
+
   async function sendPrompt(prompt: string) {
     const trimmed = prompt.trim();
 
@@ -1452,6 +1483,7 @@
           resetToolTraceBatches();
           localSystemMessages = [];
           clearKeepRunningGate();
+          interactivePrompt = null;
         }
 
         await loadCommandState();
@@ -1993,6 +2025,7 @@
     localSystemMessages = [];
     chatMessages = [];
     clearKeepRunningGate();
+    interactivePrompt = null;
     lastKnownGlobalCostUsd = 0;
     costReport = emptyCostReport;
     costRepoFilter = '';
@@ -2272,12 +2305,15 @@
           prefillToken={composerPrefillToken}
           availableCommands={commandState?.availableCommands ?? []}
           draftStorageScope={currentRepo.relativePath || currentRepo.absolutePath}
+          interactivePrompt={interactivePrompt}
           on:submit={(event) => sendPrompt(event.detail.prompt)}
           on:abort={abortRun}
           on:keepRunning={allowKeepRunning}
           on:newSession={() => void startNewChatFromComposer()}
           on:openCommands={() => void openCommandPalette()}
           on:openModelCommands={() => void openCommandPalette('/model')}
+          on:interactiveSubmit={(event) => handleInteractiveSubmit(event.detail.response)}
+          on:interactiveDismiss={() => { interactivePrompt = null; }}
         />
       {:else if view === 'diff'}
         {#if diffViewComponent}
