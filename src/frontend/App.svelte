@@ -9,7 +9,6 @@
     AgentUsage,
     ChatMessage,
     InteractivePrompt,
-    InteractiveResponse,
     ToolActivity,
     BackendHealthResponse,
     BackendResourceCheck,
@@ -1351,39 +1350,13 @@
     }
   }
 
-  function formatAnswerValue(value: string | string[]): string {
-    if (Array.isArray(value)) {
-      return value.filter((v) => v.trim().length > 0).join(', ');
+  function handleGlobalSubmit(prompt: string) {
+    // InteractiveCard- und Composer-Submits landen hier
+    // Bei interaktiven Antworten vorher den Prompt clearen
+    if (agentSnapshot.interactivePrompt) {
+      agentSnapshot = { ...agentSnapshot, interactivePrompt: null };
     }
-    return value;
-  }
-
-  function formatInteractiveResponse(response: InteractiveResponse, promptTitle: string, promptQuestions: InteractivePrompt['questions']) {
-    const lines: string[] = [];
-    lines.push(`Antworten auf: "${promptTitle}"`);
-    lines.push('');
-
-    for (const answer of response.answers) {
-      const question = promptQuestions.find((q) => q.id === answer.questionId);
-      const label = question?.label ?? answer.questionId;
-      const formattedValue = formatAnswerValue(answer.value);
-      lines.push(`- ${label} → ${formattedValue}`);
-    }
-
-    return lines.join('\n');
-  }
-
-  async function handleInteractiveSubmit(response: InteractiveResponse) {
-    const currentPrompt = agentSnapshot.interactivePrompt;
-    if (!currentPrompt) return;
-
-    const title = currentPrompt.title;
-    const answerText = formatInteractiveResponse(response, title, currentPrompt.questions);
-    agentSnapshot = {
-      ...agentSnapshot,
-      interactivePrompt: null,
-    };
-    await sendPrompt(answerText);
+    void sendPrompt(prompt);
   }
 
   async function sendPrompt(prompt: string) {
@@ -1392,6 +1365,9 @@
     if (trimmed.length === 0) {
       return;
     }
+
+    // Interactive-Prompt-Antworten durchlaufen den gleichen Pfad
+    // Der Server cleared interactivePrompt beim prompt()-Aufruf
 
     const isFollowUp = agentSnapshot.runtimePhase !== 'idle';
     let globalCostTotal = lastKnownGlobalCostUsd;
@@ -2319,13 +2295,12 @@
           availableCommands={commandState?.availableCommands ?? []}
           draftStorageScope={currentRepo.relativePath || currentRepo.absolutePath}
           interactivePrompt={agentSnapshot.interactivePrompt}
-          on:submit={(event) => sendPrompt(event.detail.prompt)}
+          on:submit={(event) => handleGlobalSubmit(event.detail.prompt)}
           on:abort={abortRun}
           on:keepRunning={allowKeepRunning}
           on:newSession={() => void startNewChatFromComposer()}
           on:openCommands={() => void openCommandPalette()}
           on:openModelCommands={() => void openCommandPalette('/model')}
-          on:interactiveSubmit={(event) => handleInteractiveSubmit(event.detail.response)}
           on:interactiveDismiss={() => {
             agentSnapshot = { ...agentSnapshot, interactivePrompt: null };
           }}

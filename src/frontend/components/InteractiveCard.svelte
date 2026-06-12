@@ -1,54 +1,28 @@
 <script lang="ts">
-  import { createEventDispatcher, tick } from 'svelte';
-
   import type { InteractivePrompt, InteractiveResponse, InteractiveAnswer } from '../../../src/shared/contracts.js';
 
   export let prompt: InteractivePrompt;
-
-  const dispatch = createEventDispatcher<{
-    submit: { response: InteractiveResponse };
-    dismiss: void;
-  }>();
+  export let onSubmit: (response: InteractiveResponse) => void = () => {};
+  export let onDismiss: () => void = () => {};
 
   let answers: Record<string, string | string[]> = {};
   let freeTextValues: Record<string, string> = {};
   let showFreeText: Record<string, boolean> = {};
   let submitted = false;
 
-  function hasAnyAnswer(questionId: string) {
-    const val = answers[questionId];
-    if (val === undefined || val === null) return false;
-    if (Array.isArray(val)) return val.length > 0;
-    return val.trim().length > 0;
-  }
-
   function selectOption(questionId: string, option: string, multiple?: boolean) {
+    if (submitted) return;
+
     if (multiple) {
-      // Multi-Select: toggle
       const current = (answers[questionId] as string[]) || [];
       const next = current.includes(option)
         ? current.filter((o) => o !== option)
         : [...current, option];
-      answers = {
-        ...answers,
-        [questionId]: next,
-      };
-      // Keep free text closed when using chips
-      showFreeText = {
-        ...showFreeText,
-        [questionId]: false,
-      };
+      answers = { ...answers, [questionId]: next };
     } else {
-      // Single-Select: replace
-      answers = {
-        ...answers,
-        [questionId]: option,
-      };
-      showFreeText = {
-        ...showFreeText,
-        [questionId]: false,
-      };
+      answers = { ...answers, [questionId]: option };
     }
+    showFreeText = { ...showFreeText, [questionId]: false };
   }
 
   function isSelected(questionId: string, option: string, multiple?: boolean) {
@@ -60,41 +34,23 @@
   }
 
   function toggleFreeText(questionId: string) {
+    if (submitted) return;
     const nextVisible = !showFreeText[questionId];
-    showFreeText = {
-      ...showFreeText,
-      [questionId]: nextVisible,
-    };
-
+    showFreeText = { ...showFreeText, [questionId]: nextVisible };
     if (nextVisible) {
-      answers = {
-        ...answers,
-        [questionId]: freeTextValues[questionId] || '',
-      };
+      answers = { ...answers, [questionId]: freeTextValues[questionId] || '' };
     }
   }
 
   function handleFreeTextInput(questionId: string, value: string) {
-    freeTextValues = {
-      ...freeTextValues,
-      [questionId]: value,
-    };
-
+    freeTextValues = { ...freeTextValues, [questionId]: value };
     if (showFreeText[questionId]) {
-      answers = {
-        ...answers,
-        [questionId]: value,
-      };
+      answers = { ...answers, [questionId]: value };
     }
   }
 
-  $: hasAnyAnswerInForm = prompt.questions.some((q) => hasAnyAnswer(q.id));
-
   function submit() {
-    if (submitted) {
-      return;
-    }
-
+    if (submitted) return;
     submitted = true;
 
     const answerList: InteractiveAnswer[] = prompt.questions.map((q) => ({
@@ -102,20 +58,15 @@
       value: answers[q.id] !== undefined ? answers[q.id] : '',
     }));
 
-    dispatch('submit', {
-      response: {
-        promptId: prompt.promptId,
-        answers: answerList,
-      },
+    onSubmit({
+      promptId: prompt.promptId,
+      answers: answerList,
     });
   }
 
   function dismiss() {
-    if (submitted) {
-      return;
-    }
-
-    dispatch('dismiss');
+    if (submitted) return;
+    onDismiss();
   }
 </script>
 
@@ -144,6 +95,9 @@
               disabled={submitted}
               on:click={() => selectOption(question.id, option, question.multiple)}
             >
+              {#if isSelected(question.id, option, question.multiple)}
+                <span class="chip-check" aria-hidden="true">✓</span>
+              {/if}
               {option}
             </button>
           {/each}
@@ -156,6 +110,9 @@
               disabled={submitted}
               on:click={() => toggleFreeText(question.id)}
             >
+              {#if showFreeText[question.id]}
+                <span class="chip-check" aria-hidden="true">✓</span>
+              {/if}
               {question.placeholder || 'Andere...'}
             </button>
           {/if}
@@ -260,14 +217,17 @@
   }
 
   .option-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     min-height: 44px;
     min-width: 60px;
     padding: 6px 14px;
     font-size: 13px;
     font-weight: 500;
-    border: 1px solid var(--terminal-panel-border);
-    border-radius: 20px;
-    background: var(--terminal-panel);
+    border: 2px solid var(--terminal-panel-border);
+    border-radius: 22px;
+    background: var(--terminal-shell);
     color: var(--terminal-ink);
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
@@ -276,15 +236,15 @@
     user-select: none;
   }
 
-  .option-chip:hover {
+  .option-chip:hover:not(:disabled) {
     background: var(--terminal-panel-strong);
     border-color: var(--terminal-accent);
   }
 
   .option-chip.selected {
-    background: var(--accent);
-    border-color: var(--accent-strong);
-    color: #ffffff;
+    background: var(--accent) !important;
+    border-color: var(--accent-strong) !important;
+    color: #ffffff !important;
   }
 
   .option-chip:disabled {
@@ -300,6 +260,11 @@
   .option-chip-freetext.selected {
     font-style: normal;
     opacity: 1;
+  }
+
+  .chip-check {
+    font-weight: 700;
+    font-size: 12px;
   }
 
   .freetext-input {

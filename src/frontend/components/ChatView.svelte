@@ -1,7 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, tick } from 'svelte';
 
-  import type { AgentRuntimePhase, AgentSlashCommand, AgentUsage, ChatMessage, InteractivePrompt, InteractiveResponse, ToolActivity } from '../../../src/shared/contracts.js';
+  import type { AgentRuntimePhase, AgentSlashCommand, AgentUsage, ChatMessage, InteractivePrompt, ToolActivity } from '../../../src/shared/contracts.js';
   import { formatCompactTokenCount, formatUsageCost } from '../lib/agent-usage.js';
   import { applySlashCommandSuggestion, getSlashCommandSuggestions, toRuntimeSlashCommandSuggestions, type SlashCommandSuggestion } from '../lib/command-suggestions.js';
   import { renderMarkdown } from '../lib/markdown.js';
@@ -54,6 +54,14 @@
     interactiveSubmit: { response: InteractiveResponse };
     interactiveDismiss: void;
   }>();
+
+  function onSubmit(response: InteractiveResponse) {
+    dispatch('interactiveSubmit', { response });
+  }
+
+  function onDismiss() {
+    dispatch('interactiveDismiss');
+  }
 
   let prompt = '';
   let composerPanel: HTMLDivElement | null = null;
@@ -877,8 +885,8 @@
     {#if interactivePrompt}
       <InteractiveCard
         prompt={interactivePrompt}
-        on:submit={(event) => dispatch('interactiveSubmit', event.detail)}
-        on:dismiss={() => dispatch('interactiveDismiss')}
+        {onSubmit}
+        {onDismiss}
       />
     {/if}
     <div class="chat-log-end" aria-hidden="true" bind:this={logEndAnchor}></div>
