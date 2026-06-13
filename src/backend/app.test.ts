@@ -45,6 +45,7 @@ describe("createApp", () => {
       logLevel: "debug" as const,
       sessionCookieName: "pi_mobile_session",
       sessionCookieSecure: false,
+      piMockMode: true,
     };
     const authService = new AuthService(config.appPassword);
     const logService = new LogService({ logDirPath: config.logsDirPath, minLevel: config.logLevel });
