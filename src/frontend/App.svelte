@@ -1364,8 +1364,8 @@
     }
   }
 
-  /** Prüft ob ein InteractivePrompt angezeigt werden soll (nicht dismissed). */
-  function handleGlobalSubmit(prompt: string) {
+  /** Sendet eine User-Nachricht und räumt dabei offene InteractivePrompts weg. */
+  function handleChatSubmit(prompt: string) {
     dismissedPromptId = null;
     if (agentSnapshot.interactivePrompt) {
       agentSnapshot = { ...agentSnapshot, interactivePrompt: null };
@@ -2310,7 +2310,7 @@
           availableCommands={commandState?.availableCommands ?? []}
           draftStorageScope={currentRepo.relativePath || currentRepo.absolutePath}
           interactivePrompt={agentSnapshot.interactivePrompt}
-          on:submit={(event) => handleGlobalSubmit(event.detail.prompt)}
+          on:submit={(event) => handleChatSubmit(event.detail.prompt)}
           on:abort={abortRun}
           on:keepRunning={allowKeepRunning}
           on:newSession={() => void startNewChatFromComposer()}

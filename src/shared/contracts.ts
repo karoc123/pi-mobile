@@ -342,15 +342,7 @@ export type InteractivePrompt = {
   questions: InteractiveQuestion[];
 };
 
-/** Antwort auf einen interaktiven Prompt */
-export type InteractiveResponse = {
-  promptId: string;
-  answers: InteractiveAnswer[];
-};
-
-/** Antwort auf eine einzelne Frage */
-/**
- * Antwort auf eine einzelne Frage.
+/** Antwort auf eine einzelne Frage.
  * `value` ist ein String bei Single-Select oder Freitext,
  * ein String-Array bei Multi-Select.
  */

@@ -12,6 +12,16 @@
   let showFreeText: Record<string, boolean> = $state({});
   let submitted = $state(false);
 
+  let canSubmit = $derived(
+    !submitted &&
+    prompt.questions.every((q) => {
+      const val = answers[q.id];
+      if (val === undefined) return false;
+      if (Array.isArray(val)) return val.length > 0;
+      return typeof val === 'string' && val.trim().length > 0;
+    }),
+  );
+
   function formatValue(value: string | string[]): string {
     if (Array.isArray(value)) return value.filter((v) => v.trim().length > 0).join(', ');
     return value;
@@ -140,7 +150,7 @@
     <button
       class="primary-button submit-button"
       type="button"
-      disabled={submitted}
+      disabled={!canSubmit}
       onclick={submit}
     >
       {submitted ? 'Gesendet ✓' : 'Antwort senden'}

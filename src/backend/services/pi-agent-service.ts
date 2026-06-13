@@ -1000,7 +1000,7 @@ function formatBashResultMessage(exitCode: number | undefined, cancelled: boolea
  * Parse and validate the args of the "ask_user" tool into an InteractivePrompt.
  * Returns null if the payload is malformed.
  */
-function parseInteractivePromptArgs(args: unknown): InteractivePrompt | null {
+export function parseInteractivePromptArgs(args: unknown): InteractivePrompt | null {
   if (!args || typeof args !== "object") {
     return null;
   }

@@ -209,6 +209,7 @@ describe("createApp", () => {
             usingSubscription: false,
             autoCompactEnabled: false,
           },
+          interactivePrompt: null,
         })),
         getCommandState,
         executeCommand,
