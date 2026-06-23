@@ -516,12 +516,12 @@
       </div>
     </div>
   </div>
-</section>
 
-<input
-  type="file"
-  bind:this={fileInputElement}
-  on:change={handleFileSelected}
-  style="display: none"
-  aria-hidden="true"
-/>
+  <input
+    type="file"
+    bind:this={fileInputElement}
+    on:change={handleFileSelected}
+    style="display: none"
+    aria-hidden="true"
+  />
+</section>
