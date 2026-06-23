@@ -1169,7 +1169,41 @@
 
   async function openFile(path: string) {
     try {
-      selectedDocument = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
+      const document = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
+
+      if (document.kind === 'binary' && document.binaryContentBase64) {
+        // Binary files (e.g. .apk, .zip) werden direkt runtergeladen
+        const mimeType = document.mimeType || 'application/octet-stream';
+        const byteString = atob(document.binaryContentBase64);
+        const byteArrays: Uint8Array[] = [];
+
+        for (let offset = 0; offset < byteString.length; offset += 512) {
+          const chunk = byteString.slice(offset, offset + 512);
+          const bytes = new Uint8Array(chunk.length);
+
+          for (let index = 0; index < chunk.length; index++) {
+            bytes[index] = chunk.charCodeAt(index);
+          }
+
+          byteArrays.push(bytes);
+        }
+
+        const blob = new Blob(byteArrays, { type: mimeType });
+        const blobUrl = URL.createObjectURL(blob);
+
+        const anchor = document.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = document.path.split('/').pop() || 'download';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(blobUrl);
+
+        showBanner('Binary file downloaded.', 'success');
+        return;
+      }
+
+      selectedDocument = document;
       draftContent = selectedDocument.kind === 'text' ? selectedDocument.content : '';
       editorDirty = false;
       view = 'editor';

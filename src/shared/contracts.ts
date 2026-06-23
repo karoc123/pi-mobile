@@ -61,9 +61,14 @@ export type FileEntry = {
 export type FileDocument = {
   path: string;
   content: string;
-  kind: "text" | "image";
+  kind: "text" | "image" | "binary";
   mimeType: string | null;
   imageDataUrl: string | null;
+  /**
+   * Binary content as Base64-encoded string.
+   * Only present when kind is "binary".
+   */
+  binaryContentBase64: string | null;
 };
 
 export type FileCreateRequest = {

@@ -7,6 +7,78 @@ import type { FileDocument, FileDownloadInfo, FileEntry, SelectedRepo } from "..
 import { relativeFrom, resolveWithin } from "../utils/path-utils.js";
 
 const ignoredEntries = new Set([".git", "node_modules", "dist", "coverage"]);
+
+const binaryExtensions = new Set([
+  ".apk",
+  ".aab",
+  ".zip",
+  ".tar",
+  ".gz",
+  ".bz2",
+  ".7z",
+  ".rar",
+  ".xz",
+  ".zst",
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".mp3",
+  ".mp4",
+  ".avi",
+  ".mov",
+  ".mkv",
+  ".wmv",
+  ".flv",
+  ".webm",
+  ".exe",
+  ".dmg",
+  ".deb",
+  ".rpm",
+  ".msi",
+  ".jar",
+  ".class",
+  ".war",
+  ".ttf",
+  ".otf",
+  ".woff",
+  ".woff2",
+  ".eot",
+  ".o",
+  ".so",
+  ".dll",
+  ".lib",
+  ".dylib",
+  ".bin",
+  ".dat",
+  ".db",
+  ".sqlite",
+  ".sqlite3",
+  ".pyc",
+  ".pyo",
+  ".iso",
+  ".img",
+  ".wasm",
+  ".keystore",
+  ".jks",
+  ".p12",
+  ".pfx",
+  ".pem",
+  ".crt",
+  ".cer",
+  ".der",
+  ".pub",
+  ".asc",
+  ".gpg",
+  ".sig",
+  ".DS_Store",
+  ".min",
+  ".br",
+]);
+
 const imageMimeTypeByExtension: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -63,6 +135,22 @@ export class FileService {
         kind: "image",
         mimeType: imageMimeType,
         imageDataUrl: `data:${imageMimeType};base64,${contentBuffer.toString("base64")}`,
+        binaryContentBase64: null,
+      };
+    }
+
+    const binaryMimeType = resolveBinaryMimeType(relativePath);
+
+    if (binaryMimeType) {
+      const contentBuffer = await readFile(absolutePath);
+
+      return {
+        path: relativePath,
+        content: "",
+        kind: "binary",
+        mimeType: binaryMimeType,
+        imageDataUrl: null,
+        binaryContentBase64: contentBuffer.toString("base64"),
       };
     }
 
@@ -72,6 +160,7 @@ export class FileService {
       kind: "text",
       mimeType: null,
       imageDataUrl: null,
+      binaryContentBase64: null,
     };
   }
 
@@ -129,13 +218,16 @@ export class FileService {
 
   async getDownloadInfo(repo: SelectedRepo, relativePath: string): Promise<FileDownloadInfo> {
     const absolutePath = resolveWithin(repo.absolutePath, relativePath);
-    const imageMimeType = resolveImageMimeType(relativePath);
+    const mimeType =
+      resolveImageMimeType(relativePath) ??
+      resolveBinaryMimeType(relativePath) ??
+      "application/octet-stream";
     const contentBuffer = await readFile(absolutePath);
 
     return {
       path: relativePath,
       name: path.basename(relativePath),
-      mimeType: imageMimeType ?? "application/octet-stream",
+      mimeType,
       contentBase64: contentBuffer.toString("base64"),
     };
   }
@@ -144,4 +236,44 @@ export class FileService {
 function resolveImageMimeType(relativePath: string) {
   const extension = path.extname(relativePath).toLowerCase();
   return imageMimeTypeByExtension[extension] ?? null;
+}
+
+function resolveBinaryMimeType(relativePath: string) {
+  const extension = path.extname(relativePath).toLowerCase();
+
+  if (imageMimeTypeByExtension[extension]) {
+    return null;
+  }
+
+  if (binaryExtensions.has(extension)) {
+    const binaryMimeTypes: Record<string, string> = {
+      ".apk": "application/vnd.android.package-archive",
+      ".aab": "application/x-android-app-bundle",
+      ".zip": "application/zip",
+      ".tar": "application/x-tar",
+      ".gz": "application/gzip",
+      ".bz2": "application/x-bzip2",
+      ".7z": "application/x-7z-compressed",
+      ".rar": "application/vnd.rar",
+      ".xz": "application/x-xz",
+      ".zst": "application/zstd",
+      ".pdf": "application/pdf",
+      ".doc": "application/msword",
+      ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ".xls": "application/vnd.ms-excel",
+      ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ".mp3": "audio/mpeg",
+      ".mp4": "video/mp4",
+      ".jar": "application/java-archive",
+      ".ttf": "font/ttf",
+      ".eot": "application/vnd.ms-fontobject",
+      ".woff": "font/woff",
+      ".woff2": "font/woff2",
+      ".wasm": "application/wasm",
+    };
+
+    return binaryMimeTypes[extension] ?? "application/octet-stream";
+  }
+
+  return null;
 }
