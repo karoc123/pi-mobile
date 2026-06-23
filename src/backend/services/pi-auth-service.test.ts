@@ -7,7 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { AppConfig } from "../config.js";
-import { PiAuthService, PiAuthServiceError } from "./pi-auth-service.js";
+import { PiAuthService } from "./pi-auth-service.js";
 
 describe("PiAuthService", () => {
   let tempDir = "";
@@ -54,7 +54,7 @@ describe("PiAuthService", () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-pi-auth-"));
     const service = new PiAuthService(createConfig(tempDir));
 
-    await expect(service.loginToken("unknown-provider", "token-123")).rejects.toMatchObject<PiAuthServiceError>({
+    await expect(service.loginToken("unknown-provider", "token-123")).rejects.toMatchObject({
       code: "unknown_provider",
     });
   });

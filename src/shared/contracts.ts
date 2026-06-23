@@ -205,6 +205,7 @@ export type AgentSnapshot = {
   tools: ToolActivity[];
   lastError: string | null;
   usage: AgentUsage;
+  interactivePrompt: InteractivePrompt | null;
 };
 
 export type CostFilterOption = {
@@ -318,6 +319,36 @@ export type ApiErrorResponse = {
     retriable: boolean;
     details?: unknown;
   };
+};
+
+/** Eine einzelne Frage mit Auswahlmöglichkeiten */
+export type InteractiveQuestion = {
+  id: string;
+  label: string;
+  options: string[];
+  allowFreeText: boolean;
+  placeholder?: string;
+  /**
+   * If true, the user can select multiple options.
+   * Defaults to false (single-select).
+   */
+  multiple?: boolean;
+};
+
+/** Vollständiger interaktiver Prompt */
+export type InteractivePrompt = {
+  promptId: string;
+  title: string;
+  questions: InteractiveQuestion[];
+};
+
+/** Antwort auf eine einzelne Frage.
+ * `value` ist ein String bei Single-Select oder Freitext,
+ * ein String-Array bei Multi-Select.
+ */
+export type InteractiveAnswer = {
+  questionId: string;
+  value: string | string[];
 };
 
 export type AgentThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -516,6 +547,10 @@ export type WebsocketEnvelope =
       payload: {
         message: string;
       };
+    }
+  | {
+      type: "interactive_prompt";
+      payload: InteractivePrompt;
     };
 
 export type SessionResponse = {

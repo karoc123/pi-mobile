@@ -11,6 +11,7 @@ import type {
   AgentThinkingLevel,
   AgentUsage,
   ChatMessage,
+  InteractivePrompt,
   SelectedRepo,
   ToolActivity,
   WebsocketEnvelope,
@@ -32,6 +33,7 @@ export class PiAgentService {
   private tools: ToolActivity[] = [];
   private lastError: string | null = null;
   private activeAssistantMessageId: string | null = null;
+  private interactivePrompt: InteractivePrompt | null = null;
   private readonly broadcaster: PiAgentBroadcaster;
   private readonly mockAdapter = new PiAgentMockAdapter();
   private readonly sessionAdapter: PiAgentSessionAdapter;
@@ -67,6 +69,7 @@ export class PiAgentService {
       tools: this.tools,
       lastError: this.lastError,
       usage: this.getUsageSummary(),
+      interactivePrompt: this.interactivePrompt,
     };
   }
 
@@ -344,6 +347,7 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
+    this.interactivePrompt = null;
 
     if (this.config.piMockMode) {
       this.mockAdapter.resetForRepoSelection();
@@ -394,6 +398,9 @@ export class PiAgentService {
       throw new Error("The prompt was rejected by the pi runtime.");
     }
 
+    // Clear any pending interactive prompt – the user is responding (or starting fresh).
+    this.interactivePrompt = null;
+
     const userMessage: ChatMessage = {
       id: randomUUID(),
       role: "user",
@@ -430,6 +437,7 @@ export class PiAgentService {
     this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
+    this.interactivePrompt = null;
 
     if (this.config.piMockMode) {
       this.mockAdapter.resetForNewSession();
@@ -604,6 +612,34 @@ export class PiAgentService {
       this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
       this.activeAssistantMessageId = null;
       this.broadcaster.chatMessageUpdated(updatedMessage.id, updatedMessage.text, updatedMessage.status);
+      this.emitStatus();
+      return;
+    }
+
+    if (event.type === "tool_execution_start" && event.toolName === "ask_user") {
+      const prompt = parseInteractivePromptArgs(event.args);
+
+      if (prompt) {
+        this.interactivePrompt = prompt;
+        this.broadcaster.interactivePrompt(prompt);
+      } else {
+        this.logger.warn("Invalid ask_user tool arguments – skipping interactive prompt.", {
+          event: "ask_user_invalid",
+          repo: this.currentRepo?.absolutePath ?? null,
+          details: { args: event.args },
+        });
+      }
+
+      // Record the tool activity so it appears in the trace
+      const tool: ToolActivity = {
+        id: event.toolCallId,
+        toolName: event.toolName,
+        status: "running",
+        detail: `ask_user: ${summarizePayload(event.args, null)}`,
+      };
+
+      this.tools = upsertTool(this.tools, tool);
+      this.broadcaster.toolActivity(tool);
       this.emitStatus();
       return;
     }
@@ -958,6 +994,63 @@ function formatBashResultMessage(exitCode: number | undefined, cancelled: boolea
   }
 
   return `Bash run finished with exit ${exitLabel}.${suffix}`;
+}
+
+/**
+ * Parse and validate the args of the "ask_user" tool into an InteractivePrompt.
+ * Returns null if the payload is malformed.
+ */
+export function parseInteractivePromptArgs(args: unknown): InteractivePrompt | null {
+  if (!args || typeof args !== "object") {
+    return null;
+  }
+
+  const raw = args as Record<string, unknown>;
+
+  if (typeof raw.title !== "string" || raw.title.trim().length === 0) {
+    return null;
+  }
+
+  if (!Array.isArray(raw.questions) || raw.questions.length === 0) {
+    return null;
+  }
+
+  const questions: InteractivePrompt["questions"] = [];
+
+  for (const q of raw.questions) {
+    if (!q || typeof q !== "object") {
+      return null;
+    }
+
+    const qRaw = q as Record<string, unknown>;
+
+    if (typeof qRaw.id !== "string" || qRaw.id.trim().length === 0) {
+      return null;
+    }
+
+    if (typeof qRaw.label !== "string" || qRaw.label.trim().length === 0) {
+      return null;
+    }
+
+    if (!Array.isArray(qRaw.options) || qRaw.options.length === 0 || !qRaw.options.every((opt: unknown) => typeof opt === "string")) {
+      return null;
+    }
+
+    questions.push({
+      id: qRaw.id.trim(),
+      label: qRaw.label.trim(),
+      options: qRaw.options as string[],
+      allowFreeText: qRaw.allowFreeText === true,
+      multiple: qRaw.multiple === true,
+      placeholder: typeof qRaw.placeholder === "string" && qRaw.placeholder.trim().length > 0 ? qRaw.placeholder.trim() : undefined,
+    });
+  }
+
+  return {
+    promptId: randomUUID(),
+    title: raw.title.trim(),
+    questions,
+  };
 }
 
 function createNoopLogger(): LogChannel {

@@ -1,10 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, tick } from 'svelte';
 
-  import type { AgentRuntimePhase, AgentSlashCommand, AgentUsage, ChatMessage, ToolActivity } from '../../../src/shared/contracts.js';
+  import type { AgentRuntimePhase, AgentSlashCommand, AgentUsage, ChatMessage, InteractivePrompt, ToolActivity } from '../../../src/shared/contracts.js';
   import { formatCompactTokenCount, formatUsageCost } from '../lib/agent-usage.js';
   import { applySlashCommandSuggestion, getSlashCommandSuggestions, toRuntimeSlashCommandSuggestions, type SlashCommandSuggestion } from '../lib/command-suggestions.js';
   import { renderMarkdown } from '../lib/markdown.js';
+  import InteractiveCard from './InteractiveCard.svelte';
 
   type ToolTraceBatch = {
     id: string;
@@ -40,6 +41,7 @@
   export let prefillPrompt = '';
   export let prefillToken = 0;
   export let availableCommands: AgentSlashCommand[] = [];
+  export let interactivePrompt: InteractivePrompt | null = null;
   export let draftStorageScope = 'default';
 
   const dispatch = createEventDispatcher<{
@@ -49,7 +51,17 @@
     openCommands: void;
     openModelCommands: void;
     newSession: void;
+    submit: { prompt: string };
+    interactiveDismiss: void;
   }>();
+
+  function onSubmit(formattedText: string) {
+    dispatch('submit', { prompt: formattedText });
+  }
+
+  function onDismiss() {
+    dispatch('interactiveDismiss');
+  }
 
   let prompt = '';
   let composerPanel: HTMLDivElement | null = null;
@@ -870,6 +882,13 @@
         </article>
       {/if}
     {/each}
+    {#if interactivePrompt}
+      <InteractiveCard
+        prompt={interactivePrompt}
+        {onSubmit}
+        {onDismiss}
+      />
+    {/if}
     <div class="chat-log-end" aria-hidden="true" bind:this={logEndAnchor}></div>
   </div>
 

@@ -2,6 +2,8 @@ import path from "node:path";
 
 import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
+import { askUserTool } from "./ask-user-tool.js";
+
 import type { AgentCommandState, AgentResumeSession, AgentRuntimePhase, AgentSlashCommand, AgentThinkingLevel, AgentTreeEntry, AgentUsage, SelectedRepo } from "../../shared/contracts.js";
 
 import type { AppConfig } from "../config.js";
@@ -186,6 +188,7 @@ export class PiAgentSessionAdapter {
       sessionManager,
       model,
       thinkingLevel,
+      customTools: [askUserTool],
     });
 
     this.unsubscribe?.();
