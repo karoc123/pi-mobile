@@ -3,7 +3,7 @@
 
   import type { FileEntry } from '../../../src/shared/contracts.js';
 
-  type ActionMode = 'menu' | 'create-file' | 'create-directory' | 'duplicate-file' | 'rename-file' | 'move-file' | 'delete-file';
+  type ActionMode = 'menu' | 'create-file' | 'create-directory' | 'duplicate-file' | 'rename-file' | 'move-file' | 'delete-file' | 'upload-file' | 'download-file';
 
   let codeEditorComponent: any = null;
   let codeEditorPromise: Promise<void> | null = null;
@@ -31,6 +31,8 @@
     renameFile: { fromPath: string; toPath: string };
     moveFile: { fromPath: string; toPath: string };
     deleteFile: { path: string };
+    uploadFile: { path: string; contentBase64: string };
+    downloadFile: { path: string };
   }>();
 
   const COLLAPSIBLE_MAX_WIDTH = 859;
@@ -45,6 +47,9 @@
   let newFileContent = '';
   let newDirectoryName = '';
   let targetPath = '';
+  let fileInputElement: HTMLInputElement | null = null;
+  let uploadingFileName = '';
+  let uploading = false;
 
   function parentPath(pathValue: string) {
     if (pathValue === '.' || pathValue.length === 0) {
@@ -116,6 +121,10 @@
         targetPath = selectedFilePath;
       }
     }
+
+    if (mode === 'upload-file') {
+      uploadingFileName = selectedFilePath ? fileName(selectedFilePath) : 'uploaded-file';
+    }
   }
 
   function selectAction(mode: ActionMode) {
@@ -141,6 +150,14 @@
     }
 
     if (actionMode === 'delete-file') {
+      return selectedFilePath.length > 0;
+    }
+
+    if (actionMode === 'upload-file') {
+      return uploadingFileName.trim().length > 0 && uploadingFileName.trim() !== '.';
+    }
+
+    if (actionMode === 'download-file') {
       return selectedFilePath.length > 0;
     }
 
@@ -204,6 +221,62 @@
       dispatch('deleteFile', { path: selectedFilePath });
       closeActions();
     }
+
+    if (actionMode === 'upload-file') {
+      const fileInput = fileInputElement;
+
+      if (fileInput) {
+        fileInput.click();
+      }
+    }
+
+    if (actionMode === 'download-file' && selectedFilePath) {
+      dispatch('downloadFile', { path: selectedFilePath });
+      closeActions();
+    }
+  }
+
+  function handleFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const targetUploadPath = joinPath(currentPath, uploadingFileName.trim() || file.name);
+    uploading = true;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+
+      if (typeof result !== 'string') {
+        uploading = false;
+        return;
+      }
+
+      const base64Index = result.indexOf(';base64,');
+
+      if (base64Index === -1) {
+        uploading = false;
+        return;
+      }
+
+      const contentBase64 = result.slice(base64Index + 8);
+      dispatch('uploadFile', { path: targetUploadPath, contentBase64 });
+
+      // Reset file input so the same file can be picked again
+      input.value = '';
+      uploading = false;
+      closeActions();
+    };
+
+    reader.onerror = () => {
+      uploading = false;
+    };
+
+    reader.readAsDataURL(file);
   }
 
   $: if (selectedFilePath && fileKind === 'text') {
@@ -296,14 +369,16 @@
           <div class="editor-action-menu">
             <button class="secondary-button" type="button" on:click={() => selectAction('create-file')}>New file</button>
             <button class="secondary-button" type="button" on:click={() => selectAction('create-directory')}>New folder</button>
+            <button class="secondary-button" type="button" on:click={() => selectAction('upload-file')}>Upload file</button>
 
             {#if selectedFilePath}
+              <button class="secondary-button" type="button" on:click={() => selectAction('download-file')}>Download file</button>
               <button class="secondary-button" type="button" on:click={() => selectAction('duplicate-file')}>Duplicate file</button>
               <button class="secondary-button" type="button" on:click={() => selectAction('rename-file')}>Rename file</button>
               <button class="secondary-button" type="button" on:click={() => selectAction('move-file')}>Move file</button>
               <button class="danger-button" type="button" on:click={() => selectAction('delete-file')}>Delete file</button>
             {:else}
-              <p class="empty-state small">Open a file to unlock duplicate, rename, move and delete actions.</p>
+              <p class="empty-state small">Open a file to unlock download, duplicate, rename, move and delete actions.</p>
             {/if}
           </div>
         {:else}
@@ -326,6 +401,14 @@
 
               <label class="field-label" for="target-path">Target path</label>
               <input id="target-path" class="text-input" bind:value={targetPath} placeholder="src/new-name.ts" autocomplete="off" />
+            {:else if actionMode === 'upload-file'}
+              <label class="field-label" for="upload-file-name">Upload as</label>
+              <input id="upload-file-name" class="text-input" bind:value={uploadingFileName} placeholder="target/file.ext" autocomplete="off" />
+              <p class="empty-state small">Select a file from your device to upload into {currentPath === '.' ? 'the repo root' : currentPath}.</p>
+            {:else if actionMode === 'download-file'}
+              <p class="empty-state small">
+                Download <strong>{selectedFilePath}</strong> to your device.
+              </p>
             {:else}
               <p class="empty-state small">
                 The file <strong>{selectedFilePath}</strong> will be permanently deleted from the repository working tree.
@@ -334,8 +417,8 @@
 
             <div class="editor-actions-footer">
               <button class="ghost-button" type="button" on:click={() => (actionMode = 'menu')}>Back</button>
-              <button class="primary-button" type="submit" disabled={!canSubmitAction() || creating}>
-                {creating ? 'Working...' : actionMode === 'create-file' ? 'Create file' : actionMode === 'create-directory' ? 'Create folder' : actionMode === 'duplicate-file' ? 'Duplicate file' : actionMode === 'rename-file' ? 'Rename file' : actionMode === 'move-file' ? 'Move file' : 'Delete file'}
+              <button class="primary-button" type="submit" disabled={!canSubmitAction() || creating || uploading}>
+                {creating || uploading ? 'Working...' : actionMode === 'create-file' ? 'Create file' : actionMode === 'create-directory' ? 'Create folder' : actionMode === 'duplicate-file' ? 'Duplicate file' : actionMode === 'rename-file' ? 'Rename file' : actionMode === 'move-file' ? 'Move file' : actionMode === 'upload-file' ? 'Select file...' : actionMode === 'download-file' ? 'Download file' : 'Delete file'}
               </button>
             </div>
           </form>
@@ -434,3 +517,11 @@
     </div>
   </div>
 </section>
+
+<input
+  type="file"
+  bind:this={fileInputElement}
+  on:change={handleFileSelected}
+  style="display: none"
+  aria-hidden="true"
+/>

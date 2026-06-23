@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import type { FileDocument, FileEntry, SelectedRepo } from "../../shared/contracts.js";
+import type { FileDocument, FileDownloadInfo, FileEntry, SelectedRepo } from "../../shared/contracts.js";
 
 import { relativeFrom, resolveWithin } from "../utils/path-utils.js";
 
@@ -118,6 +118,26 @@ export class FileService {
   async deletePath(repo: SelectedRepo, relativePath: string) {
     const absolutePath = resolveWithin(repo.absolutePath, relativePath);
     await rm(absolutePath, { recursive: true, force: false });
+  }
+
+  async uploadFile(repo: SelectedRepo, relativePath: string, contentBase64: string) {
+    const absolutePath = resolveWithin(repo.absolutePath, relativePath);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    const buffer = Buffer.from(contentBase64, "base64");
+    await writeFile(absolutePath, buffer);
+  }
+
+  async getDownloadInfo(repo: SelectedRepo, relativePath: string): Promise<FileDownloadInfo> {
+    const absolutePath = resolveWithin(repo.absolutePath, relativePath);
+    const imageMimeType = resolveImageMimeType(relativePath);
+    const contentBuffer = await readFile(absolutePath);
+
+    return {
+      path: relativePath,
+      name: path.basename(relativePath),
+      mimeType: imageMimeType ?? "application/octet-stream",
+      contentBase64: contentBuffer.toString("base64"),
+    };
   }
 }
 

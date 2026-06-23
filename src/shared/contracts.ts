@@ -115,6 +115,31 @@ export type FileDeleteResult = {
   path: string;
 };
 
+export type FileUploadRequest = {
+  path: string;
+  /**
+   * The file content as a Base64-encoded string.
+   * The backend will decode and write the binary data.
+   */
+  contentBase64: string;
+};
+
+export type FileUploadResult = {
+  ok: true;
+  path: string;
+};
+
+export type FileDownloadInfo = {
+  path: string;
+  name: string;
+  mimeType: string | null;
+  /**
+   * The file content as a Base64-encoded data URI.
+   * Only included when the download is requested via JSON.
+   */
+  contentBase64: string | null;
+};
+
 export type DiffHunk = {
   id: string;
   header: string;
