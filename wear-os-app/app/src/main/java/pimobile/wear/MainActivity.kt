@@ -40,7 +40,9 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == Activity.RESULT_OK) {
             val prompt = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (prompt != null && apiClient != null) {
-                CoroutineScope(Dispatchers.IO).launch { apiClient!!.sendPrompt(prompt) }
+                val systemNote = "Answer concisely — no markdown, tables, or formatting. Displayed on a Wear OS watch."
+                val fullPrompt = "[$systemNote] $prompt"
+                CoroutineScope(Dispatchers.IO).launch { apiClient!!.sendPrompt(fullPrompt) }
             }
         }
     }
@@ -52,18 +54,44 @@ class MainActivity : ComponentActivity() {
                 var screen by remember { mutableStateOf<String?>(null) } // null = loading
                 var savedUrl by remember { mutableStateOf("") }
                 var savedPassword by remember { mutableStateOf("") }
+                var savedRepoPath by remember { mutableStateOf("") }
+                var savedRepoName by remember { mutableStateOf("") }
 
-                // Load DataStore ONCE before showing UI
+                // Load DataStore once, then decide initial screen
                 LaunchedEffect(Unit) {
                     val prefs = dataStore.data.first()
-                    savedUrl = prefs[stringPreferencesKey("url")] ?: ""
-                    savedPassword = prefs[stringPreferencesKey("password")] ?: ""
-                    screen = "settings"
+                    val url = prefs[stringPreferencesKey("url")] ?: ""
+                    val pw = prefs[stringPreferencesKey("password")] ?: ""
+                    val repoPath = prefs[stringPreferencesKey("repoPath")] ?: ""
+                    val repoName = prefs[stringPreferencesKey("repoName")] ?: ""
+
+                    savedUrl = url
+                    savedPassword = pw
+                    savedRepoPath = repoPath
+                    savedRepoName = repoName
+
+                    if (url.isNotBlank() && pw.isNotBlank() && repoPath.isNotBlank() && repoName.isNotBlank()) {
+                        // Auto-login + jump to repo
+                        val client = ApiClient(url, pw)
+                        val loginResult = client.login()
+                        if (loginResult.isSuccess) {
+                            val selectResult = client.selectRepo(repoPath)
+                            if (selectResult.isSuccess) {
+                                apiClient = client
+                                screen = "main"
+                            } else {
+                                screen = "settings"
+                            }
+                        } else {
+                            screen = "settings"
+                        }
+                    } else {
+                        screen = "settings"
+                    }
                 }
 
                 when (screen) {
                     null -> {
-                        // Loading / black screen
                         Box(Modifier.fillMaxSize().background(Color(0xFF0F172A)))
                     }
                     "settings" -> {
@@ -71,7 +99,6 @@ class MainActivity : ComponentActivity() {
                             initialUrl = savedUrl,
                             initialPassword = savedPassword,
                             onConnect = { url, pw ->
-                                // Called from coroutine, runs on Dispatchers.IO internally
                                 val client = ApiClient(url, pw)
                                 val result = client.login()
                                 if (result.isSuccess) {
@@ -86,7 +113,6 @@ class MainActivity : ComponentActivity() {
                                 result
                             },
                             onConnected = {
-                                // Login succeeded -> go to repo picker
                                 screen = "repo_picker"
                             },
                             onBack = { finish() },
@@ -96,10 +122,20 @@ class MainActivity : ComponentActivity() {
                         apiClient?.let { client ->
                             RepoPickerScreen(
                                 apiClient = client,
-                                onRepoSelected = { screen = "main" },
+                                onRepoSelected = { path, name ->
+                                    savedRepoPath = path
+                                    savedRepoName = name
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        dataStore.edit { prefs ->
+                                            prefs[stringPreferencesKey("repoPath")] = path
+                                            prefs[stringPreferencesKey("repoName")] = name
+                                        }
+                                    }
+                                    screen = "main"
+                                },
                                 onBackToSettings = { screen = "settings" },
                             )
-                        } ?: Box(Modifier.fillMaxSize().background(Color(0xFF0F172A))) // should never happen
+                        } ?: Box(Modifier.fillMaxSize().background(Color(0xFF0F172A)))
                     }
                     "main" -> {
                         apiClient?.let { client ->
@@ -108,7 +144,7 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = "repo_picker" },
                                 onVoicePrompt = { startVoiceRecognition() },
                             )
-                        } ?: Box(Modifier.fillMaxSize().background(Color(0xFF0F172A))) // safety
+                        } ?: Box(Modifier.fillMaxSize().background(Color(0xFF0F172A)))
                     }
                 }
             }

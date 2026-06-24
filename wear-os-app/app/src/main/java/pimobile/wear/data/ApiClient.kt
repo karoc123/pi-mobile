@@ -81,6 +81,10 @@ class ApiClient(
         return postRaw("/api/agent/abort", "{}").map { Unit }
     }
 
+    suspend fun newSession(): Result<Unit> {
+        return postRaw("/api/agent/new-session", "{}").map { Unit }
+    }
+
     // ---- Workspace ----
 
     suspend fun browseWorkspaces(): Result<WorkspaceBrowseResponse> = getParsed("/api/workspaces/browse")

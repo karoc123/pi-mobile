@@ -34,7 +34,7 @@ import pimobile.wear.data.WorkspaceEntry
 @Composable
 fun RepoPickerScreen(
     apiClient: ApiClient,
-    onRepoSelected: () -> Unit,
+    onRepoSelected: (repoPath: String, repoName: String) -> Unit,
     onBackToSettings: () -> Unit = {},
 ) {
     var entries by remember { mutableStateOf<List<WorkspaceEntry>>(emptyList()) }
@@ -108,7 +108,9 @@ fun RepoPickerScreen(
                                 scope.launch {
                                     try {
                                         apiClient.selectRepo(entry.relativePath)
-                                            .onSuccess { onRepoSelected() }
+                                            .onSuccess {
+                                                onRepoSelected(entry.relativePath, entry.name)
+                                            }
                                             .onFailure { e -> error = e.message; selecting = null }
                                     } catch (e: Exception) { error = e.message; selecting = null }
                                 }

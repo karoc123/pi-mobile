@@ -3,8 +3,10 @@ package pimobile.wear.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,7 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import android.speech.tts.TextToSpeech
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -31,6 +36,7 @@ import kotlinx.coroutines.launch
 import pimobile.wear.data.AgentMinimalState
 import pimobile.wear.data.ApiClient
 import pimobile.wear.data.phaseLabel
+import java.util.Locale
 
 @Composable
 fun MainScreen(
@@ -121,6 +127,7 @@ fun MainScreen(
                 phase == "compacting" || phase == "retrying" ||
                 phase == "bash-running"
 
+            // Voice button (full width, prominent)
             if (isRunning) {
                 Button(
                     onClick = { scope.launch { apiClient.abort() } },
@@ -130,18 +137,45 @@ fun MainScreen(
             } else {
                 Button(
                     onClick = onVoicePrompt,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-                ) { Text("🎤 Voice", fontSize = 12.sp) }
+                ) { Text("🎤 Voice", fontSize = 14.sp) }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Bottom row: New + Commit (half width each)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { scope.launch {
+                        if (isRunning) apiClient.abort()
+                        apiClient.newSession()
+                    }},
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED)),
+                ) {
+                    Text("🆕 New", fontSize = 11.sp, textAlign = TextAlign.Center)
+                }
+
+                Button(
+                    onClick = { scope.launch { apiClient.commit("watch commit") } },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                ) {
+                    Text("Commit", fontSize = 11.sp, textAlign = TextAlign.Center)
+                }
             }
 
             Spacer(Modifier.height(6.dp))
 
             Button(
-                onClick = { scope.launch { apiClient.commit("watch commit") } },
+                onClick = onBack,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-            ) { Text("✓ Commit", fontSize = 12.sp) }
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F)),
+            ) { Text("Back", fontSize = 11.sp) }
 
             Spacer(Modifier.height(4.dp))
         }
@@ -149,7 +183,19 @@ fun MainScreen(
 
     // Full response overlay
     if (showFull) {
+        val ctx = LocalContext.current
         val fullText = state?.lastMessageFull
+        var ttsReady by remember { mutableStateOf(false) }
+        var tts by remember { mutableStateOf<TextToSpeech?>(null) }
+
+        DisposableEffect(ctx) {
+            val ttsInstance = TextToSpeech(ctx) { status ->
+                if (status == TextToSpeech.SUCCESS) ttsReady = true
+            }
+            tts = ttsInstance
+            onDispose { ttsInstance.stop(); ttsInstance.shutdown() }
+        }
+
         Box(
             modifier = Modifier.fillMaxSize()
                 .background(Color(0xFF0F172A))
@@ -157,9 +203,20 @@ fun MainScreen(
                 .padding(14.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Text("Response", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFFF1F5F9))
-                Spacer(Modifier.height(6.dp))
+            Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "🔊",
+                    fontSize = 24.sp,
+                    color = if (ttsReady && fullText != null) Color(0xFF93C5FD) else Color(0xFF475569),
+                    modifier = Modifier.clickable(enabled = ttsReady && fullText != null) {
+                        fullText?.let {
+                            tts?.setLanguage(Locale.US)
+                            tts?.speak(it, TextToSpeech.QUEUE_FLUSH, null, null)
+                        }
+                    },
+                )
+                Spacer(Modifier.height(4.dp))
                 Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
                     Text(
                         text = fullText ?: "(empty)",
