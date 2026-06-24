@@ -6,6 +6,7 @@ import type {
   AgentCommandRequest,
   AgentCommandResponse,
   AgentCommandState,
+  AgentMinimalState,
   AgentModelOption,
   AgentSnapshot,
   AgentThinkingLevel,
@@ -70,6 +71,32 @@ export class PiAgentService {
       lastError: this.lastError,
       usage: this.getUsageSummary(),
       interactivePrompt: this.interactivePrompt,
+    };
+  }
+
+  getMinimalSnapshot(): AgentMinimalState {
+    const runtimeState = this.getRuntimeState();
+    const usage = this.getUsageSummary();
+
+    // Letzte Nachricht als Vorschau (max 120 Zeichen)
+    const lastAssistantMsg = [...this.messages].reverse().find((m) => m.role === "assistant");
+    const lastMessagePreview = lastAssistantMsg
+      ? lastAssistantMsg.text.length > 120
+        ? lastAssistantMsg.text.slice(0, 120) + "…"
+        : lastAssistantMsg.text
+      : null;
+
+    return {
+      repoName: this.currentRepo?.name ?? null,
+      ...runtimeState,
+      pendingMessageCount: runtimeState.pendingMessageCount ?? 0,
+      lastError: this.lastError,
+      lastMessagePreview,
+      usage: {
+        totalCost: usage.totalCost,
+        totalTokens: usage.totalTokens,
+        modelId: usage.modelId,
+      },
     };
   }
 

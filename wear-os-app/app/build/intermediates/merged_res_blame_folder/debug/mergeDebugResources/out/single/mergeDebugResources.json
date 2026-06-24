@@ -1,0 +1,18 @@
+[
+    {
+        "merged": "pimobile.wear.app-debug-51:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "pimobile.wear.app-main-53:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "pimobile.wear.app-debug-51:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "pimobile.wear.app-main-53:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "pimobile.wear.app-debug-51:/drawable_ic_launcher_background.xml.flat",
+        "source": "pimobile.wear.app-main-53:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "pimobile.wear.app-debug-51:/drawable_ic_launcher.xml.flat",
+        "source": "pimobile.wear.app-main-53:/drawable/ic_launcher.xml"
+    }
+]

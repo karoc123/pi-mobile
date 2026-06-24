@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <!-- Background (rounded rect) -->
+    <path
+        android:fillColor="#111827"
+        android:pathData="M4,4h56a14,14 0,0 1,14 14v28a14,14 0,0 1,-14 14h-56a14,14 0,0 1,-14 -14v-28a14,14 0,0 1,14 -14z"/>
+    <path
+        android:strokeColor="#334155"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"
+        android:pathData="M4,4h56a14,14 0,0 1,14 14v28a14,14 0,0 1,-14 14h-56a14,14 0,0 1,-14 -14v-28a14,14 0,0 1,14 -14z"/>
+    <!-- pi glyph (horizontal bar + two verticals) -->
+    <path
+        android:strokeColor="#22D3EE"
+        android:strokeWidth="5"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M16,23h32M24,23v21c0,2.2 1.8,4 4,4M40,23v25"/>
+    <!-- dot -->
+    <circle
+        android:fillColor="#38BDF8"
+        android:centerX="47.0"
+        android:centerY="17.0"
+        android:radius="3dp"/>
+</vector>

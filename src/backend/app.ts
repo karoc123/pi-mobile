@@ -568,7 +568,12 @@ export function createApp(services: AppServices) {
     });
   });
 
-  app.get("/api/agent/state", requireAuth(services), (_request, response) => {
+  app.get("/api/agent/state", requireAuth(services), (request, response) => {
+    if (request.query.minimal === "true") {
+      response.json(services.piAgentService.getMinimalSnapshot());
+      return;
+    }
+
     response.json(services.piAgentService.getSnapshot());
   });
 
