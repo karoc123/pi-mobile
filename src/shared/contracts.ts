@@ -228,6 +228,7 @@ export type AgentMinimalState = {
   pendingMessageCount: number;
   lastError: string | null;
   lastMessagePreview: string | null;
+  lastMessageFull: string | null;
   usage: {
     totalCost: number;
     totalTokens: number;

@@ -87,7 +87,7 @@ class ApiClient(
 
     suspend fun selectRepo(path: String): Result<WorkspaceRepo> {
         val body = """{"path":"${path.escapeJson()}"}"""
-        return postParsed("/api/workspaces/select", body)
+        return postParsed<SelectRepoResponse>("/api/workspaces/select", body).map { it.repo }
     }
 
     // ---- Git ----

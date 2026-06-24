@@ -85,6 +85,7 @@ export class PiAgentService {
         ? lastAssistantMsg.text.slice(0, 120) + "…"
         : lastAssistantMsg.text
       : null;
+    const lastMessageFull = lastAssistantMsg?.text ?? null;
 
     return {
       repoName: this.currentRepo?.name ?? null,
@@ -92,6 +93,7 @@ export class PiAgentService {
       pendingMessageCount: runtimeState.pendingMessageCount ?? 0,
       lastError: this.lastError,
       lastMessagePreview,
+      lastMessageFull,
       usage: {
         totalCost: usage.totalCost,
         totalTokens: usage.totalTokens,

@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
                             RepoPickerScreen(
                                 apiClient = client,
                                 onRepoSelected = { screen = "main" },
+                                onBackToSettings = { screen = "settings" },
                             )
                         } ?: Box(Modifier.fillMaxSize().background(Color(0xFF0F172A))) // should never happen
                     }
@@ -104,7 +105,7 @@ class MainActivity : ComponentActivity() {
                         apiClient?.let { client ->
                             MainScreen(
                                 apiClient = client,
-                                onSettingsClick = { screen = "settings" },
+                                onBack = { screen = "repo_picker" },
                                 onVoicePrompt = { startVoiceRecognition() },
                             )
                         } ?: Box(Modifier.fillMaxSize().background(Color(0xFF0F172A))) // safety

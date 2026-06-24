@@ -10,6 +10,7 @@ data class AgentMinimalState(
     val pendingMessageCount: Int,
     val lastError: String?,
     val lastMessagePreview: String?,
+    val lastMessageFull: String?,
     val usage: UsageSummary,
 )
 
@@ -60,6 +61,9 @@ data class WorkspaceRepo(
     val relativePath: String,
     val absolutePath: String?,
 )
+
+/** Wrapper for /api/workspaces/select response: { repo: { name, relativePath, absolutePath } } */
+data class SelectRepoResponse(val repo: WorkspaceRepo)
 
 /** Generic ok */
 data class OkResponse(val ok: Boolean)
