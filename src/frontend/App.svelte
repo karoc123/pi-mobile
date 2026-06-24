@@ -1169,12 +1169,12 @@
 
   async function openFile(path: string) {
     try {
-      const document = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
+      const fileDoc = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
 
-      if (document.kind === 'binary' && document.binaryContentBase64) {
+      if (fileDoc.kind === 'binary' && fileDoc.binaryContentBase64) {
         // Binary files (e.g. .apk, .zip) werden direkt runtergeladen
-        const mimeType = document.mimeType || 'application/octet-stream';
-        const byteString = atob(document.binaryContentBase64);
+        const mimeType = fileDoc.mimeType || 'application/octet-stream';
+        const byteString = atob(fileDoc.binaryContentBase64);
         const byteArrays: Uint8Array[] = [];
 
         for (let offset = 0; offset < byteString.length; offset += 512) {
@@ -1193,7 +1193,7 @@
 
         const anchor = document.createElement('a');
         anchor.href = blobUrl;
-        anchor.download = document.path.split('/').pop() || 'download';
+        anchor.download = fileDoc.path.split('/').pop() || 'download';
         document.body.appendChild(anchor);
         anchor.click();
         document.body.removeChild(anchor);
@@ -1203,7 +1203,7 @@
         return;
       }
 
-      selectedDocument = document;
+      selectedDocument = fileDoc;
       draftContent = selectedDocument.kind === 'text' ? selectedDocument.content : '';
       editorDirty = false;
       view = 'editor';
