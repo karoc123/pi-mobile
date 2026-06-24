@@ -22,9 +22,11 @@
     FileCreateResult,
     FileDeleteResult,
     FileDocument,
+    FileDownloadInfo,
     FileDuplicateResult,
     FileEntry,
     FileMoveResult,
+    FileUploadResult,
     GitDiffResponse,
     GitRemoteSyncStatus,
     GitSyncResult,
@@ -1173,7 +1175,41 @@
 
   async function openFile(path: string) {
     try {
-      selectedDocument = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
+      const fileDoc = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
+
+      if (fileDoc.kind === 'binary' && fileDoc.binaryContentBase64) {
+        // Binary files (e.g. .apk, .zip) werden direkt runtergeladen
+        const mimeType = fileDoc.mimeType || 'application/octet-stream';
+        const byteString = atob(fileDoc.binaryContentBase64);
+        const byteArrays: Uint8Array[] = [];
+
+        for (let offset = 0; offset < byteString.length; offset += 512) {
+          const chunk = byteString.slice(offset, offset + 512);
+          const bytes = new Uint8Array(chunk.length);
+
+          for (let index = 0; index < chunk.length; index++) {
+            bytes[index] = chunk.charCodeAt(index);
+          }
+
+          byteArrays.push(bytes);
+        }
+
+        const blob = new Blob(byteArrays, { type: mimeType });
+        const blobUrl = URL.createObjectURL(blob);
+
+        const anchor = document.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = fileDoc.path.split('/').pop() || 'download';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(blobUrl);
+
+        showBanner('Binary file downloaded.', 'success');
+        return;
+      }
+
+      selectedDocument = fileDoc;
       draftContent = selectedDocument.kind === 'text' ? selectedDocument.content : '';
       editorDirty = false;
       view = 'editor';
@@ -1330,6 +1366,79 @@
       handleApiFailure(error);
     } finally {
       creatingFile = false;
+    }
+  }
+
+  async function uploadFile(targetPath: string, contentBase64: string) {
+    const normalizedPath = targetPath.trim();
+
+    if (!normalizedPath || normalizedPath === '.') {
+      showBanner('File path is required.', 'error');
+      return;
+    }
+
+    creatingFile = true;
+
+    try {
+      const response = await apiFetch<FileUploadResult>('/api/files/upload', {
+        method: 'POST',
+        body: JSON.stringify({ path: normalizedPath, contentBase64 })
+      });
+      await loadFiles(parentDirectoryFor(response.path));
+      await openFile(response.path);
+      showBanner('File uploaded.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      creatingFile = false;
+    }
+  }
+
+  async function downloadFile(filePathToDownload: string) {
+    const normalizedPath = filePathToDownload.trim();
+
+    if (!normalizedPath || normalizedPath === '.') {
+      showBanner('File path is required.', 'error');
+      return;
+    }
+
+    try {
+      const info = await apiFetch<FileDownloadInfo>(`/api/files/download?path=${encodeURIComponent(normalizedPath)}`);
+
+      if (!info.contentBase64) {
+        showBanner('Download failed: no content received.', 'error');
+        return;
+      }
+
+      const mimeType = info.mimeType || 'application/octet-stream';
+      const byteString = atob(info.contentBase64);
+      const byteArrays: Uint8Array[] = [];
+
+      for (let offset = 0; offset < byteString.length; offset += 512) {
+        const chunk = byteString.slice(offset, offset + 512);
+        const bytes = new Uint8Array(chunk.length);
+
+        for (let index = 0; index < chunk.length; index++) {
+          bytes[index] = chunk.charCodeAt(index);
+        }
+
+        byteArrays.push(bytes);
+      }
+
+      const blob = new Blob(byteArrays, { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const anchor = document.createElement('a');
+      anchor.href = blobUrl;
+      anchor.download = info.name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(blobUrl);
+
+      showBanner('File downloaded.', 'success');
+    } catch (error) {
+      handleApiFailure(error);
     }
   }
 
@@ -2383,6 +2492,8 @@
             on:renameFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) => renameFile(event.detail.fromPath, event.detail.toPath)}
             on:moveFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) => moveFile(event.detail.fromPath, event.detail.toPath)}
             on:deleteFile={(event: CustomEvent<{ path: string }>) => deleteFile(event.detail.path)}
+            on:uploadFile={(event: CustomEvent<{ path: string; contentBase64: string }>) => uploadFile(event.detail.path, event.detail.contentBase64)}
+            on:downloadFile={(event: CustomEvent<{ path: string }>) => downloadFile(event.detail.path)}
             on:change={(event: CustomEvent<{ content: string }>) => {
               draftContent = event.detail.content;
               editorDirty = selectedDocument ? event.detail.content !== selectedDocument.content : false;

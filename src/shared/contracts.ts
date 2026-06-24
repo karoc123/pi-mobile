@@ -61,9 +61,14 @@ export type FileEntry = {
 export type FileDocument = {
   path: string;
   content: string;
-  kind: "text" | "image";
+  kind: "text" | "image" | "binary";
   mimeType: string | null;
   imageDataUrl: string | null;
+  /**
+   * Binary content as Base64-encoded string.
+   * Only present when kind is "binary".
+   */
+  binaryContentBase64: string | null;
 };
 
 export type FileCreateRequest = {
@@ -113,6 +118,31 @@ export type FileDeleteRequest = {
 export type FileDeleteResult = {
   ok: true;
   path: string;
+};
+
+export type FileUploadRequest = {
+  path: string;
+  /**
+   * The file content as a Base64-encoded string.
+   * The backend will decode and write the binary data.
+   */
+  contentBase64: string;
+};
+
+export type FileUploadResult = {
+  ok: true;
+  path: string;
+};
+
+export type FileDownloadInfo = {
+  path: string;
+  name: string;
+  mimeType: string | null;
+  /**
+   * The file content as a Base64-encoded data URI.
+   * Only included when the download is requested via JSON.
+   */
+  contentBase64: string | null;
 };
 
 export type DiffHunk = {

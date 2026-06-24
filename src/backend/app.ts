@@ -17,10 +17,13 @@ import type {
   FileCreateResult,
   FileDeleteRequest,
   FileDeleteResult,
+  FileDownloadInfo,
   FileDuplicateRequest,
   FileDuplicateResult,
   FileMoveRequest,
   FileMoveResult,
+  FileUploadRequest,
+  FileUploadResult,
   GitDiffResponse,
   GitSyncResult,
   PiAuthLoginTokenRequest,
@@ -410,6 +413,53 @@ export function createApp(services: AppServices) {
     }
 
     response.json({ ok: true, path: filePath } satisfies FileDeleteResult);
+  });
+
+  app.post("/api/files/upload", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const body = getBodyObject<FileUploadRequest>(request);
+    const filePath = body.path.trim();
+    const contentBase64 = body.contentBase64;
+
+    if (filePath.length === 0 || filePath === ".") {
+      throw new HttpError(400, "bad_request", "File path is required.", { retriable: false });
+    }
+
+    if (typeof contentBase64 !== "string" || contentBase64.length === 0) {
+      throw new HttpError(400, "bad_request", "Base64 content is required.", { retriable: false });
+    }
+
+    try {
+      await services.fileService.uploadFile(repo, filePath, contentBase64);
+    } catch (error) {
+      if (isNodeFileExistsError(error)) {
+        throw new HttpError(409, "conflict", "File already exists.", { retriable: false });
+      }
+
+      throw error;
+    }
+
+    response.json({ ok: true, path: filePath } satisfies FileUploadResult);
+  });
+
+  app.get("/api/files/download", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const filePath = getQueryString(request, "path");
+
+    if (filePath.length === 0 || filePath === ".") {
+      throw new HttpError(400, "bad_request", "File path is required.", { retriable: false });
+    }
+
+    try {
+      const info = await services.fileService.getDownloadInfo(repo, filePath);
+      response.json(info satisfies FileDownloadInfo);
+    } catch (error) {
+      if (isNodeFileNotFoundError(error)) {
+        throw new HttpError(404, "not_found", "File does not exist.", { retriable: false });
+      }
+
+      throw error;
+    }
   });
 
   app.get("/api/git/diff", requireAuth(services), async (_request, response) => {
