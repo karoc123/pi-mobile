@@ -222,6 +222,20 @@ export type AgentUsage = {
 
 export type AgentRuntimePhase = "idle" | "streaming" | "queued" | "compacting" | "retrying" | "bash-running";
 
+export type AgentMinimalState = {
+  repoName: string | null;
+  runtimePhase: AgentRuntimePhase;
+  pendingMessageCount: number;
+  lastError: string | null;
+  lastMessagePreview: string | null;
+  lastMessageFull: string | null;
+  usage: {
+    totalCost: number;
+    totalTokens: number;
+    modelId: string | null;
+  };
+};
+
 export type AgentSnapshot = {
   repo: SelectedRepo | null;
   isConfigured: boolean;

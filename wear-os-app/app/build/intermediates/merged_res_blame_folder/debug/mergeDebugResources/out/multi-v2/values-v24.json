@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "pimobile.wear.app-mergeDebugResources-49:/values-v24/values-v24.xml",
+            "map": [
+                {
+                    "source": "/home/karoc/.gradle/caches/8.9/transforms/8deca72fe010e234cf40661efbdcd1cb/transformed/wear-1.2.0/res/values-v24/values-v24.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "14",
+                        "endColumns": "12",
+                        "endOffsets": "929"
+                    }
+                }
+            ]
+        }
+    ]
+}
