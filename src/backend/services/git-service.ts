@@ -1,4 +1,4 @@
-import type { DiffFile, DiffHunk, GitRemoteSyncStatus, SelectedRepo } from "../../shared/contracts.js";
+import type { DiffFile, DiffHunk, GitBranchInfo, GitRemoteSyncStatus, SelectedRepo } from "../../shared/contracts.js";
 
 import { runCommand } from "../utils/process.js";
 
@@ -130,6 +130,33 @@ export class GitService {
   async push(repo: SelectedRepo) {
     const result = await this.runGit(repo, ["push"]);
     return summarizeSyncOutput("Push completed.", result.stdout, result.stderr);
+  }
+
+  async getBranches(repo: SelectedRepo): Promise<GitBranchInfo[]> {
+    const { stdout } = await this.runGit(repo, ["branch", "--list", "--format=%(refname:short)"]);
+    const current = await this.getCurrentBranch(repo);
+
+    return stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((name) => ({
+        name,
+        current: name === current,
+      }));
+  }
+
+  async getCurrentBranch(repo: SelectedRepo): Promise<string> {
+    const { stdout } = await this.runGit(repo, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    return stdout.trim();
+  }
+
+  async switchBranch(repo: SelectedRepo, branchName: string) {
+    await this.runGit(repo, ["switch", branchName]);
+  }
+
+  async createBranch(repo: SelectedRepo, branchName: string) {
+    await this.runGit(repo, ["checkout", "-b", branchName]);
   }
 
   private async getStagedDiff(repo: SelectedRepo) {

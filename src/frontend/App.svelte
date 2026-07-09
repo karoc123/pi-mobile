@@ -17,6 +17,8 @@
     BackendLogQueryResponse,
     CostReport,
     DiffFile,
+    GitBranchesResponse,
+    GitBranchInfo,
     GitCommitResult,
     FileCreateDirectoryResult,
     FileCreateResult,
@@ -152,6 +154,10 @@
   let committing = false;
   let pulling = false;
   let pushing = false;
+  let branchList: GitBranchInfo[] = [];
+  let branchListLoading = false;
+  let switchingBranch = false;
+  let creatingBranch = false;
 
   let fileLoading = false;
   let filePath = '.';
@@ -1810,6 +1816,69 @@
     }
   }
 
+  async function loadBranches() {
+    if (!currentRepo) {
+      return;
+    }
+
+    branchListLoading = true;
+
+    try {
+      const response = await apiFetch<GitBranchesResponse>('/api/git/branches');
+      branchList = response.branches;
+    } catch (error) {
+      handleApiFailure(error);
+      branchList = [];
+    } finally {
+      branchListLoading = false;
+    }
+  }
+
+  async function switchBranch(name: string) {
+    if (!currentRepo) {
+      showBanner('Select a repository before switching branches.', 'error');
+      return;
+    }
+
+    switchingBranch = true;
+
+    try {
+      await apiFetch('/api/git/branch/switch', {
+        method: 'POST',
+        body: JSON.stringify({ name })
+      });
+      await loadDiff();
+      showBanner(`Switched to ${name}.`, 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      switchingBranch = false;
+    }
+  }
+
+  async function createBranch(name: string) {
+    if (!currentRepo) {
+      showBanner('Select a repository before creating branches.', 'error');
+      return;
+    }
+
+    creatingBranch = true;
+
+    try {
+      await apiFetch('/api/git/branch/create', {
+        method: 'POST',
+        body: JSON.stringify({ name })
+      });
+      await loadDiff();
+      await loadBranches();
+      showBanner(`Created branch ${name}.`, 'success');
+    } catch (error) {
+      handleApiFailure(error);
+    } finally {
+      creatingBranch = false;
+    }
+  }
+
   async function loadLogs(refresh = false) {
     if (refresh) {
       logLoading = true;
@@ -2453,6 +2522,13 @@
             on:stageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) => stageHunk(event.detail.diff, event.detail.hunkId)}
             on:unstageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) => unstageHunk(event.detail.diff, event.detail.hunkId)}
             on:revert={(event: CustomEvent<{ diff: string; hunkId: string }>) => revertHunk(event.detail.diff, event.detail.hunkId)}
+            branches={branchList}
+            branchesLoading={branchListLoading}
+            switchingBranch={switchingBranch}
+            creatingBranch={creatingBranch}
+            on:loadBranches={loadBranches}
+            on:branchSwitch={(event: CustomEvent<{ name: string }>) => switchBranch(event.detail.name)}
+            on:branchCreate={(event: CustomEvent<{ name: string }>) => createBranch(event.detail.name)}
           />
         {:else if lazyViewLoading === 'diff'}
           <section class="view-shell">

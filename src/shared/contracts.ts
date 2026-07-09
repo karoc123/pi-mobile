@@ -180,6 +180,16 @@ export type GitDiffResponse = {
   sync: GitRemoteSyncStatus;
 };
 
+export type GitBranchInfo = {
+  name: string;
+  current: boolean;
+};
+
+export type GitBranchesResponse = {
+  branches: GitBranchInfo[];
+  current: string;
+};
+
 export type GitSyncResult = {
   summary: string;
 };
