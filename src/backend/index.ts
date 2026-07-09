@@ -36,6 +36,16 @@ const gitRuntimeEnv = createGitRuntimeEnv({
     knownHostsPath: config.sshKnownHostsPath,
   },
 });
+
+// Propagate git-specific env vars into process.env so that the pi agent's
+// bash tool (executeBash) and any other child process inherits them.
+// This is critical for SSH-authenticated git operations (push, pull, clone)
+// run from within pi agent bash subprocesses.
+for (const [key, value] of Object.entries(gitRuntimeEnv)) {
+  if (value !== undefined && key.startsWith("GIT_") && !(key in process.env)) {
+    process.env[key] = value;
+  }
+}
 const workspaceService = new WorkspaceService(config.workspaceRoot, config.defaultRepo, gitRuntimeEnv);
 const gitService = new GitService(gitIdentity, gitRuntimeEnv);
 const piAuthService = new PiAuthService(config);
