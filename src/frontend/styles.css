@@ -2652,3 +2652,78 @@ code {
     align-items: end;
   }
 }
+
+/* ── Branch UI (DiffView) ─────────────────────────────────────────────── */
+
+.branch-sheet {
+  width: min(28rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 1rem;
+}
+
+.branch-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.branch-list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 50vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.branch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.branch-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.branch-item:not(:disabled):active {
+  background: var(--accent-dim);
+}
+
+.branch-item.current {
+  border-color: var(--accent);
+}
+
+.branch-current-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  white-space: nowrap;
+}
+
+.branch-create-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.branch-create-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}

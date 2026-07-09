@@ -3,7 +3,7 @@
 
   import { createEventDispatcher } from 'svelte';
 
-  import type { DiffFile, GitRemoteSyncStatus } from '../../../src/shared/contracts.js';
+  import type { DiffFile, GitBranchInfo, GitRemoteSyncStatus } from '../../../src/shared/contracts.js';
   import { renderDiff } from '../lib/diff.js';
 
   export let files: DiffFile[] = [];
@@ -17,6 +17,10 @@
   export let committing = false;
   export let pulling = false;
   export let pushing = false;
+  export let branches: GitBranchInfo[] = [];
+  export let branchesLoading = false;
+  export let switchingBranch = false;
+  export let creatingBranch = false;
 
   const dispatch = createEventDispatcher<{
     revert: { diff: string; hunkId: string };
@@ -27,59 +31,115 @@
     pull: void;
     push: void;
     commit: void;
+    branchSwitch: { name: string };
+    branchCreate: { name: string };
+    loadBranches: void;
   }>();
 
   let actionsOpen = false;
+  let branchActionMode: 'menu' | 'switch' | 'create' = 'menu';
+  let branchToCreate = '';
 
   $: allHunks = files.flatMap((file) => file.hunks);
   $: stagedHunkCount = allHunks.filter((hunk) => hunk.staged).length;
   $: unstagedHunkCount = allHunks.length - stagedHunkCount;
-  $: actionsBusy = loading || pulling || pushing || committing || stagingAll || unstagingAll;
+  $: actionsBusy = loading || pulling || pushing || committing || stagingAll || unstagingAll || switchingBranch || creatingBranch;
   $: syncHeadline = describeSyncHeadline(syncStatus);
   $: pullLabel = pulling ? 'Pulling…' : buildActionLabel('Pull', '↓', syncStatus?.behind ?? 0, Boolean(syncStatus?.hasUpstream));
   $: pushLabel = pushing ? 'Pushing…' : buildActionLabel('Push', '↑', syncStatus?.ahead ?? 0, Boolean(syncStatus?.hasUpstream));
 
   function triggerPull() {
-    actionsOpen = false;
+    closeOverlays();
     dispatch('pull');
   }
 
   function triggerPush() {
-    actionsOpen = false;
+    closeOverlays();
     dispatch('push');
   }
 
   function triggerCommit() {
-    actionsOpen = false;
+    closeOverlays();
     dispatch('commit');
   }
 
   function triggerStageAll() {
-    actionsOpen = false;
+    closeOverlays();
     dispatch('stageAll');
   }
 
   function triggerUnstageAll() {
-    actionsOpen = false;
+    closeOverlays();
     dispatch('unstageAll');
   }
 
+  function openBranchSwitch() {
+    actionsOpen = false;
+    branchActionMode = 'switch';
+    dispatch('loadBranches');
+  }
+
+  function openBranchCreate() {
+    actionsOpen = false;
+    branchActionMode = 'create';
+    branchToCreate = '';
+  }
+
+  function triggerSwitchBranch(name: string) {
+    closeOverlays();
+    dispatch('branchSwitch', { name });
+  }
+
+  function triggerCreateBranch() {
+    const trimmed = branchToCreate.trim();
+
+    if (!trimmed) {
+      return;
+    }
+
+    closeOverlays();
+    dispatch('branchCreate', { name: trimmed });
+  }
+
+  function closeOverlays() {
+    actionsOpen = false;
+    branchActionMode = 'menu';
+    branchToCreate = '';
+  }
+
   function handleWindowClick(event: MouseEvent) {
-    if (!actionsOpen) {
+    if (!actionsOpen && branchActionMode === 'menu') {
       return;
     }
 
     const target = event.target;
-    if (!(target instanceof Element) || target.closest('.diff-actions')) {
+    if (!(target instanceof Element)) {
       return;
     }
 
-    actionsOpen = false;
+    // Close dropdown menu when clicking outside
+    if (branchActionMode === 'menu') {
+      if (!target.closest('.diff-actions') && !target.closest('.diff-actions-menu')) {
+        actionsOpen = false;
+      }
+      return;
+    }
+
+    // Overlay is open. Don't close if click originated from the actions dropdown
+    // (transition from menu to branch-switch/create overlay).
+    if (target.closest('.diff-actions-menu')) {
+      return;
+    }
+
+    // Close overlay when clicking outside the sheet
+    if (!target.closest('.branch-sheet')) {
+      closeOverlays();
+    }
   }
 
   function handleWindowKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
-      actionsOpen = false;
+      closeOverlays();
     }
   }
 
@@ -144,6 +204,12 @@
             <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPush}>
               {pushLabel}
             </button>
+            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={openBranchSwitch}>
+              Switch branch…
+            </button>
+            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={openBranchCreate}>
+              Create branch…
+            </button>
             <button class="primary-button" type="button" role="menuitem" disabled={actionsBusy || stagedHunkCount === 0} on:click={triggerCommit}>
               {committing ? 'Committing…' : 'Commit staged'}
             </button>
@@ -152,6 +218,77 @@
       </div>
     </div>
   </div>
+
+  {#if branchActionMode !== 'menu'}
+    <div class="overlay" role="presentation" on:click={closeOverlays}>
+      {#if branchActionMode === 'switch'}
+        <div class="sheet-card branch-sheet" role="dialog" aria-modal="true" aria-label="Switch branch" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+          <div class="branch-sheet-header">
+            <div>
+              <p class="eyebrow">Git branch</p>
+              <h3>Switch branch</h3>
+            </div>
+            <button class="ghost-button" type="button" on:click={closeOverlays}>Close</button>
+          </div>
+
+          {#if branchesLoading}
+            <p class="empty-state small">Loading branches...</p>
+          {:else if branches.length === 0}
+            <p class="empty-state small">No branches found.</p>
+          {:else}
+            <div class="branch-list">
+              {#each branches as branch}
+                <button
+                  class="branch-item"
+                  class:current={branch.current}
+                  type="button"
+                  disabled={branch.current || switchingBranch}
+                  on:click={() => triggerSwitchBranch(branch.name)}
+                >
+                  <strong>{branch.name}</strong>
+                  {#if branch.current}
+                    <span class="branch-current-badge">current</span>
+                  {:else if switchingBranch}
+                    <span>Switching...</span>
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {:else if branchActionMode === 'create'}
+        <div class="sheet-card branch-sheet" role="dialog" aria-modal="true" aria-label="Create branch" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+          <div class="branch-sheet-header">
+            <div>
+              <p class="eyebrow">Git branch</p>
+              <h3>Create branch</h3>
+            </div>
+            <button class="ghost-button" type="button" on:click={closeOverlays}>Close</button>
+          </div>
+
+          <form class="branch-create-form" on:submit|preventDefault={triggerCreateBranch}>
+            <label class="field-label" for="new-branch-name">Branch name</label>
+            <input
+              id="new-branch-name"
+              class="text-input"
+              bind:value={branchToCreate}
+              placeholder="feature/my-new-feature"
+              autocomplete="off"
+              autofocus
+            />
+            <p class="empty-state small">Creates a new branch from the current HEAD.</p>
+
+            <div class="branch-create-footer">
+              <button class="ghost-button" type="button" on:click={() => (branchActionMode = 'menu')}>Back</button>
+              <button class="primary-button" type="submit" disabled={!branchToCreate.trim() || creatingBranch}>
+                {creatingBranch ? 'Creating...' : 'Create branch'}
+              </button>
+            </div>
+          </form>
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   {#if loading}
     <div class="empty-state-card">

@@ -24,6 +24,7 @@ import type {
   FileMoveResult,
   FileUploadRequest,
   FileUploadResult,
+  GitBranchesResponse,
   GitDiffResponse,
   GitSyncResult,
   PiAuthLoginTokenRequest,
@@ -486,6 +487,24 @@ export function createApp(services: AppServices) {
     response.json({
       summary: await services.gitService.push(repo),
     } satisfies GitSyncResult);
+  });
+
+  app.get("/api/git/branches", requireAuth(services), async (_request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    const [branches, current] = await Promise.all([services.gitService.getBranches(repo), services.gitService.getCurrentBranch(repo)]);
+    response.json({ branches, current } satisfies GitBranchesResponse);
+  });
+
+  app.post("/api/git/branch/switch", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    await services.gitService.switchBranch(repo, getBodyString(request, "name"));
+    response.json({ ok: true });
+  });
+
+  app.post("/api/git/branch/create", requireAuth(services), async (request, response) => {
+    const repo = services.workspaceService.requireCurrentRepo();
+    await services.gitService.createBranch(repo, getBodyString(request, "name"));
+    response.json({ ok: true });
   });
 
   app.post("/api/git/stage-hunk", requireAuth(services), async (request, response) => {
