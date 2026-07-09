@@ -74,11 +74,13 @@
   }
 
   function openBranchSwitch() {
+    actionsOpen = false;
     branchActionMode = 'switch';
     dispatch('loadBranches');
   }
 
   function openBranchCreate() {
+    actionsOpen = false;
     branchActionMode = 'create';
     branchToCreate = '';
   }
