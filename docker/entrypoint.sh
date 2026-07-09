@@ -65,6 +65,10 @@ git config --global pull.rebase false
 # "dubious ownership" errors when the workspace is mounted from the host.
 git config --global --add safe.directory "${WORKSPACE_ROOT_PATH}" 2>/dev/null || true
 
+# Automatically set upstream when pushing a new branch (avoids the
+# "fatal: The current branch has no upstream branch" error).
+git config --global push.autoSetupRemote true
+
 # ------------------------------------------------------------------
 # 4. Hand off to the CMD (Node.js server).
 #    ssh-agent PID is inherited; the Node process can kill it on
