@@ -118,13 +118,21 @@
     }
 
     // Close dropdown menu when clicking outside
-    if (branchActionMode === 'menu' && !target.closest('.diff-actions') && !target.closest('.diff-actions-menu')) {
-      actionsOpen = false;
+    if (branchActionMode === 'menu') {
+      if (!target.closest('.diff-actions') && !target.closest('.diff-actions-menu')) {
+        actionsOpen = false;
+      }
+      return;
+    }
+
+    // Overlay is open. Don't close if click originated from the actions dropdown
+    // (transition from menu to branch-switch/create overlay).
+    if (target.closest('.diff-actions-menu')) {
       return;
     }
 
     // Close overlay when clicking outside the sheet
-    if (branchActionMode !== 'menu' && !target.closest('.branch-sheet')) {
+    if (!target.closest('.branch-sheet')) {
       closeOverlays();
     }
   }
