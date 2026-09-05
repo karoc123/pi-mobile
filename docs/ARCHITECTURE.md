@@ -79,7 +79,7 @@ To minimize memory footprint and execution latency on the Raspberry Pi, the fron
 
 Written in TypeScript running on Node.js, the backend acts as a high-fidelity router orchestrating the host environment, Git states, and the `pi` runtime.
 
-- **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process, while Pi auth/model/session data persists inside the dedicated `pi` Docker volume. CLI JSON/RPC modes remain possible fallbacks, but are not the primary kickoff integration.
+- **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` (v0.85+) TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process using `ModelRuntime` for model discovery, selection, and auth credential synchronization, while Pi auth/model/session data persists inside the dedicated `pi` Docker volume. CLI JSON/RPC modes remain possible fallbacks, but are not the primary kickoff integration.
 - **`GitService`:** Parses the standard stream of `git diff -U3` into structural JSON objects, making raw line offsets and hunk chunks readable for the frontend.
 - **`FileService`:** Directs file writing from the mobile editor and monitors directory workspaces dynamically using `chokidar` for seamless change synchronization.
 - **`Watcher Guardrails`:** Internal runtime directories (`.pi-mobile`, `.pi`) plus configured logs/session paths are ignored by the filesystem watcher so backend artifacts cannot trigger feedback loops (for example repeated diff reload cascades).

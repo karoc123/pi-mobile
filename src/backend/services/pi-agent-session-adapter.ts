@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { AuthStorage, ModelRegistry, SessionManager, createAgentSession, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, SessionManager, createAgentSession, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 
 import { askUserTool } from "./ask-user-tool.js";
 
@@ -99,7 +99,7 @@ export class PiAgentSessionAdapter {
       contextWindow: contextUsage?.contextWindow ?? model?.contextWindow ?? null,
       contextPercent: contextUsage?.percent ?? null,
       modelId: model?.id ?? null,
-      usingSubscription: model ? this.session.modelRegistry.isUsingOAuth(model) : false,
+      usingSubscription: model ? this.session.modelRuntime.isUsingSubscription(model.provider) || this.session.modelRuntime.isUsingOAuth(model.provider) : false,
       autoCompactEnabled: this.session.autoCompactionEnabled,
     };
   }
@@ -109,8 +109,7 @@ export class PiAgentSessionAdapter {
 
     // Login/logout happens through a separate service instance.
     // Reload auth + models so command palette availability reflects changes immediately.
-    session.modelRegistry.authStorage.reload();
-    session.modelRegistry.refresh();
+    await session.modelRuntime.refresh({ allowNetwork: false });
 
     const sessionStats = session.getSessionStats();
     const currentModel = session.model;
@@ -130,15 +129,15 @@ export class PiAgentSessionAdapter {
         toolResults: sessionStats.toolResults,
         totalMessages: sessionStats.totalMessages,
       },
-      models: session.modelRegistry
-        .getAll()
+      models: session.modelRuntime
+        .getModels()
         .map((model) => ({
           provider: model.provider,
           modelId: model.id,
           name: model.name,
-          available: isModelReadyForSelection(session.modelRegistry, model.provider),
-          isCurrent: currentModel?.provider === model.provider && currentModel.id === model.id,
-          usingSubscription: session.modelRegistry.isUsingOAuth(model),
+          available: isModelReadyForSelection(session.modelRuntime, model.provider),
+          isCurrent: Boolean(currentModel && currentModel.provider === model.provider && currentModel.id === model.id),
+          usingSubscription: session.modelRuntime.isUsingSubscription(model.provider) || session.modelRuntime.isUsingOAuth(model.provider),
         }))
         .filter((model) => model.available || model.isCurrent)
         .sort((left, right) => {
@@ -175,16 +174,16 @@ export class PiAgentSessionAdapter {
   }
 
   private async openSessionManager(repo: SelectedRepo, sessionManager: SessionManager, options: SessionOpenOptions) {
-    const authStorage = this.config.piAgentDir ? AuthStorage.create(path.join(this.config.piAgentDir, "auth.json")) : AuthStorage.create();
-    const modelRegistry = this.config.piAgentDir ? ModelRegistry.create(authStorage, path.join(this.config.piAgentDir, "models.json")) : ModelRegistry.create(authStorage);
-    const model = this.resolvePreferredModel(modelRegistry, options.preferredModel, options.useConfiguredDefaults ?? false);
+    const authPath = this.config.piAgentDir ? path.join(this.config.piAgentDir, "auth.json") : undefined;
+    const modelsPath = this.config.piAgentDir ? path.join(this.config.piAgentDir, "models.json") : undefined;
+    const modelRuntime = await ModelRuntime.create({ authPath, modelsPath });
+    const model = this.resolvePreferredModel(modelRuntime, options.preferredModel, options.useConfiguredDefaults ?? false);
     const thinkingLevel = options.preferredThinkingLevel ?? (options.useConfiguredDefaults ? this.config.piThinkingLevel : undefined);
 
     const { session } = await createAgentSession({
       cwd: repo.absolutePath,
       agentDir: this.config.piAgentDir,
-      authStorage,
-      modelRegistry,
+      modelRuntime,
       sessionManager,
       model,
       thinkingLevel,
@@ -203,24 +202,24 @@ export class PiAgentSessionAdapter {
     return session;
   }
 
-  private resolvePreferredModel(modelRegistry: ModelRegistry, preferredModel: { provider: string; modelId: string } | null | undefined, useConfiguredDefaults: boolean) {
+  private resolvePreferredModel(modelRuntime: ModelRuntime, preferredModel: { provider: string; modelId: string } | null | undefined, useConfiguredDefaults: boolean) {
     if (preferredModel) {
-      const model = modelRegistry.find(preferredModel.provider, preferredModel.modelId);
+      const model = modelRuntime.getModel(preferredModel.provider, preferredModel.modelId);
 
       if (model) {
         return model;
       }
     }
 
-    return useConfiguredDefaults ? this.resolveConfiguredModel(modelRegistry) : undefined;
+    return useConfiguredDefaults ? this.resolveConfiguredModel(modelRuntime) : undefined;
   }
 
-  private resolveConfiguredModel(modelRegistry: ModelRegistry) {
+  private resolveConfiguredModel(modelRuntime: ModelRuntime) {
     if (!this.config.piProvider || !this.config.piModel) {
       return undefined;
     }
 
-    const model = modelRegistry.find(this.config.piProvider, this.config.piModel);
+    const model = modelRuntime.getModel(this.config.piProvider, this.config.piModel);
 
     if (!model) {
       throw new Error(`Configured pi model ${this.config.piProvider}/${this.config.piModel} was not found.`);
@@ -309,15 +308,17 @@ function flattenTreeEntries(nodes: ReturnType<SessionManager["getTree"]>, curren
   });
 }
 
-function isModelReadyForSelection(modelRegistry: AgentSession["modelRegistry"], provider: string) {
-  const status = modelRegistry.getProviderAuthStatus(provider);
+function isModelReadyForSelection(modelRuntime: ModelRuntime, provider: string) {
+  const status = modelRuntime.getProviderAuthStatus(provider);
 
   return (
-    status.source === "stored" ||
-    status.source === "environment" ||
-    status.source === "models_json_key" ||
-    status.source === "models_json_command" ||
-    status.source === "fallback"
+    status.configured &&
+    (status.source === "stored" ||
+      status.source === "runtime" ||
+      status.source === "environment" ||
+      status.source === "models_json_key" ||
+      status.source === "models_json_command" ||
+      status.source === "fallback")
   );
 }
 

@@ -171,8 +171,8 @@ export function createApp(services: AppServices) {
     response.json({ authenticated: false });
   });
 
-  app.get("/api/pi/auth/status", requireAuth(services), (_request, response) => {
-    response.json(services.piAuthService.getStatus() satisfies PiAuthStatusResponse);
+  app.get("/api/pi/auth/status", requireAuth(services), async (_request, response) => {
+    response.json((await services.piAuthService.getStatus()) satisfies PiAuthStatusResponse);
   });
 
   app.post("/api/pi/auth/login-token", requireAuth(services), async (request, response) => {
@@ -196,7 +196,7 @@ export function createApp(services: AppServices) {
     }
   });
 
-  app.post("/api/pi/auth/logout", requireAuth(services), (request, response) => {
+  app.post("/api/pi/auth/logout", requireAuth(services), async (request, response) => {
     const body = getBodyObject<PiAuthLogoutRequest>(request);
     const provider = typeof body.provider === "string" ? body.provider.trim() : "";
 
@@ -205,7 +205,7 @@ export function createApp(services: AppServices) {
     }
 
     try {
-      response.json(services.piAuthService.logout(provider));
+      response.json(await services.piAuthService.logout(provider));
     } catch (error) {
       if (error instanceof PiAuthServiceError && error.code === "unknown_provider") {
         throw new HttpError(400, "validation_error", error.message, { retriable: false });

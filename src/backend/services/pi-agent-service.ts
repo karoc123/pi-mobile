@@ -155,7 +155,7 @@ export class PiAgentService {
 
     switch (request.command) {
       case "set-model": {
-        const model = session.modelRegistry.find(request.provider, request.modelId);
+        const model = session.modelRuntime.getModel(request.provider, request.modelId);
 
         if (!model) {
           throw new Error(`Configured pi model ${request.provider}/${request.modelId} was not found.`);

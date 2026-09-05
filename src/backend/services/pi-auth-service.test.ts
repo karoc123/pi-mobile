@@ -24,7 +24,7 @@ describe("PiAuthService", () => {
     const config = createConfig(tempDir);
     const service = new PiAuthService(config);
 
-    const before = service.getStatus();
+    const before = await service.getStatus();
     expect(before.providers.length).toBeGreaterThan(0);
 
     const provider = before.providers[0]?.provider;
@@ -39,14 +39,14 @@ describe("PiAuthService", () => {
     expect(loginResult).toEqual({ ok: true, provider, configured: true });
 
     const persistedService = new PiAuthService(config);
-    const after = persistedService.getStatus();
+    const after = await persistedService.getStatus();
     const providerState = after.providers.find((entry) => entry.provider === provider);
     expect(providerState?.configured).toBe(true);
 
-    const logoutResult = persistedService.logout(provider);
+    const logoutResult = await persistedService.logout(provider);
     expect(logoutResult).toEqual({ ok: true, provider, configured: false });
 
-    const afterLogout = new PiAuthService(config).getStatus();
+    const afterLogout = await new PiAuthService(config).getStatus();
     expect(afterLogout.providers.find((entry) => entry.provider === provider)?.configured).toBe(false);
   });
 

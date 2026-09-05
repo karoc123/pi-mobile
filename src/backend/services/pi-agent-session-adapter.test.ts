@@ -76,8 +76,9 @@ describe("PiAgentSessionAdapter", () => {
         id: "gpt-5.3-codex",
         contextWindow: 400000,
       },
-      modelRegistry: {
+      modelRuntime: {
         isUsingOAuth: () => false,
+        isUsingSubscription: () => false,
       },
       autoCompactionEnabled: true,
       messages: [
@@ -138,8 +139,9 @@ describe("PiAgentSessionAdapter", () => {
         id: "gpt-5.4-nano",
         contextWindow: 200000,
       },
-      modelRegistry: {
+      modelRuntime: {
         isUsingOAuth: () => true,
+        isUsingSubscription: () => false,
       },
       autoCompactionEnabled: false,
       messages: [

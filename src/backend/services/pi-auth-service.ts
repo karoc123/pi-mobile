@@ -1,6 +1,7 @@
+import fs from "node:fs";
 import path from "node:path";
 
-import { AuthStorage, ModelRegistry, type AuthCredential } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import type { PiAuthProviderState } from "../../shared/contracts.js";
 import type { AppConfig } from "../config.js";
@@ -18,38 +19,69 @@ export class PiAuthServiceError extends Error {
 }
 
 export class PiAuthService {
-  private readonly authStorage: AuthStorage;
-  private readonly modelRegistry: ModelRegistry;
+  private readonly authPath: string;
+  private readonly modelsPath?: string;
+  private runtimePromise: Promise<ModelRuntime> | null = null;
 
   constructor(config: AppConfig) {
-    this.authStorage = config.piAgentDir ? AuthStorage.create(path.join(config.piAgentDir, "auth.json")) : AuthStorage.create();
-    this.modelRegistry = config.piAgentDir ? ModelRegistry.create(this.authStorage, path.join(config.piAgentDir, "models.json")) : ModelRegistry.create(this.authStorage);
+    this.authPath = config.piAgentDir ? path.join(config.piAgentDir, "auth.json") : path.join(getAgentDir(), "auth.json");
+    this.modelsPath = config.piAgentDir ? path.join(config.piAgentDir, "models.json") : undefined;
   }
 
-  getStatus() {
+  private async getRuntime(): Promise<ModelRuntime> {
+    if (!this.runtimePromise) {
+      this.runtimePromise = ModelRuntime.create({
+        authPath: this.authPath,
+        modelsPath: this.modelsPath,
+      });
+    }
+    return this.runtimePromise;
+  }
+
+  async getStatus() {
+    const runtime = await this.getRuntime();
+    await runtime.refresh({ allowNetwork: false });
+
     return {
-      providers: this.resolveProviders(),
+      providers: this.resolveProviders(runtime),
     };
   }
 
   async loginToken(provider: string, token: string) {
     const normalizedProvider = provider.trim();
     const normalizedToken = token.trim();
+    const runtime = await this.getRuntime();
 
-    if (!this.isKnownProvider(normalizedProvider)) {
+    if (!this.isKnownProvider(runtime, normalizedProvider)) {
       throw new PiAuthServiceError("unknown_provider", `Provider '${normalizedProvider}' is not registered.`);
     }
 
-    const previousCredential = this.authStorage.get(normalizedProvider);
-    this.authStorage.set(normalizedProvider, {
+    if (!normalizedToken) {
+      throw new PiAuthServiceError("invalid_token", `Token validation for provider '${normalizedProvider}' failed.`);
+    }
+
+    const authData = readAuthJson(this.authPath);
+    const previousCredential = authData[normalizedProvider];
+
+    authData[normalizedProvider] = {
       type: "api_key",
       key: normalizedToken,
-    });
+    };
+    writeAuthJson(this.authPath, authData);
 
-    const resolvedApiKey = await this.modelRegistry.getApiKeyForProvider(normalizedProvider);
+    await runtime.refresh({ allowNetwork: false });
+
+    const auth = await runtime.getAuth(normalizedProvider);
+    const resolvedApiKey = auth?.auth.apiKey;
 
     if (!resolvedApiKey || resolvedApiKey.trim().length === 0) {
-      this.restorePreviousCredential(normalizedProvider, previousCredential);
+      if (previousCredential !== undefined) {
+        authData[normalizedProvider] = previousCredential;
+      } else {
+        delete authData[normalizedProvider];
+      }
+      writeAuthJson(this.authPath, authData);
+      await runtime.refresh({ allowNetwork: false });
       throw new PiAuthServiceError("invalid_token", `Token validation for provider '${normalizedProvider}' failed.`);
     }
 
@@ -60,14 +92,20 @@ export class PiAuthService {
     };
   }
 
-  logout(provider: string) {
+  async logout(provider: string) {
     const normalizedProvider = provider.trim();
+    const runtime = await this.getRuntime();
 
-    if (!this.isKnownProvider(normalizedProvider)) {
+    if (!this.isKnownProvider(runtime, normalizedProvider)) {
       throw new PiAuthServiceError("unknown_provider", `Provider '${normalizedProvider}' is not registered.`);
     }
 
-    this.authStorage.logout(normalizedProvider);
+    const authData = readAuthJson(this.authPath);
+    delete authData[normalizedProvider];
+    writeAuthJson(this.authPath, authData);
+
+    await runtime.logout(normalizedProvider).catch(() => undefined);
+    await runtime.refresh({ allowNetwork: false });
 
     return {
       ok: true as const,
@@ -76,40 +114,67 @@ export class PiAuthService {
     };
   }
 
-  private resolveProviders(): PiAuthProviderState[] {
-    const providerNames = new Set<string>();
+  private resolveProviders(runtime: ModelRuntime): PiAuthProviderState[] {
+    const providerMap = new Map<string, PiAuthProviderState>();
 
-    for (const model of this.modelRegistry.getAll()) {
-      providerNames.add(model.provider);
+    for (const provider of runtime.getProviders()) {
+      providerMap.set(provider.id, {
+        provider: provider.id,
+        label: provider.name,
+        configured: runtime.getProviderAuthStatus(provider.id).configured,
+      });
     }
 
-    for (const provider of this.authStorage.list()) {
-      providerNames.add(provider);
+    for (const model of runtime.getModels()) {
+      if (!providerMap.has(model.provider)) {
+        providerMap.set(model.provider, {
+          provider: model.provider,
+          label: runtime.getProvider(model.provider)?.name ?? model.provider,
+          configured: runtime.getProviderAuthStatus(model.provider).configured,
+        });
+      }
     }
 
-    return [...providerNames]
-      .map((provider) => ({
-        provider,
-        label: this.modelRegistry.getProviderDisplayName(provider),
-        configured: this.modelRegistry.getProviderAuthStatus(provider).configured,
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label));
+    const authData = readAuthJson(this.authPath);
+    for (const provider of Object.keys(authData)) {
+      if (!providerMap.has(provider)) {
+        providerMap.set(provider, {
+          provider,
+          label: runtime.getProvider(provider)?.name ?? provider,
+          configured: runtime.getProviderAuthStatus(provider).configured,
+        });
+      }
+    }
+
+    return [...providerMap.values()].sort((left, right) => left.label.localeCompare(right.label));
   }
 
-  private isKnownProvider(provider: string) {
+  private isKnownProvider(runtime: ModelRuntime, provider: string) {
     if (!provider) {
       return false;
     }
 
-    return this.resolveProviders().some((candidate) => candidate.provider === provider);
+    return runtime.getProvider(provider) !== undefined || this.resolveProviders(runtime).some((candidate) => candidate.provider === provider);
   }
+}
 
-  private restorePreviousCredential(provider: string, previousCredential: AuthCredential | undefined) {
-    if (previousCredential) {
-      this.authStorage.set(provider, previousCredential);
-      return;
+function readAuthJson(authPath: string): Record<string, unknown> {
+  try {
+    if (!fs.existsSync(authPath)) {
+      return {};
     }
-
-    this.authStorage.remove(provider);
+    const raw = fs.readFileSync(authPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
   }
+}
+
+function writeAuthJson(authPath: string, data: Record<string, unknown>): void {
+  const dir = path.dirname(authPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+  fs.writeFileSync(authPath, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
 }
