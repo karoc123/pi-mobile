@@ -4,3 +4,5 @@ dist
 .env
 coverage
 pi/agent
+.docker-volumes
+.pi-mobile

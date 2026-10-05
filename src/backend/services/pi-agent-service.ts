@@ -556,13 +556,13 @@ export class PiAgentService {
       try {
         const runPromise = session.prompt(promptText, {
           streamingBehavior: session.isStreaming ? "steer" : undefined,
-          preflightResult: (success) => {
+          preflightResult: (disposition) => {
             if (preflightSettled) {
               return;
             }
 
             preflightSettled = true;
-            resolve(success);
+            resolve(Boolean(disposition));
           },
         });
 
