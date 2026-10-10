@@ -60,3 +60,55 @@ test("mobile browser flow covers login, repo selection, chat, editor save, and h
   await expect(page.locator(".cm-content")).toContainText("beta");
   await expect(page.locator(".cm-content")).not.toContainText("beta changed");
 });
+
+test("mobile browser flow covers file actions, hunk staging, and commit", async ({ page }) => {
+  page.on("dialog", (dialog) => void dialog.accept(dialog.type() === "prompt" ? "e2e commit" : undefined));
+
+  await page.goto("/");
+  await page.getByLabel("App password").fill("test-password");
+  await page.getByRole("button", { name: "Unlock workspace" }).click();
+  await page.getByRole("button", { name: "Open workspace menu" }).click();
+  await page.getByRole("button", { name: "Choose repo" }).click();
+  await page.locator(".picker-entry").filter({ hasText: "playwright-smoke-repo" }).first().getByRole("button", { name: /Use repo|Active/ }).click();
+
+  const notice = page.locator(".notice.success");
+  const editorActions = page.getByRole("dialog", { name: "Editor actions" });
+
+  await page.getByRole("button", { name: "Editor" }).click();
+  await page.getByRole("button", { name: "Actions" }).click();
+  await editorActions.getByRole("button", { name: "New file" }).click();
+  await page.getByLabel("File path").fill("docs/todo.md");
+  await page.getByLabel("Initial content").fill("draft\n");
+  await editorActions.getByRole("button", { name: "Create file" }).click();
+  await expect(notice).toContainText("File created.");
+  await expect(page.getByRole("heading", { level: 2, name: "docs/todo.md" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Actions" }).click();
+  await editorActions.getByRole("button", { name: "Rename file" }).click();
+  await page.getByLabel("Target path").fill("docs/done.md");
+  await editorActions.getByRole("button", { name: "Rename file" }).click();
+  await expect(notice).toContainText("File renamed.");
+  await expect(page.getByRole("heading", { level: 2, name: "docs/done.md" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Actions" }).click();
+  await editorActions.getByRole("button", { name: "Delete file" }).click();
+  await editorActions.getByRole("button", { name: "Delete file" }).click();
+  await expect(notice).toContainText("File deleted.");
+
+  await page.getByRole("button", { name: "↑" }).click();
+  await page.getByRole("button", { name: "Expand" }).click();
+  await page.getByRole("button", { name: /notes\.txt/ }).click();
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.type("alpha\nbeta staged\ngamma\n");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(notice).toContainText("File saved.");
+
+  await page.getByRole("button", { name: "Diff" }).click();
+  await page.getByRole("button", { name: "Stage hunk" }).click();
+  await expect(notice).toContainText("Hunk staged.");
+  await page.getByRole("button", { name: "Open git actions" }).click();
+  await page.getByRole("menuitem", { name: "Commit staged" }).click();
+  await expect(notice).toContainText("Committed");
+  await expect(page.getByRole("heading", { name: "Working tree clean" })).toBeVisible();
+});

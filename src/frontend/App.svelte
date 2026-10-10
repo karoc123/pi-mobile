@@ -19,19 +19,14 @@
     GitBranchesResponse,
     GitBranchInfo,
     GitCommitResult,
-    FileCreateDirectoryResult,
     FileCreateResult,
-    FileDeleteResult,
     FileDocument,
     FileDownloadInfo,
-    FileDuplicateResult,
     FileEntry,
     FileMoveResult,
-    FileUploadResult,
     GitDiffResponse,
     GitRemoteSyncStatus,
     GitSyncResult,
-    PiAuthLoginTokenResponse,
     PiAuthProviderState,
     PiAuthStatusResponse,
     SelectedRepo,
@@ -434,17 +429,17 @@
     }
   }
 
-  async function loginPiToken(provider: string, token: string) {
+  async function submitPiAuth(endpoint: 'login-token' | 'logout', body: Record<string, string>, successMessage: string) {
     piAuthSubmitting = true;
     piAuthError = '';
 
     try {
-      const response = await apiFetch<PiAuthLoginTokenResponse>('/api/pi/auth/login-token', {
+      await apiFetch(`/api/pi/auth/${endpoint}`, {
         method: 'POST',
-        body: JSON.stringify({ provider, token })
+        body: JSON.stringify(body)
       });
 
-      showBanner(`Pi token for ${response.provider} saved.`, 'success');
+      showBanner(successMessage, 'success');
       await loadPiAuthStatus();
     } catch (error) {
       const message = toErrorMessage(error);
@@ -455,26 +450,8 @@
     }
   }
 
-  async function logoutPiProvider(provider: string) {
-    piAuthSubmitting = true;
-    piAuthError = '';
-
-    try {
-      await apiFetch('/api/pi/auth/logout', {
-        method: 'POST',
-        body: JSON.stringify({ provider })
-      });
-
-      showBanner(`Pi auth for ${provider} removed.`, 'success');
-      await loadPiAuthStatus();
-    } catch (error) {
-      const message = toErrorMessage(error);
-      piAuthError = message;
-      showBanner(message, 'error');
-    } finally {
-      piAuthSubmitting = false;
-    }
-  }
+  const loginPiToken = (provider: string, token: string) => submitPiAuth('login-token', { provider, token }, `Pi token for ${provider} saved.`);
+  const logoutPiProvider = (provider: string) => submitPiAuth('logout', { provider }, `Pi auth for ${provider} removed.`);
 
   function connectSocket() {
     if (reconnectTimer !== null) {
@@ -832,23 +809,12 @@
   }
 
   async function cloneRepo(remoteUrl: string, destinationPath?: string) {
-    const normalizedRemoteUrl = remoteUrl.trim();
-    const normalizedDestinationPath = destinationPath?.trim();
-
-    if (!normalizedRemoteUrl) {
-      showBanner('Remote URL is required.', 'error');
-      return;
-    }
-
     workspaceCloning = true;
 
     try {
       const response = await apiFetch<WorkspaceCloneResult>('/api/workspaces/clone', {
         method: 'POST',
-        body: JSON.stringify({
-          remoteUrl: normalizedRemoteUrl,
-          destinationPath: normalizedDestinationPath && normalizedDestinationPath.length > 0 ? normalizedDestinationPath : undefined,
-        })
+        body: JSON.stringify({ remoteUrl, destinationPath })
       });
 
       currentRepo = response.repo;
@@ -995,33 +961,7 @@
       const fileDoc = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
 
       if (fileDoc.kind === 'binary' && fileDoc.binaryContentBase64) {
-        // Binary files (e.g. .apk, .zip) werden direkt runtergeladen
-        const mimeType = fileDoc.mimeType || 'application/octet-stream';
-        const byteString = atob(fileDoc.binaryContentBase64);
-        const byteArrays: Uint8Array[] = [];
-
-        for (let offset = 0; offset < byteString.length; offset += 512) {
-          const chunk = byteString.slice(offset, offset + 512);
-          const bytes = new Uint8Array(chunk.length);
-
-          for (let index = 0; index < chunk.length; index++) {
-            bytes[index] = chunk.charCodeAt(index);
-          }
-
-          byteArrays.push(bytes);
-        }
-
-        const blob = new Blob(byteArrays, { type: mimeType });
-        const blobUrl = URL.createObjectURL(blob);
-
-        const anchor = document.createElement('a');
-        anchor.href = blobUrl;
-        anchor.download = fileDoc.path.split('/').pop() || 'download';
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
-        URL.revokeObjectURL(blobUrl);
-
+        saveBase64File(fileDoc.binaryContentBase64, fileDoc.mimeType, fileDoc.path.split('/').pop() || 'download');
         showBanner('Binary file downloaded.', 'success');
         return;
       }
@@ -1059,200 +999,48 @@
     }
   }
 
-  async function createFile(path: string, content: string) {
-    const normalizedPath = path.trim();
-
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('File path is required.', 'error');
-      return;
-    }
-
+  async function runFileAction(action: string, body: Record<string, string>, successMessage: string, openResult: boolean) {
     creatingFile = true;
 
     try {
-      const response = await apiFetch<FileCreateResult>('/api/files/create', {
+      const response = await apiFetch<FileCreateResult | FileMoveResult>(`/api/files/${action}`, {
         method: 'POST',
-        body: JSON.stringify({ path: normalizedPath, content })
+        body: JSON.stringify(body)
       });
-      await loadFiles(parentDirectoryFor(response.path));
-      await openFile(response.path);
-      showBanner('File created.', 'success');
+      const resultPath = 'toPath' in response ? response.toPath : response.path;
+      await loadFiles(parentDirectoryFor(resultPath));
+
+      if (openResult) {
+        await openFile(resultPath);
+      }
+
+      showBanner(successMessage, 'success');
+      return resultPath;
     } catch (error) {
       handleApiFailure(error);
+      return null;
     } finally {
       creatingFile = false;
     }
   }
 
-  async function createDirectory(path: string) {
-    const normalizedPath = path.trim();
-
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('Directory path is required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileCreateDirectoryResult>('/api/files/create-directory', {
-        method: 'POST',
-        body: JSON.stringify({ path: normalizedPath })
-      });
-      await loadFiles(parentDirectoryFor(response.path));
-      showBanner('Folder created.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
-
-  async function duplicateFile(sourcePath: string, targetPath: string) {
-    const normalizedSourcePath = sourcePath.trim();
-    const normalizedTargetPath = targetPath.trim();
-
-    if (!normalizedSourcePath || !normalizedTargetPath || normalizedSourcePath === '.' || normalizedTargetPath === '.') {
-      showBanner('Source and target file paths are required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileDuplicateResult>('/api/files/duplicate', {
-        method: 'POST',
-        body: JSON.stringify({ sourcePath: normalizedSourcePath, targetPath: normalizedTargetPath })
-      });
-      await loadFiles(parentDirectoryFor(response.path));
-      await openFile(response.path);
-      showBanner('File duplicated.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
-
-  async function renameFile(fromPath: string, toPath: string) {
-    const normalizedFromPath = fromPath.trim();
-    const normalizedToPath = toPath.trim();
-
-    if (!normalizedFromPath || !normalizedToPath || normalizedFromPath === '.' || normalizedToPath === '.') {
-      showBanner('Source and target file paths are required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileMoveResult>('/api/files/rename', {
-        method: 'POST',
-        body: JSON.stringify({ fromPath: normalizedFromPath, toPath: normalizedToPath })
-      });
-      await loadFiles(parentDirectoryFor(response.toPath));
-      await openFile(response.toPath);
-      showBanner('File renamed.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
-
-  async function moveFile(fromPath: string, toPath: string) {
-    const normalizedFromPath = fromPath.trim();
-    const normalizedToPath = toPath.trim();
-
-    if (!normalizedFromPath || !normalizedToPath || normalizedFromPath === '.' || normalizedToPath === '.') {
-      showBanner('Source and target file paths are required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileMoveResult>('/api/files/move', {
-        method: 'POST',
-        body: JSON.stringify({ fromPath: normalizedFromPath, toPath: normalizedToPath })
-      });
-      await loadFiles(parentDirectoryFor(response.toPath));
-      await openFile(response.toPath);
-      showBanner('File moved.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
-
-  async function uploadFile(targetPath: string, contentBase64: string) {
-    const normalizedPath = targetPath.trim();
-
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('File path is required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileUploadResult>('/api/files/upload', {
-        method: 'POST',
-        body: JSON.stringify({ path: normalizedPath, contentBase64 })
-      });
-      await loadFiles(parentDirectoryFor(response.path));
-      await openFile(response.path);
-      showBanner('File uploaded.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
+  const createFile = (path: string, content: string) => runFileAction('create', { path, content }, 'File created.', true);
+  const createDirectory = (path: string) => runFileAction('create-directory', { path }, 'Folder created.', false);
+  const duplicateFile = (sourcePath: string, targetPath: string) => runFileAction('duplicate', { sourcePath, targetPath }, 'File duplicated.', true);
+  const renameFile = (fromPath: string, toPath: string) => runFileAction('rename', { fromPath, toPath }, 'File renamed.', true);
+  const moveFile = (fromPath: string, toPath: string) => runFileAction('move', { fromPath, toPath }, 'File moved.', true);
+  const uploadFile = (path: string, contentBase64: string) => runFileAction('upload', { path, contentBase64 }, 'File uploaded.', true);
 
   async function downloadFile(filePathToDownload: string) {
-    const normalizedPath = filePathToDownload.trim();
-
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('File path is required.', 'error');
-      return;
-    }
-
     try {
-      const info = await apiFetch<FileDownloadInfo>(`/api/files/download?path=${encodeURIComponent(normalizedPath)}`);
+      const info = await apiFetch<FileDownloadInfo>(`/api/files/download?path=${encodeURIComponent(filePathToDownload)}`);
 
       if (!info.contentBase64) {
         showBanner('Download failed: no content received.', 'error');
         return;
       }
 
-      const mimeType = info.mimeType || 'application/octet-stream';
-      const byteString = atob(info.contentBase64);
-      const byteArrays: Uint8Array[] = [];
-
-      for (let offset = 0; offset < byteString.length; offset += 512) {
-        const chunk = byteString.slice(offset, offset + 512);
-        const bytes = new Uint8Array(chunk.length);
-
-        for (let index = 0; index < chunk.length; index++) {
-          bytes[index] = chunk.charCodeAt(index);
-        }
-
-        byteArrays.push(bytes);
-      }
-
-      const blob = new Blob(byteArrays, { type: mimeType });
-      const blobUrl = URL.createObjectURL(blob);
-
-      const anchor = document.createElement('a');
-      anchor.href = blobUrl;
-      anchor.download = info.name;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(blobUrl);
-
+      saveBase64File(info.contentBase64, info.mimeType, info.name);
       showBanner('File downloaded.', 'success');
     } catch (error) {
       handleApiFailure(error);
@@ -1260,33 +1048,12 @@
   }
 
   async function deleteFile(path: string) {
-    const normalizedPath = path.trim();
+    const deletedPath = await runFileAction('delete', { path }, 'File deleted.', false);
 
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('File path is required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileDeleteResult>('/api/files/delete', {
-        method: 'POST',
-        body: JSON.stringify({ path: normalizedPath })
-      });
-      await loadFiles(parentDirectoryFor(response.path));
-
-      if (selectedDocument?.path === response.path) {
-        selectedDocument = null;
-        draftContent = '';
-        editorDirty = false;
-      }
-
-      showBanner('File deleted.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
+    if (deletedPath && selectedDocument?.path === deletedPath) {
+      selectedDocument = null;
+      draftContent = '';
+      editorDirty = false;
     }
   }
 
@@ -1431,163 +1198,58 @@
     void commitChanges(trimmed);
   }
 
-  async function commitChanges(message: string) {
+  async function runGitAction<T>(
+    endpoint: string,
+    body: Record<string, string> | null,
+    setBusy: (busy: boolean) => void,
+    successMessage: (response: T) => string
+  ) {
     if (!currentRepo) {
-      showBanner('Select a repository before committing.', 'error');
-      return;
+      showBanner('Select a repository first.', 'error');
+      return false;
     }
 
-    committing = true;
+    setBusy(true);
 
     try {
-      const { commitSha } = await apiFetch<GitCommitResult>('/api/git/commit', {
+      const response = await apiFetch<T>(`/api/git/${endpoint}`, {
         method: 'POST',
-        body: JSON.stringify({ message })
+        ...(body ? { body: JSON.stringify(body) } : {})
       });
       await loadDiff();
-      showBanner(`Committed ${commitSha.slice(0, 7)}.`, 'success');
+      showBanner(successMessage(response), 'success');
+      return true;
     } catch (error) {
       handleApiFailure(error);
+      return false;
     } finally {
-      committing = false;
+      setBusy(false);
     }
   }
 
-  async function pullChanges() {
-    if (!currentRepo) {
-      showBanner('Select a repository before pulling.', 'error');
-      return;
-    }
-
-    pulling = true;
-
-    try {
-      const response = await apiFetch<GitSyncResult>('/api/git/pull', {
-        method: 'POST'
-      });
-      await loadDiff();
-      showBanner(response.summary || 'Pull completed.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      pulling = false;
-    }
-  }
-
-  async function pushChanges() {
-    if (!currentRepo) {
-      showBanner('Select a repository before pushing.', 'error');
-      return;
-    }
-
-    pushing = true;
-
-    try {
-      const response = await apiFetch<GitSyncResult>('/api/git/push', {
-        method: 'POST'
-      });
-      await loadDiff();
-      showBanner(response.summary || 'Push completed.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      pushing = false;
-    }
-  }
+  const commitChanges = (message: string) =>
+    runGitAction<GitCommitResult>('commit', { message }, (busy) => (committing = busy), ({ commitSha }) => `Committed ${commitSha.slice(0, 7)}.`);
+  const pullChanges = () => runGitAction<GitSyncResult>('pull', null, (busy) => (pulling = busy), (response) => response.summary || 'Pull completed.');
+  const pushChanges = () => runGitAction<GitSyncResult>('push', null, (busy) => (pushing = busy), (response) => response.summary || 'Push completed.');
+  const stageHunk = (diff: string, hunkId: string) =>
+    runGitAction('stage-hunk', { diff }, (busy) => (stagingHunkId = busy ? hunkId : null), () => 'Hunk staged.');
+  const unstageHunk = (diff: string, hunkId: string) =>
+    runGitAction('unstage-hunk', { diff }, (busy) => (unstagingHunkId = busy ? hunkId : null), () => 'Hunk unstaged.');
+  const stageAllChanges = () => runGitAction('stage-all', null, (busy) => (stagingAll = busy), () => 'All changes staged.');
+  const unstageAllChanges = () => runGitAction('unstage-all', null, (busy) => (unstagingAll = busy), () => 'All changes unstaged.');
+  const switchBranch = (name: string) => runGitAction('branch/switch', { name }, (busy) => (switchingBranch = busy), () => `Switched to ${name}.`);
 
   async function revertHunk(diff: string, hunkId: string) {
-    revertingHunkId = hunkId;
+    const reverted = await runGitAction('revert-hunk', { diff }, (busy) => (revertingHunkId = busy ? hunkId : null), () => 'Hunk reverted.');
 
-    try {
-      await apiFetch('/api/git/revert-hunk', {
-        method: 'POST',
-        body: JSON.stringify({ diff })
-      });
-      await loadDiff();
-      if (selectedDocument && !editorDirty) {
-        await openFile(selectedDocument.path);
-      }
-      showBanner('Hunk reverted.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      revertingHunkId = null;
+    if (reverted && selectedDocument && !editorDirty) {
+      await openFile(selectedDocument.path);
     }
   }
 
-  async function stageHunk(diff: string, hunkId: string) {
-    stagingHunkId = hunkId;
-
-    try {
-      await apiFetch('/api/git/stage-hunk', {
-        method: 'POST',
-        body: JSON.stringify({ diff })
-      });
-      await loadDiff();
-      showBanner('Hunk staged.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      stagingHunkId = null;
-    }
-  }
-
-  async function unstageHunk(diff: string, hunkId: string) {
-    unstagingHunkId = hunkId;
-
-    try {
-      await apiFetch('/api/git/unstage-hunk', {
-        method: 'POST',
-        body: JSON.stringify({ diff })
-      });
-      await loadDiff();
-      showBanner('Hunk unstaged.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      unstagingHunkId = null;
-    }
-  }
-
-  async function stageAllChanges() {
-    if (!currentRepo) {
-      showBanner('Select a repository before staging.', 'error');
-      return;
-    }
-
-    stagingAll = true;
-
-    try {
-      await apiFetch('/api/git/stage-all', {
-        method: 'POST'
-      });
-      await loadDiff();
-      showBanner('All changes staged.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      stagingAll = false;
-    }
-  }
-
-  async function unstageAllChanges() {
-    if (!currentRepo) {
-      showBanner('Select a repository before unstaging.', 'error');
-      return;
-    }
-
-    unstagingAll = true;
-
-    try {
-      await apiFetch('/api/git/unstage-all', {
-        method: 'POST'
-      });
-      await loadDiff();
-      showBanner('All changes unstaged.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      unstagingAll = false;
+  async function createBranch(name: string) {
+    if (await runGitAction('branch/create', { name }, (busy) => (creatingBranch = busy), () => `Created branch ${name}.`)) {
+      await loadBranches();
     }
   }
 
@@ -1606,51 +1268,6 @@
       branchList = [];
     } finally {
       branchListLoading = false;
-    }
-  }
-
-  async function switchBranch(name: string) {
-    if (!currentRepo) {
-      showBanner('Select a repository before switching branches.', 'error');
-      return;
-    }
-
-    switchingBranch = true;
-
-    try {
-      await apiFetch('/api/git/branch/switch', {
-        method: 'POST',
-        body: JSON.stringify({ name })
-      });
-      await loadDiff();
-      showBanner(`Switched to ${name}.`, 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      switchingBranch = false;
-    }
-  }
-
-  async function createBranch(name: string) {
-    if (!currentRepo) {
-      showBanner('Select a repository before creating branches.', 'error');
-      return;
-    }
-
-    creatingBranch = true;
-
-    try {
-      await apiFetch('/api/git/branch/create', {
-        method: 'POST',
-        body: JSON.stringify({ name })
-      });
-      await loadDiff();
-      await loadBranches();
-      showBanner(`Created branch ${name}.`, 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingBranch = false;
     }
   }
 
@@ -1994,6 +1611,16 @@
     backendResourceChecks = [];
     backendResourcesAccessible = false;
     loginError = message;
+  }
+
+  function saveBase64File(contentBase64: string, mimeType: string | null, fileName: string) {
+    const bytes = Uint8Array.from(atob(contentBase64), (character) => character.charCodeAt(0));
+    const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType || 'application/octet-stream' }));
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(blobUrl);
   }
 
   function parentDirectoryFor(relativePath: string) {
