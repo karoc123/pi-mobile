@@ -18,6 +18,8 @@ Open: <http://localhost:3000>
 
 Log in with `APP_PASSWORD`, clone a repo, start coding.
 
+The companion Wear OS client is maintained in the [PiMobile Wear OS repository](https://github.com/karoc123/pi-mobile-wear-app).
+
 ---
 
 ## Why Docker is the default path
