@@ -1,44 +1,61 @@
 // @vitest-environment node
 
-import type { IncomingMessage } from "node:http";
-import type { Duplex } from "node:stream";
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
 
-import { describe, expect, it, vi } from "vitest";
-import { WebSocket } from "ws";
+import { describe, expect, it, vi } from 'vitest';
+import { WebSocket } from 'ws';
 
-import type { AgentSnapshot, WebsocketEnvelope } from "../../shared/contracts.js";
-import { AuthService } from "./auth-service.js";
-import { extractCookie, WebsocketHub } from "./websocket-hub.js";
+import type { AgentSnapshot, WebsocketEnvelope } from '../../shared/contracts.js';
+import { AuthService } from './auth-service.js';
+import { extractCookie, WebsocketHub } from './websocket-hub.js';
 
-describe("WebsocketHub", () => {
-  const cookieName = "pi_session";
+describe('WebsocketHub', () => {
+  const cookieName = 'pi_session';
   const dummySnapshot: AgentSnapshot = {
-    status: "idle",
-    activePrompt: null,
-    history: [],
-    models: [],
-    thinkingLevels: [],
-    selectedModel: null,
-    selectedThinkingLevel: null,
-    steeringMode: "all",
-    followUpMode: "one-at-a-time",
-    autoCompactEnabled: false,
-    activeInteractivePrompt: null,
+    repo: null,
+    isConfigured: false,
+    isStreaming: false,
+    runtimePhase: 'idle',
+    pendingMessageCount: 0,
+    isCompacting: false,
+    isRetrying: false,
+    isBashRunning: false,
+    messages: [],
+    tools: [],
+    lastError: null,
+    interactivePrompt: null,
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 0,
+      totalCost: 0,
+      contextTokens: null,
+      contextWindow: null,
+      contextPercent: null,
+      modelId: null,
+      usingSubscription: false,
+      autoCompactEnabled: false,
+    },
   };
 
-  describe("extractCookie", () => {
-    it("extracts and decodes named cookie from Cookie header", () => {
+  describe('extractCookie', () => {
+    it('extracts and decodes named cookie from Cookie header', () => {
       expect(extractCookie(undefined, cookieName)).toBeNull();
-      expect(extractCookie("", cookieName)).toBeNull();
-      expect(extractCookie("other=123", cookieName)).toBeNull();
-      expect(extractCookie(`other=123; ${cookieName}=abc-token; foo=bar`, cookieName)).toBe("abc-token");
-      expect(extractCookie(`${cookieName}=hello%20world`, cookieName)).toBe("hello world");
+      expect(extractCookie('', cookieName)).toBeNull();
+      expect(extractCookie('other=123', cookieName)).toBeNull();
+      expect(extractCookie(`other=123; ${cookieName}=abc-token; foo=bar`, cookieName)).toBe(
+        'abc-token',
+      );
+      expect(extractCookie(`${cookieName}=hello%20world`, cookieName)).toBe('hello world');
     });
   });
 
-  describe("handleUpgrade", () => {
-    it("rejects unauthorized upgrade requests with 401 and destroys socket", () => {
-      const authService = new AuthService("secret");
+  describe('handleUpgrade', () => {
+    it('rejects unauthorized upgrade requests with 401 and destroys socket', () => {
+      const authService = new AuthService('secret');
       const hub = new WebsocketHub(authService, cookieName, () => dummySnapshot);
 
       const mockSocket = {
@@ -52,7 +69,7 @@ describe("WebsocketHub", () => {
 
       hub.handleUpgrade(reqMissing, mockSocket, Buffer.alloc(0));
 
-      expect(mockSocket.write).toHaveBeenCalledWith("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      expect(mockSocket.write).toHaveBeenCalledWith('HTTP/1.1 401 Unauthorized\r\n\r\n');
       expect(mockSocket.destroy).toHaveBeenCalled();
 
       const reqInvalid = {
@@ -63,12 +80,13 @@ describe("WebsocketHub", () => {
       expect(mockSocket.destroy).toHaveBeenCalledTimes(2);
     });
 
-    it("proceeds with upgrade when valid session token cookie is provided", () => {
-      const authService = new AuthService("secret");
-      const validToken = authService.login("secret")!;
+    it('proceeds with upgrade when valid session token cookie is provided', () => {
+      const authService = new AuthService('secret');
+      const validToken = authService.login('secret')!;
       const hub = new WebsocketHub(authService, cookieName, () => dummySnapshot);
 
-      const server = (hub as unknown as { server: { handleUpgrade: ReturnType<typeof vi.fn> } }).server;
+      const server = (hub as unknown as { server: { handleUpgrade: ReturnType<typeof vi.fn> } })
+        .server;
       server.handleUpgrade = vi.fn();
 
       const mockSocket = {
@@ -87,9 +105,9 @@ describe("WebsocketHub", () => {
     });
   });
 
-  describe("broadcast", () => {
-    it("sends payload to all open sockets and ignores closed sockets", () => {
-      const authService = new AuthService("secret");
+  describe('broadcast', () => {
+    it('sends payload to all open sockets and ignores closed sockets', () => {
+      const authService = new AuthService('secret');
       const hub = new WebsocketHub(authService, cookieName, () => dummySnapshot);
 
       const openSocket = {
@@ -107,8 +125,8 @@ describe("WebsocketHub", () => {
       server.clients = new Set([openSocket, closedSocket]);
 
       const event: WebsocketEnvelope = {
-        type: "session_compacted",
-        payload: { message: "Compacted" },
+        type: 'agent_error',
+        payload: { message: 'Agent failed' },
       };
 
       hub.broadcast(event);

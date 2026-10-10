@@ -1,0 +1,15 @@
+node_modules/
+dist/
+package-lock.json
+tmp/
+workspace/
+db/
+pi/
+.pi-mobile/
+.playwright/
+.vitest-cache/
+.docker-volumes/
+coverage/
+playwright-report/
+test-results/
+.env*

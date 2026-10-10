@@ -16,5 +16,13 @@
       "@shared/*": ["./src/shared/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.svelte", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "src/**/*.svelte",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "playwright/**/*.ts"
+  ]
 }

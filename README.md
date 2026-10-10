@@ -77,7 +77,7 @@ Use this if you want hot reload and to contribute to PiMobile itself or use self
 git clone https://github.com/karoc123/pi-mobile.git
 cd pi-mobile
 cp .env.example .env
-npm install
+npm ci --ignore-scripts
 npm run dev
 ```
 
@@ -95,10 +95,12 @@ npm start
 ## Common commands
 
 ```bash
-npm test              # unit/integration tests
-npm run test:e2e      # playwright e2e
+npm run check         # static checks + guardrail tests
+npm test              # unit/integration + guardrail tests
+npm run test:e2e      # mobile Playwright e2e
 npm run build         # production build
-npm run verify:container # container hardening smoke test
+npm run verify:container # isolated container smoke (not the personal stack)
+npm run format:fix -- <paths> # format only explicit files
 ```
 
 ---
@@ -119,3 +121,4 @@ npm run verify:container # container hardening smoke test
 - Architecture: `docs/ARCHITECTURE.md`
 - Product vision: `docs/VISION.md`
 - Runtime/domain context: `CONTEXT.md`
+- Development checks, tool limits and project skills: `docs/DEVELOPMENT.md`

@@ -1,0 +1,32 @@
+services:
+  pi-mobile-server:
+    build: .
+    ports:
+      - '127.0.0.1:${SMOKE_PORT:-3300}:3000'
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      HOME: /home/node
+      APP_PASSWORD: smoke-pass
+      SESSION_COOKIE_SECURE: 'false'
+      WORKSPACE_ROOT: /workspace
+      LOGS_DIR: /data/db/logs
+      PI_AGENT_DIR: /data/pi/agent
+      PI_SESSION_DIR: /data/pi/sessions
+      PI_MOCK_MODE: '1'
+      SSH_PRIVATE_KEY_TARGET: /home/node/.ssh/id_ed25519
+      SSH_PRIVATE_KEY_SECRET_PATH: /run/secrets/ssh_private_key
+      SSH_KNOWN_HOSTS_PATH: /data/db/known_hosts
+      GIT_USER_NAME: Smoke Test
+      GIT_USER_EMAIL: smoke@example.com
+    volumes:
+      - ${SMOKE_ROOT:?SMOKE_ROOT is required}/workspace:/workspace
+      - ${SMOKE_ROOT:?SMOKE_ROOT is required}/db:/data/db
+      - ${SMOKE_ROOT:?SMOKE_ROOT is required}/pi:/data/pi
+    secrets:
+      - ssh_private_key
+
+secrets:
+  ssh_private_key:
+    file: ${SMOKE_ROOT:?SMOKE_ROOT is required}/id_ed25519

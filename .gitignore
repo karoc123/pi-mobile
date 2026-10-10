@@ -14,3 +14,4 @@ db/
 workspace/
 pi/
 dev_pid.txt
+tmp/

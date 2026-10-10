@@ -1,8 +1,15 @@
 node_modules
 dist
 .git
-.env
+.env*
 coverage
-pi/agent
+pi
+workspace
+db
+tmp
+.playwright
+.vitest-cache
+playwright-report
+test-results
 .docker-volumes
 .pi-mobile
