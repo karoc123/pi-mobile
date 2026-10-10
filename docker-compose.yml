@@ -34,14 +34,6 @@ services:
       - source: ssh_private_key
         target: /run/secrets/ssh_private_key
 
-volumes:
-  workspace:
-    name: pi-mobile-workspace
-  db:
-    name: pi-mobile-db
-  pi:
-    name: pi-mobile-pi
-
 secrets:
   ssh_private_key:
     file: ${SSH_PRIVATE_KEY_FILE}

@@ -18,7 +18,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: "npm run build && npm start",
+    command: "npm start",
     cwd: process.cwd(),
     url: "http://127.0.0.1:3200/api/health",
     timeout: 180_000,
