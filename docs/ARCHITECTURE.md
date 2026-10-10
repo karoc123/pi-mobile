@@ -95,6 +95,10 @@ To reduce silent failures and make incidents reproducible directly from mobile d
 - **Live Log Streaming:** `GET /api/logs/stream` (SSE) pushes new backend events in real time, while `GET /api/logs` supports paged history queries.
 - **Client Status Panel:** A tool-icon toggle in the app chrome shows/hides runtime status chips. The panel exposes auth, WebSocket, backend health, log-stream state, and required resource-access checks (workspace/cost-db/log-dir/pi-session paths).
 
+### 2.5 Wear OS Client
+
+The companion Android application is maintained in the standalone `pi-mobile-wear-app` repository. It connects to this backend over the authenticated HTTP API and uses the workspace, agent, and Git endpoints. `GET /api/agent/state?minimal=true` returns the shared `AgentMinimalState` contract for clients that need a compact agent snapshot; authentication requirements are identical to the full snapshot endpoint. Android source, Gradle configuration, and emulator tooling belong to the client repository.
+
 ---
 
 ## 3. Core Workflows & Technical Implementation
