@@ -6,7 +6,7 @@ import { WebSocketServer } from "ws";
 import type { AgentSnapshot, WebsocketEnvelope } from "../../shared/contracts.js";
 
 import { AuthService } from "./auth-service.js";
-import type { LogChannel } from "./log-service.js";
+import { noopLogger, type LogChannel } from "./log-service.js";
 
 export class WebsocketHub {
   private readonly server = new WebSocketServer({ noServer: true });
@@ -18,7 +18,7 @@ export class WebsocketHub {
     private readonly snapshotProvider: () => AgentSnapshot,
     logger?: LogChannel,
   ) {
-    this.logger = logger ?? createNoopLogger();
+    this.logger = logger ?? noopLogger;
 
     this.server.on("connection", (socket) => {
       this.logger.info("WebSocket client connected.", {
@@ -78,14 +78,6 @@ export class WebsocketHub {
   }
 }
 
-function createNoopLogger(): LogChannel {
-  return {
-    debug: () => undefined,
-    info: () => undefined,
-    warn: () => undefined,
-    error: () => undefined,
-  };
-}
 
 export function extractCookie(headerValue: string | undefined, cookieName: string) {
   if (!headerValue) {

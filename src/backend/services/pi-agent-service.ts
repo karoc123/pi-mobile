@@ -20,9 +20,9 @@ import type {
 import type { AppConfig } from "../config.js";
 import { PiAgentBroadcaster } from "./pi-agent-broadcaster.js";
 import { flattenMessageText, hydrateMessagesFromSession, summarizePayload, summarizeText, upsertTool } from "./pi-agent-hydrator.js";
-import { PiAgentMockAdapter } from "./pi-agent-mock-adapter.js";
+import { PiAgentMockAdapter, type MockRuntimeContext } from "./pi-agent-mock-adapter.js";
 import { PiAgentSessionAdapter, type SessionOpenOptions } from "./pi-agent-session-adapter.js";
-import type { LogChannel } from "./log-service.js";
+import { noopLogger, type LogChannel } from "./log-service.js";
 import type { ModelUsageStore } from "./model-usage-store.js";
 
 type Broadcast = (event: WebsocketEnvelope) => void;
@@ -45,7 +45,7 @@ export class PiAgentService {
     private readonly modelUsage: ModelUsageStore,
     logger?: LogChannel,
   ) {
-    this.logger = logger ?? createNoopLogger();
+    this.logger = logger ?? noopLogger;
     this.broadcaster = new PiAgentBroadcaster(broadcast);
     this.sessionAdapter = new PiAgentSessionAdapter(this.config, this.logger, (event) => {
       this.handleSessionEvent(event);
@@ -122,28 +122,7 @@ export class PiAgentService {
     }
 
     if (this.config.piMockMode) {
-      return this.mockAdapter.executeCommand(request, {
-        getCurrentRepo: () => this.currentRepo,
-        getMessages: () => this.messages,
-        setMessages: (messages) => {
-          this.messages = messages;
-        },
-        setTools: (tools) => {
-          this.tools = tools;
-        },
-        setLastError: (message) => {
-          this.lastError = message;
-        },
-        setActiveAssistantMessageId: (messageId) => {
-          this.activeAssistantMessageId = messageId;
-        },
-        broadcast: (event) => {
-          this.broadcaster.emit(event);
-        },
-        emitStatus: () => {
-          this.emitStatus();
-        },
-      });
+      return this.mockAdapter.executeCommand(request, this.createMockContext());
     }
 
     const session = await this.ensureSession();
@@ -157,84 +136,44 @@ export class PiAgentService {
         }
 
         await session.setModel(model);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Model switched to ${request.provider}/${request.modelId}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Model switched to ${request.provider}/${request.modelId}.`);
       }
 
       case "set-thinking": {
         session.setThinkingLevel(request.level);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Thinking set to ${session.thinkingLevel}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Thinking set to ${session.thinkingLevel}.`);
       }
 
       case "set-auto-compact": {
         session.setAutoCompactionEnabled(request.enabled);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.",
-          prompt: null,
-        };
+        return this.completeCommand(request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.");
       }
 
       case "set-steering-mode": {
         session.setSteeringMode(request.mode);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Steering mode set to ${request.mode}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Steering mode set to ${request.mode}.`);
       }
 
       case "set-follow-up-mode": {
         session.setFollowUpMode(request.mode);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Follow-up mode set to ${request.mode}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Follow-up mode set to ${request.mode}.`);
       }
 
       case "set-auto-retry": {
         session.setAutoRetryEnabled(request.enabled);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: request.enabled ? "Auto retry enabled." : "Auto retry disabled.",
-          prompt: null,
-        };
+        return this.completeCommand(request.enabled ? "Auto retry enabled." : "Auto retry disabled.");
       }
 
       case "abort-retry": {
         session.abortRetry();
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: "Retry aborted.",
-          prompt: null,
-        };
+        return this.completeCommand("Retry aborted.");
       }
 
       case "compact": {
         const customInstructions = typeof request.customInstructions === "string" && request.customInstructions.trim().length > 0 ? request.customInstructions.trim() : undefined;
         await session.compact(customInstructions);
         this.messages = hydrateMessagesFromSession(session.messages);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: "Context compacted.",
-          prompt: null,
-        };
+        return this.completeCommand("Context compacted.");
       }
 
       case "run-bash": {
@@ -263,12 +202,7 @@ export class PiAgentService {
 
       case "abort-bash": {
         session.abortBash();
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: "Bash command aborted.",
-          prompt: null,
-        };
+        return this.completeCommand("Bash command aborted.");
       }
 
       case "set-session-name": {
@@ -279,25 +213,14 @@ export class PiAgentService {
         }
 
         session.setSessionName(nextName);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Session renamed to \"${nextName}\".`,
-          prompt: null,
-        };
+        return this.completeCommand(`Session renamed to \"${nextName}\".`);
       }
 
       case "export-session": {
         const outputPath = typeof request.outputPath === "string" && request.outputPath.trim().length > 0 ? request.outputPath.trim() : undefined;
         const exportedPath = request.format === "html" ? await session.exportToHtml(outputPath) : session.exportToJsonl(outputPath);
 
-        this.lastError = null;
-        this.emitStatus();
-
-        return {
-          message: `Session exported to ${exportedPath}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Session exported to ${exportedPath}.`);
       }
 
       case "new-session": {
@@ -334,12 +257,7 @@ export class PiAgentService {
 
         this.messages = hydrateMessagesFromSession(session.messages);
         this.tools = [];
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: "Moved to the selected session point.",
-          prompt: result.editorText ?? null,
-        };
+        return this.completeCommand("Moved to the selected session point.", result.editorText ?? null);
       }
 
       case "fork-session": {
@@ -388,28 +306,7 @@ export class PiAgentService {
 
   async prompt(promptText: string) {
     if (this.config.piMockMode) {
-      await this.mockAdapter.prompt(promptText, {
-        getCurrentRepo: () => this.currentRepo,
-        getMessages: () => this.messages,
-        setMessages: (messages) => {
-          this.messages = messages;
-        },
-        setTools: (tools) => {
-          this.tools = tools;
-        },
-        setLastError: (message) => {
-          this.lastError = message;
-        },
-        setActiveAssistantMessageId: (messageId) => {
-          this.activeAssistantMessageId = messageId;
-        },
-        broadcast: (event) => {
-          this.broadcaster.emit(event);
-        },
-        emitStatus: () => {
-          this.emitStatus();
-        },
-      });
+      await this.mockAdapter.prompt(promptText, this.createMockContext());
       return;
     }
 
@@ -698,6 +595,33 @@ export class PiAgentService {
     }
   }
 
+  private completeCommand(message: string, prompt: string | null = null): AgentCommandResponse {
+    this.lastError = null;
+    this.emitStatus();
+    return { message, prompt };
+  }
+
+  private createMockContext(): MockRuntimeContext {
+    return {
+      getCurrentRepo: () => this.currentRepo,
+      getMessages: () => this.messages,
+      setMessages: (messages) => {
+        this.messages = messages;
+      },
+      setTools: (tools) => {
+        this.tools = tools;
+      },
+      setLastError: (message) => {
+        this.lastError = message;
+      },
+      setActiveAssistantMessageId: (messageId) => {
+        this.activeAssistantMessageId = messageId;
+      },
+      broadcast: (event) => this.broadcaster.emit(event),
+      emitStatus: () => this.emitStatus(),
+    };
+  }
+
   private recordError(error: unknown) {
     const message = toErrorMessage(error);
     this.logger.error("Pi agent runtime reported an error.", {
@@ -865,14 +789,5 @@ export function parseInteractivePromptArgs(args: unknown): InteractivePrompt | n
     promptId: randomUUID(),
     title: raw.title.trim(),
     questions,
-  };
-}
-
-function createNoopLogger(): LogChannel {
-  return {
-    debug: () => undefined,
-    info: () => undefined,
-    warn: () => undefined,
-    error: () => undefined,
   };
 }

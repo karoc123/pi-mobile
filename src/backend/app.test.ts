@@ -2,13 +2,14 @@
 
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "./app.js";
 import { AuthService } from "./services/auth-service.js";
+import { FileService } from "./services/file-service.js";
 import { LogService } from "./services/log-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
 import { runCommand } from "./utils/process.js";
@@ -291,6 +292,49 @@ describe("createApp", () => {
     expect(createFileMissingPathResponse.body.error.code).toBe("bad_request");
     expect(createFile).toHaveBeenCalledTimes(2);
     expect(clearLogsResponse.status).toBe(204);
+
+    await logService.flush();
+  });
+
+  it("maps file system errors and rejects repository-root paths on file routes", async () => {
+    const config = {
+      nodeEnv: "test" as const,
+      host: "127.0.0.1",
+      port: 3000,
+      appPassword: "secret-pass",
+      workspaceRoot: tempDir,
+      modelUsagePath: path.join(tempDir, ".pi-mobile", "model-usage.json"),
+      logsDirPath: path.join(tempDir, ".pi-mobile", "logs"),
+      logLevel: "debug" as const,
+      sessionCookieName: "pi_mobile_session",
+      sessionCookieSecure: false,
+      piMockMode: true,
+    };
+    const logService = new LogService({ logDirPath: config.logsDirPath, minLevel: config.logLevel });
+    const workspaceService = new WorkspaceService(tempDir);
+    await workspaceService.initializeDefaultRepo();
+    const app = createApp({
+      config,
+      authService: new AuthService(config.appPassword),
+      logService,
+      workspaceService,
+      fileService: new FileService(),
+      serverStartedAt: new Date(),
+    } as never);
+
+    const unauthorized = await request(app).post("/api/files/delete").send({ path: "README.md" });
+    const cookie = (await request(app).post("/api/auth/login").send({ password: "secret-pass" })).headers["set-cookie"];
+    const deleteRoot = await request(app).post("/api/files/delete").set("Cookie", cookie).send({ path: "notes/.." });
+    const moveMissing = await request(app).post("/api/files/rename").set("Cookie", cookie).send({ fromPath: "missing.md", toPath: "other.md" });
+    const duplicateExisting = await request(app).post("/api/files/duplicate").set("Cookie", cookie).send({ sourcePath: "README.md", targetPath: "README.md" });
+    const readMissing = await request(app).get("/api/files/content?path=missing.md").set("Cookie", cookie);
+
+    expect(unauthorized.status).toBe(401);
+    expect(deleteRoot.status).toBe(400);
+    expect(moveMissing.status).toBe(404);
+    expect(duplicateExisting.status).toBe(409);
+    expect(readMissing.status).toBe(404);
+    expect(await readFile(path.join(tempDir, "README.md"), "utf8")).toBe("# temp repo\n");
 
     await logService.flush();
   });
