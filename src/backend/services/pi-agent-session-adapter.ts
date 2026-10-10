@@ -322,7 +322,7 @@ function isModelReadyForSelection(modelRuntime: ModelRuntime, provider: string) 
   );
 }
 
-function deriveRuntimePhase(input: { isStreaming: boolean; isCompacting: boolean; isRetrying: boolean; isBashRunning: boolean; pendingMessageCount: number }): AgentRuntimePhase {
+export function deriveRuntimePhase(input: { isStreaming: boolean; isCompacting: boolean; isRetrying: boolean; isBashRunning: boolean; pendingMessageCount: number }): AgentRuntimePhase {
   if (input.isRetrying) {
     return "retrying";
   }

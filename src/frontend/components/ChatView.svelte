@@ -35,7 +35,6 @@
   export let runtimePhase: AgentRuntimePhase = 'idle';
   export let pendingMessageCount = 0;
   export let canAbort = false;
-  export let showKeepRunning = false;
   export let lastError: string | null = null;
   export let usage: AgentUsage;
   export let prefillPrompt = '';
@@ -47,7 +46,6 @@
   const dispatch = createEventDispatcher<{
     submit: { prompt: string };
     abort: void;
-    keepRunning: void;
     openCommands: void;
     openModelCommands: void;
     newSession: void;
@@ -93,8 +91,6 @@
 
   $: statusTitle = lastError
     ? 'Agent needs attention'
-    : showKeepRunning
-      ? 'Awaiting keep running'
     : runtimePhase === 'streaming'
       ? 'Pi is working'
       : runtimePhase === 'queued'
@@ -968,18 +964,13 @@
             ▾
           </button>
         </div>
-        {#if showKeepRunning && runtimePhase !== 'idle'}
-          <button class="secondary-button compact keep-running-button" type="button" on:click={() => dispatch('keepRunning')}>
-            Keep running
-          </button>
-        {/if}
       </div>
       <button
         class="primary-button send-button"
         type="button"
         on:pointerdown={handleSendPointerDown}
         on:click={submit}
-        disabled={prompt.trim().length === 0 || (showKeepRunning && runtimePhase !== 'idle')}
+        disabled={prompt.trim().length === 0}
       >
         <span class="send-button-model">{sendButtonModel}</span>
       </button>

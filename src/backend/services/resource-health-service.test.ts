@@ -31,7 +31,7 @@ describe("ResourceHealthService", () => {
       port: 3000,
       appPassword: "secret-pass",
       workspaceRoot: tempDir,
-      costsDbPath: path.join(tempDir, ".pi-mobile", "costs.sqlite"),
+      modelUsagePath: path.join(tempDir, ".pi-mobile", "model-usage.json"),
       logsDirPath: path.join(tempDir, ".pi-mobile", "logs"),
       logLevel: "debug",
       sessionCookieName: "pi_mobile_session",

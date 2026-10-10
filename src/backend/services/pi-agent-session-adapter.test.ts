@@ -15,7 +15,7 @@ function createAdapter() {
       defaultRepo: undefined,
       gitUserName: undefined,
       gitUserEmail: undefined,
-      costsDbPath: "/tmp/.pi-mobile/costs.sqlite",
+      modelUsagePath: "/tmp/.pi-mobile/model-usage.json",
       logsDirPath: "/tmp/.pi-mobile/logs",
       logLevel: "debug",
       sessionCookieName: "pi_mobile_session",

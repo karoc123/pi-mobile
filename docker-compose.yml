@@ -13,7 +13,6 @@ services:
       APP_PASSWORD: ${APP_PASSWORD}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       WORKSPACE_ROOT: /workspace
-      COSTS_DB_PATH: /data/db/costs.sqlite
       LOGS_DIR: /data/db/logs
       PI_AGENT_DIR: /data/pi/agent
       PI_SESSION_DIR: /data/pi/sessions
@@ -33,14 +32,6 @@ services:
     secrets:
       - source: ssh_private_key
         target: /run/secrets/ssh_private_key
-
-volumes:
-  workspace:
-    name: pi-mobile-workspace
-  db:
-    name: pi-mobile-db
-  pi:
-    name: pi-mobile-pi
 
 secrets:
   ssh_private_key:

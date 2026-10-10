@@ -2,13 +2,14 @@
 
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "./app.js";
 import { AuthService } from "./services/auth-service.js";
+import { FileService } from "./services/file-service.js";
 import { LogService } from "./services/log-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
 import { runCommand } from "./utils/process.js";
@@ -40,7 +41,7 @@ describe("createApp", () => {
       port: 3000,
       appPassword: "secret-pass",
       workspaceRoot: tempDir,
-      costsDbPath: path.join(tempDir, ".pi-mobile", "costs.sqlite"),
+      modelUsagePath: path.join(tempDir, ".pi-mobile", "model-usage.json"),
       logsDirPath: path.join(tempDir, ".pi-mobile", "logs"),
       logLevel: "debug" as const,
       sessionCookieName: "pi_mobile_session",
@@ -71,47 +72,6 @@ describe("createApp", () => {
     const executeCommand = vi.fn(async () => ({
       message: "Started a new session.",
       prompt: null,
-    }));
-    const getCostReport = vi.fn(() => ({
-      summary: {
-        totalSessions: 1,
-        totalCost: 2.75,
-        totalTokens: 355,
-        inputTokens: 240,
-        outputTokens: 95,
-        cacheReadTokens: 20,
-        cacheWriteTokens: 0,
-      },
-      sessions: [
-        {
-          sessionKey: "repo-a:session-1",
-          sessionId: "session-1",
-          sessionFile: "/workspace/repo-a/.pi/sessions/session-1.json",
-          repoName: path.basename(tempDir),
-          repoRelativePath: path.basename(tempDir),
-          repoAbsolutePath: tempDir,
-          modelId: "anthropic/claude-sonnet-4",
-          modelsUsed: ["anthropic/claude-sonnet-4"],
-          startedAt: "2026-05-01T10:00:00.000Z",
-          updatedAt: "2026-05-01T10:05:00.000Z",
-          endedAt: "2026-05-01T10:06:00.000Z",
-          inputTokens: 240,
-          outputTokens: 95,
-          cacheReadTokens: 20,
-          cacheWriteTokens: 0,
-          totalTokens: 355,
-          totalCost: 2.75,
-          contextTokens: 355,
-          contextWindow: 200000,
-          contextPercent: 0.2,
-          usingSubscription: true,
-          autoCompactEnabled: true,
-        },
-      ],
-      filters: {
-        repos: [{ value: path.basename(tempDir), label: path.basename(tempDir) }],
-        models: [{ value: "anthropic/claude-sonnet-4", label: "anthropic/claude-sonnet-4" }],
-      },
     }));
     const getResourceHealth = vi.fn(async () => ({
       allRequiredAccessible: true,
@@ -177,9 +137,6 @@ describe("createApp", () => {
         unstageAll: gitUnstageAll,
         revertHunk: vi.fn(async () => undefined),
       } as never,
-      costService: {
-        getReport: getCostReport,
-      } as never,
       resourceHealthService: {
         check: getResourceHealth,
       } as never,
@@ -243,7 +200,6 @@ describe("createApp", () => {
     const authorized = await request(app).get("/api/workspaces/browse").set("Cookie", cookie);
     const commandStateResponse = await request(app).get("/api/agent/command-state").set("Cookie", cookie);
     const commandExecuteResponse = await request(app).post("/api/agent/command").set("Cookie", cookie).send({ command: "new-session" });
-    const costResponse = await request(app).get("/api/costs?repo=repo-a&model=anthropic%2Fclaude-sonnet-4&from=2026-05-01T00%3A00%3A00.000Z&to=2026-05-02T00%3A00%3A00.000Z").set("Cookie", cookie);
     const logsResponse = await request(app).get("/api/logs?limit=50").set("Cookie", cookie);
     const healthResponse = await request(app).get("/api/health").set("Cookie", cookie);
     const pullResponse = await request(app).post("/api/git/pull").set("Cookie", cookie);
@@ -293,15 +249,6 @@ describe("createApp", () => {
       prompt: null,
     });
     expect(executeCommand).toHaveBeenCalledWith({ command: "new-session" });
-    expect(costResponse.status).toBe(200);
-    expect(costResponse.body.summary.totalCost).toBe(2.75);
-    expect(costResponse.headers["cache-control"]).toContain("no-store");
-    expect(getCostReport).toHaveBeenCalledWith({
-      repo: "repo-a",
-      model: "anthropic/claude-sonnet-4",
-      from: "2026-05-01T00:00:00.000Z",
-      to: "2026-05-02T00:00:00.000Z",
-    });
     expect(logsResponse.status).toBe(200);
     expect(Array.isArray(logsResponse.body.entries)).toBe(true);
     expect(logsResponse.body.entries.length).toBeGreaterThan(0);
@@ -345,6 +292,49 @@ describe("createApp", () => {
     expect(createFileMissingPathResponse.body.error.code).toBe("bad_request");
     expect(createFile).toHaveBeenCalledTimes(2);
     expect(clearLogsResponse.status).toBe(204);
+
+    await logService.flush();
+  });
+
+  it("maps file system errors and rejects repository-root paths on file routes", async () => {
+    const config = {
+      nodeEnv: "test" as const,
+      host: "127.0.0.1",
+      port: 3000,
+      appPassword: "secret-pass",
+      workspaceRoot: tempDir,
+      modelUsagePath: path.join(tempDir, ".pi-mobile", "model-usage.json"),
+      logsDirPath: path.join(tempDir, ".pi-mobile", "logs"),
+      logLevel: "debug" as const,
+      sessionCookieName: "pi_mobile_session",
+      sessionCookieSecure: false,
+      piMockMode: true,
+    };
+    const logService = new LogService({ logDirPath: config.logsDirPath, minLevel: config.logLevel });
+    const workspaceService = new WorkspaceService(tempDir);
+    await workspaceService.initializeDefaultRepo();
+    const app = createApp({
+      config,
+      authService: new AuthService(config.appPassword),
+      logService,
+      workspaceService,
+      fileService: new FileService(),
+      serverStartedAt: new Date(),
+    } as never);
+
+    const unauthorized = await request(app).post("/api/files/delete").send({ path: "README.md" });
+    const cookie = (await request(app).post("/api/auth/login").send({ password: "secret-pass" })).headers["set-cookie"];
+    const deleteRoot = await request(app).post("/api/files/delete").set("Cookie", cookie).send({ path: "notes/.." });
+    const moveMissing = await request(app).post("/api/files/rename").set("Cookie", cookie).send({ fromPath: "missing.md", toPath: "other.md" });
+    const duplicateExisting = await request(app).post("/api/files/duplicate").set("Cookie", cookie).send({ sourcePath: "README.md", targetPath: "README.md" });
+    const readMissing = await request(app).get("/api/files/content?path=missing.md").set("Cookie", cookie);
+
+    expect(unauthorized.status).toBe(401);
+    expect(deleteRoot.status).toBe(400);
+    expect(moveMissing.status).toBe(404);
+    expect(duplicateExisting.status).toBe(409);
+    expect(readMissing.status).toBe(404);
+    expect(await readFile(path.join(tempDir, "README.md"), "utf8")).toBe("# temp repo\n");
 
     await logService.flush();
   });

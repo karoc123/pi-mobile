@@ -13,16 +13,11 @@ import type {
   BackendLogQuery,
   BackendLogQueryResponse,
   FileCreateDirectoryResult,
-  FileCreateRequest,
   FileCreateResult,
-  FileDeleteRequest,
   FileDeleteResult,
   FileDownloadInfo,
-  FileDuplicateRequest,
   FileDuplicateResult,
-  FileMoveRequest,
   FileMoveResult,
-  FileUploadRequest,
   FileUploadResult,
   GitBranchesResponse,
   GitDiffResponse,
@@ -30,6 +25,7 @@ import type {
   PiAuthLoginTokenRequest,
   PiAuthLogoutRequest,
   PiAuthStatusResponse,
+  SelectedRepo,
   WorkspaceCloneRequest,
   WorkspaceCloneResult,
 } from "../shared/contracts.js";
@@ -42,7 +38,6 @@ import { LogService } from "./services/log-service.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { PiAuthService, PiAuthServiceError } from "./services/pi-auth-service.js";
 import { RepositoryRuntimeService } from "./services/repository-runtime-service.js";
-import { CostService } from "./services/cost-service.js";
 import { ResourceHealthService } from "./services/resource-health-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
 import { HttpError, isHttpError } from "./utils/http-error.js";
@@ -55,7 +50,6 @@ type AppServices = {
   repositoryRuntimeService: RepositoryRuntimeService;
   fileService: FileService;
   gitService: GitService;
-  costService: CostService;
   resourceHealthService: ResourceHealthService;
   piAgentService: PiAgentService;
   piAuthService: PiAuthService;
@@ -165,17 +159,20 @@ export function createApp(services: AppServices) {
     });
   });
 
-  app.post("/api/auth/logout", requireAuth(services), (request, response) => {
+  app.use("/api", requireAuth(services));
+  const currentRepo = () => services.workspaceService.requireCurrentRepo();
+
+  app.post("/api/auth/logout", (request, response) => {
     services.authService.logout(request.cookies?.[services.config.sessionCookieName]);
     response.clearCookie(services.config.sessionCookieName, { path: "/" });
     response.json({ authenticated: false });
   });
 
-  app.get("/api/pi/auth/status", requireAuth(services), async (_request, response) => {
+  app.get("/api/pi/auth/status", async (_request, response) => {
     response.json((await services.piAuthService.getStatus()) satisfies PiAuthStatusResponse);
   });
 
-  app.post("/api/pi/auth/login-token", requireAuth(services), async (request, response) => {
+  app.post("/api/pi/auth/login-token", async (request, response) => {
     const body = getBodyObject<PiAuthLoginTokenRequest>(request);
     const provider = typeof body.provider === "string" ? body.provider.trim() : "";
     const token = typeof body.token === "string" ? body.token.trim() : "";
@@ -196,7 +193,7 @@ export function createApp(services: AppServices) {
     }
   });
 
-  app.post("/api/pi/auth/logout", requireAuth(services), async (request, response) => {
+  app.post("/api/pi/auth/logout", async (request, response) => {
     const body = getBodyObject<PiAuthLogoutRequest>(request);
     const provider = typeof body.provider === "string" ? body.provider.trim() : "";
 
@@ -215,7 +212,7 @@ export function createApp(services: AppServices) {
     }
   });
 
-  app.get("/api/workspaces/browse", requireAuth(services), async (request, response) => {
+  app.get("/api/workspaces/browse", async (request, response) => {
     const currentPath = getQueryString(request, "path", ".");
     response.json({
       currentPath,
@@ -224,12 +221,12 @@ export function createApp(services: AppServices) {
     });
   });
 
-  app.post("/api/workspaces/select", requireAuth(services), async (request, response) => {
+  app.post("/api/workspaces/select", async (request, response) => {
     const repo = await services.repositoryRuntimeService.selectRepo(getBodyString(request, "path"));
     response.json({ repo });
   });
 
-  app.post("/api/workspaces/clone", requireAuth(services), async (request, response) => {
+  app.post("/api/workspaces/clone", async (request, response) => {
     const body = getBodyObject<WorkspaceCloneRequest>(request);
     const remoteUrl = typeof body.remoteUrl === "string" ? body.remoteUrl.trim() : "";
     const destinationPath = typeof body.destinationPath === "string" ? body.destinationPath.trim() : undefined;
@@ -250,315 +247,93 @@ export function createApp(services: AppServices) {
     }
   });
 
-  app.get("/api/files/browse", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const currentPath = getQueryString(request, "path", ".");
-    response.json({
-      currentPath,
-      entries: await services.fileService.browse(repo, currentPath),
-    });
-  });
+  app.use("/api/files", createFileRouter(services.fileService, currentRepo));
 
-  app.get("/api/files/content", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    response.json(await services.fileService.readFile(repo, getQueryString(request, "path")));
-  });
-
-  app.post("/api/files/write", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    await services.fileService.writeFile(repo, getBodyString(request, "path"), getBodyString(request, "content"));
-    response.json({ ok: true });
-  });
-
-  app.post("/api/files/create", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const filePath = getBodyString(request, "path").trim();
-    const body = getBodyObject<FileCreateRequest>(request);
-    const content = typeof body.content === "string" ? body.content : "";
-
-    if (filePath.length === 0 || filePath === ".") {
-      throw new HttpError(400, "bad_request", "File path is required.", { retriable: false });
-    }
-
-    try {
-      await services.fileService.createFile(repo, filePath, content);
-    } catch (error) {
-      if (isNodeFileExistsError(error)) {
-        throw new HttpError(409, "conflict", "File already exists.", { retriable: false });
-      }
-
-      throw error;
-    }
-
-    response.json({ ok: true, path: filePath } satisfies FileCreateResult);
-  });
-
-  app.post("/api/files/create-directory", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const directoryPath = getBodyString(request, "path").trim();
-
-    if (directoryPath.length === 0 || directoryPath === ".") {
-      throw new HttpError(400, "bad_request", "Directory path is required.", { retriable: false });
-    }
-
-    try {
-      await services.fileService.createDirectory(repo, directoryPath);
-    } catch (error) {
-      if (isNodeFileExistsError(error)) {
-        throw new HttpError(409, "conflict", "Directory already exists.", { retriable: false });
-      }
-
-      throw error;
-    }
-
-    response.json({ ok: true, path: directoryPath } satisfies FileCreateDirectoryResult);
-  });
-
-  app.post("/api/files/duplicate", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const body = getBodyObject<FileDuplicateRequest>(request);
-    const sourcePath = body.sourcePath.trim();
-    const targetPath = body.targetPath.trim();
-
-    if (sourcePath.length === 0 || targetPath.length === 0 || sourcePath === "." || targetPath === ".") {
-      throw new HttpError(400, "bad_request", "Source and target paths are required.", { retriable: false });
-    }
-
-    try {
-      await services.fileService.duplicateFile(repo, sourcePath, targetPath);
-    } catch (error) {
-      if (isNodeFileExistsError(error)) {
-        throw new HttpError(409, "conflict", "Target file already exists.", { retriable: false });
-      }
-
-      if (isNodeFileNotFoundError(error)) {
-        throw new HttpError(404, "not_found", "Source file does not exist.", { retriable: false });
-      }
-
-      throw error;
-    }
-
-    response.json({ ok: true, path: targetPath } satisfies FileDuplicateResult);
-  });
-
-  app.post("/api/files/move", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const body = getBodyObject<FileMoveRequest>(request);
-    const fromPath = body.fromPath.trim();
-    const toPath = body.toPath.trim();
-
-    if (fromPath.length === 0 || toPath.length === 0 || fromPath === "." || toPath === ".") {
-      throw new HttpError(400, "bad_request", "Source and target paths are required.", { retriable: false });
-    }
-
-    try {
-      await services.fileService.movePath(repo, fromPath, toPath);
-    } catch (error) {
-      if (isNodeFileExistsError(error)) {
-        throw new HttpError(409, "conflict", "Target path already exists.", { retriable: false });
-      }
-
-      if (isNodeFileNotFoundError(error)) {
-        throw new HttpError(404, "not_found", "Source path does not exist.", { retriable: false });
-      }
-
-      throw error;
-    }
-
-    response.json({ ok: true, fromPath, toPath } satisfies FileMoveResult);
-  });
-
-  app.post("/api/files/rename", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const body = getBodyObject<FileMoveRequest>(request);
-    const fromPath = body.fromPath.trim();
-    const toPath = body.toPath.trim();
-
-    if (fromPath.length === 0 || toPath.length === 0 || fromPath === "." || toPath === ".") {
-      throw new HttpError(400, "bad_request", "Source and target paths are required.", { retriable: false });
-    }
-
-    try {
-      await services.fileService.movePath(repo, fromPath, toPath);
-    } catch (error) {
-      if (isNodeFileExistsError(error)) {
-        throw new HttpError(409, "conflict", "Target path already exists.", { retriable: false });
-      }
-
-      if (isNodeFileNotFoundError(error)) {
-        throw new HttpError(404, "not_found", "Source path does not exist.", { retriable: false });
-      }
-
-      throw error;
-    }
-
-    response.json({ ok: true, fromPath, toPath } satisfies FileMoveResult);
-  });
-
-  app.post("/api/files/delete", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const filePath = getBodyObject<FileDeleteRequest>(request).path.trim();
-
-    if (filePath.length === 0 || filePath === ".") {
-      throw new HttpError(400, "bad_request", "Path is required.", { retriable: false });
-    }
-
-    try {
-      await services.fileService.deletePath(repo, filePath);
-    } catch (error) {
-      if (isNodeFileNotFoundError(error)) {
-        throw new HttpError(404, "not_found", "Path does not exist.", { retriable: false });
-      }
-
-      throw error;
-    }
-
-    response.json({ ok: true, path: filePath } satisfies FileDeleteResult);
-  });
-
-  app.post("/api/files/upload", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const body = getBodyObject<FileUploadRequest>(request);
-    const filePath = body.path.trim();
-    const contentBase64 = body.contentBase64;
-
-    if (filePath.length === 0 || filePath === ".") {
-      throw new HttpError(400, "bad_request", "File path is required.", { retriable: false });
-    }
-
-    if (typeof contentBase64 !== "string" || contentBase64.length === 0) {
-      throw new HttpError(400, "bad_request", "Base64 content is required.", { retriable: false });
-    }
-
-    try {
-      await services.fileService.uploadFile(repo, filePath, contentBase64);
-    } catch (error) {
-      if (isNodeFileExistsError(error)) {
-        throw new HttpError(409, "conflict", "File already exists.", { retriable: false });
-      }
-
-      throw error;
-    }
-
-    response.json({ ok: true, path: filePath } satisfies FileUploadResult);
-  });
-
-  app.get("/api/files/download", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
-    const filePath = getQueryString(request, "path");
-
-    if (filePath.length === 0 || filePath === ".") {
-      throw new HttpError(400, "bad_request", "File path is required.", { retriable: false });
-    }
-
-    try {
-      const info = await services.fileService.getDownloadInfo(repo, filePath);
-      response.json(info satisfies FileDownloadInfo);
-    } catch (error) {
-      if (isNodeFileNotFoundError(error)) {
-        throw new HttpError(404, "not_found", "File does not exist.", { retriable: false });
-      }
-
-      throw error;
-    }
-  });
-
-  app.get("/api/git/diff", requireAuth(services), async (_request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.get("/api/git/diff", async (_request, response) => {
+    const repo = currentRepo();
     const [files, sync] = await Promise.all([services.gitService.getDiff(repo), services.gitService.getRemoteSyncStatus(repo)]);
     response.json({ files, sync } satisfies GitDiffResponse);
   });
 
-  app.post("/api/git/commit", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/commit", async (request, response) => {
+    const repo = currentRepo();
     const commitSha = await services.gitService.commit(repo, getBodyString(request, "message"));
     response.json({ commitSha });
   });
 
-  app.post("/api/git/pull", requireAuth(services), async (_request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/pull", async (_request, response) => {
+    const repo = currentRepo();
     response.json({
       summary: await services.gitService.pull(repo),
     } satisfies GitSyncResult);
   });
 
-  app.post("/api/git/push", requireAuth(services), async (_request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/push", async (_request, response) => {
+    const repo = currentRepo();
     response.json({
       summary: await services.gitService.push(repo),
     } satisfies GitSyncResult);
   });
 
-  app.get("/api/git/branches", requireAuth(services), async (_request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.get("/api/git/branches", async (_request, response) => {
+    const repo = currentRepo();
     const [branches, current] = await Promise.all([services.gitService.getBranches(repo), services.gitService.getCurrentBranch(repo)]);
     response.json({ branches, current } satisfies GitBranchesResponse);
   });
 
-  app.post("/api/git/branch/switch", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/branch/switch", async (request, response) => {
+    const repo = currentRepo();
     await services.gitService.switchBranch(repo, getBodyString(request, "name"));
     response.json({ ok: true });
   });
 
-  app.post("/api/git/branch/create", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/branch/create", async (request, response) => {
+    const repo = currentRepo();
     await services.gitService.createBranch(repo, getBodyString(request, "name"));
     response.json({ ok: true });
   });
 
-  app.post("/api/git/stage-hunk", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/stage-hunk", async (request, response) => {
+    const repo = currentRepo();
     await services.gitService.stageHunk(repo, getBodyString(request, "diff"));
     response.json({ ok: true });
   });
 
-  app.post("/api/git/unstage-hunk", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/unstage-hunk", async (request, response) => {
+    const repo = currentRepo();
     await services.gitService.unstageHunk(repo, getBodyString(request, "diff"));
     response.json({ ok: true });
   });
 
-  app.post("/api/git/stage-all", requireAuth(services), async (_request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/stage-all", async (_request, response) => {
+    const repo = currentRepo();
     await services.gitService.stageAll(repo);
     response.json({ ok: true });
   });
 
-  app.post("/api/git/unstage-all", requireAuth(services), async (_request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/unstage-all", async (_request, response) => {
+    const repo = currentRepo();
     await services.gitService.unstageAll(repo);
     response.json({ ok: true });
   });
 
-  app.get("/api/costs", requireAuth(services), (request, response) => {
-    response.json(
-      services.costService.getReport({
-        repo: getOptionalQueryString(request, "repo"),
-        model: getOptionalQueryString(request, "model"),
-        from: getOptionalQueryString(request, "from"),
-        to: getOptionalQueryString(request, "to"),
-      }),
-    );
-  });
-
-  app.post("/api/git/revert-hunk", requireAuth(services), async (request, response) => {
-    const repo = services.workspaceService.requireCurrentRepo();
+  app.post("/api/git/revert-hunk", async (request, response) => {
+    const repo = currentRepo();
     await services.gitService.revertHunk(repo, getBodyString(request, "diff"));
     response.json({ ok: true });
   });
 
-  app.get("/api/logs", requireAuth(services), (request, response) => {
+  app.get("/api/logs", (request, response) => {
     const query = parseLogQuery(request);
     response.json(services.logService.queryLogs(query) satisfies BackendLogQueryResponse);
   });
 
-  app.delete("/api/logs", requireAuth(services), async (_request, response) => {
+  app.delete("/api/logs", async (_request, response) => {
     await services.logService.clear();
     response.status(204).end();
   });
 
-  app.get("/api/logs/stream", requireAuth(services), (request, response) => {
+  app.get("/api/logs/stream", (request, response) => {
     const query = parseLogQuery(request);
 
     response.setHeader("Content-Type", "text/event-stream");
@@ -587,7 +362,7 @@ export function createApp(services: AppServices) {
     });
   });
 
-  app.get("/api/agent/state", requireAuth(services), (request, response) => {
+  app.get("/api/agent/state", (request, response) => {
     if (request.query.minimal === "true") {
       response.json(services.piAgentService.getMinimalSnapshot());
       return;
@@ -596,25 +371,25 @@ export function createApp(services: AppServices) {
     response.json(services.piAgentService.getSnapshot());
   });
 
-  app.get("/api/agent/command-state", requireAuth(services), async (_request, response) => {
+  app.get("/api/agent/command-state", async (_request, response) => {
     response.json(await services.piAgentService.getCommandState());
   });
 
-  app.post("/api/agent/command", requireAuth(services), async (request, response) => {
+  app.post("/api/agent/command", async (request, response) => {
     response.json(await services.piAgentService.executeCommand(getBodyObject<AgentCommandRequest>(request)));
   });
 
-  app.post("/api/agent/prompt", requireAuth(services), async (request, response) => {
+  app.post("/api/agent/prompt", async (request, response) => {
     await services.piAgentService.prompt(getBodyString(request, "prompt"));
     response.status(202).json({ accepted: true });
   });
 
-  app.post("/api/agent/abort", requireAuth(services), async (_request, response) => {
+  app.post("/api/agent/abort", async (_request, response) => {
     await services.piAgentService.abort();
     response.json({ ok: true });
   });
 
-  app.post("/api/agent/new-session", requireAuth(services), async (_request, response) => {
+  app.post("/api/agent/new-session", async (_request, response) => {
     await services.piAgentService.startNewSession();
     response.json({ ok: true });
   });
@@ -653,6 +428,87 @@ export function createApp(services: AppServices) {
   });
 
   return app;
+}
+
+function createFileRouter(fileService: FileService, currentRepo: () => SelectedRepo) {
+  const router = express.Router();
+
+  router.get("/browse", async (request, response) => {
+    const currentPath = getQueryString(request, "path", ".");
+    response.json({ currentPath, entries: await fileService.browse(currentRepo(), currentPath) });
+  });
+
+  router.get("/content", async (request, response) => {
+    response.json(await fileService.readFile(currentRepo(), getQueryString(request, "path")));
+  });
+
+  router.post("/write", async (request, response) => {
+    await fileService.writeFile(currentRepo(), getEntryPath(getBodyString(request, "path")), getBodyString(request, "content"));
+    response.json({ ok: true });
+  });
+
+  router.post("/create", async (request, response) => {
+    const filePath = getEntryPath(getBodyString(request, "path"));
+    const content = typeof request.body.content === "string" ? request.body.content : "";
+    await fileService.createFile(currentRepo(), filePath, content);
+    response.json({ ok: true, path: filePath } satisfies FileCreateResult);
+  });
+
+  router.post("/create-directory", async (request, response) => {
+    const directoryPath = getEntryPath(getBodyString(request, "path"));
+    await fileService.createDirectory(currentRepo(), directoryPath);
+    response.json({ ok: true, path: directoryPath } satisfies FileCreateDirectoryResult);
+  });
+
+  router.post("/duplicate", async (request, response) => {
+    const sourcePath = getEntryPath(getBodyString(request, "sourcePath"));
+    const targetPath = getEntryPath(getBodyString(request, "targetPath"));
+    await fileService.duplicateFile(currentRepo(), sourcePath, targetPath);
+    response.json({ ok: true, path: targetPath } satisfies FileDuplicateResult);
+  });
+
+  router.post(["/move", "/rename"], async (request, response) => {
+    const fromPath = getEntryPath(getBodyString(request, "fromPath"));
+    const toPath = getEntryPath(getBodyString(request, "toPath"));
+    await fileService.movePath(currentRepo(), fromPath, toPath);
+    response.json({ ok: true, fromPath, toPath } satisfies FileMoveResult);
+  });
+
+  router.post("/delete", async (request, response) => {
+    const filePath = getEntryPath(getBodyString(request, "path"));
+    await fileService.deletePath(currentRepo(), filePath);
+    response.json({ ok: true, path: filePath } satisfies FileDeleteResult);
+  });
+
+  router.post("/upload", async (request, response) => {
+    const filePath = getEntryPath(getBodyString(request, "path"));
+    const contentBase64 = getBodyString(request, "contentBase64");
+
+    if (contentBase64.length === 0) {
+      throw new HttpError(400, "bad_request", "Base64 content is required.", { retriable: false });
+    }
+
+    await fileService.uploadFile(currentRepo(), filePath, contentBase64);
+    response.json({ ok: true, path: filePath } satisfies FileUploadResult);
+  });
+
+  router.get("/download", async (request, response) => {
+    response.json((await fileService.getDownloadInfo(currentRepo(), getEntryPath(getQueryString(request, "path")))) satisfies FileDownloadInfo);
+  });
+
+  router.use((error: unknown, _request: Request, _response: Response, next: NextFunction) => {
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+
+    if (code === "EEXIST") {
+      next(new HttpError(409, "conflict", "Target path already exists.", { retriable: false }));
+    } else if (code === "ENOENT") {
+      next(new HttpError(404, "not_found", "Path does not exist.", { retriable: false }));
+    } else {
+      next(error);
+    }
+  });
+
+  return router;
 }
 
 function requireAuth(services: AppServices) {
@@ -704,12 +560,15 @@ function getBodyObject<T>(request: Request) {
   return request.body as T;
 }
 
-function isNodeFileExistsError(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "EEXIST";
-}
+// path.posix.normalize also catches "foo/.." so no mutating file route can target the repository root.
+function getEntryPath(value: string) {
+  const trimmed = value.trim();
 
-function isNodeFileNotFoundError(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+  if (trimmed.length === 0 || path.posix.normalize(trimmed) === ".") {
+    throw new HttpError(400, "bad_request", "A path inside the repository is required.", { retriable: false });
+  }
+
+  return trimmed;
 }
 
 function isCloneDestinationConflict(error: unknown) {

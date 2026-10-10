@@ -15,24 +15,18 @@
     BackendLogEntry,
     BackendLogLevel,
     BackendLogQueryResponse,
-    CostReport,
     DiffFile,
     GitBranchesResponse,
     GitBranchInfo,
     GitCommitResult,
-    FileCreateDirectoryResult,
     FileCreateResult,
-    FileDeleteResult,
     FileDocument,
     FileDownloadInfo,
-    FileDuplicateResult,
     FileEntry,
     FileMoveResult,
-    FileUploadResult,
     GitDiffResponse,
     GitRemoteSyncStatus,
     GitSyncResult,
-    PiAuthLoginTokenResponse,
     PiAuthProviderState,
     PiAuthStatusResponse,
     SelectedRepo,
@@ -45,7 +39,6 @@
   import BottomNav from './components/BottomNav.svelte';
   import ChatView from './components/ChatView.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
-  import CostView from './components/CostView.svelte';
   import LogView from './components/LogView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import PiLoginModal from './components/PiLoginModal.svelte';
@@ -55,8 +48,7 @@
 
   type ThemeName = 'vscode-dark' | 'vscode-light';
   type ViewName = 'chat' | 'diff' | 'editor';
-  type CostRangePreset = '7d' | '30d' | '90d' | 'all' | 'custom';
-  type AppViewName = ViewName | 'costs' | 'logs';
+  type AppViewName = ViewName | 'logs';
   type AsyncViewName = Exclude<ViewName, 'chat'>;
   type SocketStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
   type BackendStatus = 'healthy' | 'degraded' | 'unreachable' | 'unknown';
@@ -76,10 +68,6 @@
   const maxToolBatchCount = 8;
   const maxToolsPerBatch = 24;
   const maxLocalSystemMessages = 40;
-  const followUpCostGuardEnabledStorageKey = 'pimobile.follow-up-cost-guard-enabled';
-  const followUpCostSoftLimitUsdStorageKey = 'pimobile.follow-up-cost-soft-limit-usd';
-  const defaultFollowUpCostGuardEnabled = resolveFollowUpCostGuardEnabled();
-  const defaultFollowUpCostSoftLimitUsd = resolveFollowUpCostSoftLimitUsdFromEnv();
 
   const emptyUsage: AgentUsage = {
     inputTokens: 0,
@@ -110,23 +98,6 @@
     lastError: null,
     usage: emptyUsage,
     interactivePrompt: null,
-  };
-
-  const emptyCostReport: CostReport = {
-    summary: {
-      totalSessions: 0,
-      totalCost: 0,
-      totalTokens: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    },
-    sessions: [],
-    filters: {
-      repos: [],
-      models: [],
-    },
   };
 
   let authChecked = false;
@@ -173,13 +144,6 @@
   let chatMessages: ChatMessage[] = [];
   let toolTraceBatches: ToolTraceBatch[] = [];
   let toolTraceBoundary = 0;
-  let followUpCostGuardEnabled = defaultFollowUpCostGuardEnabled;
-  let followUpCostGuardEnabledHasOverride = false;
-  let followUpCostSoftLimitUsd = defaultFollowUpCostSoftLimitUsd;
-  let followUpCostSoftLimitHasOverride = false;
-  let keepRunningRequired = false;
-  let keepRunningApproved = false;
-  let lastKnownGlobalCostUsd = 0;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let socketManualClose = false;
@@ -219,13 +183,6 @@
   let commandPaletteSelectionToken = 0;
   let composerPrefill = '';
   let composerPrefillToken = 0;
-  let costReport: CostReport = emptyCostReport;
-  let costLoading = false;
-  let costRepoFilter = '';
-  let costModelFilter = '';
-  let costFromDate = '';
-  let costToDate = '';
-  let costPreset: CostRangePreset = 'all';
 
   let logEntries: BackendLogEntry[] = [];
   let logLoading = false;
@@ -248,7 +205,6 @@
 
   onMount(() => {
     initializeTheme();
-    initializeFollowUpCostGuardSettings();
     void initialize();
 
     return () => {
@@ -277,11 +233,6 @@
   }
 
   $: chatMessages = [...agentSnapshot.messages, ...localSystemMessages];
-
-  $: if (agentSnapshot.runtimePhase === 'idle' && (keepRunningRequired || keepRunningApproved)) {
-    keepRunningRequired = false;
-    keepRunningApproved = false;
-  }
 
   $: {
     const unresolvedUsageCost =
@@ -345,70 +296,6 @@
     if (persist) {
       window.localStorage.setItem(themeStorageKey, nextTheme);
     }
-  }
-
-  function initializeFollowUpCostGuardSettings() {
-    const storedGuardEnabled = window.localStorage.getItem(followUpCostGuardEnabledStorageKey);
-
-    if (storedGuardEnabled !== null) {
-      const parsed = parseStoredBoolean(storedGuardEnabled);
-
-      if (parsed !== null) {
-        followUpCostGuardEnabled = parsed;
-        followUpCostGuardEnabledHasOverride = true;
-      } else {
-        window.localStorage.removeItem(followUpCostGuardEnabledStorageKey);
-      }
-    }
-
-    const storedSoftLimitUsd = window.localStorage.getItem(followUpCostSoftLimitUsdStorageKey);
-
-    if (storedSoftLimitUsd !== null) {
-      const parsed = parseNonNegativeNumber(storedSoftLimitUsd);
-
-      if (parsed !== null) {
-        followUpCostSoftLimitUsd = parsed;
-        followUpCostSoftLimitHasOverride = true;
-      } else {
-        window.localStorage.removeItem(followUpCostSoftLimitUsdStorageKey);
-      }
-    }
-  }
-
-  function setFollowUpCostGuardEnabled(value: boolean) {
-    followUpCostGuardEnabled = value;
-    followUpCostGuardEnabledHasOverride = true;
-    window.localStorage.setItem(followUpCostGuardEnabledStorageKey, value ? 'true' : 'false');
-    clearKeepRunningGate();
-  }
-
-  function resetFollowUpCostGuardEnabled() {
-    followUpCostGuardEnabled = defaultFollowUpCostGuardEnabled;
-    followUpCostGuardEnabledHasOverride = false;
-    window.localStorage.removeItem(followUpCostGuardEnabledStorageKey);
-    clearKeepRunningGate();
-  }
-
-  function setFollowUpCostSoftLimitUsd(valueRaw: string) {
-    const parsed = parseNonNegativeNumber(valueRaw);
-
-    if (parsed === null) {
-      showBanner('Soft limit must be a non-negative number.', 'error');
-      return;
-    }
-
-    const normalized = Number(parsed.toFixed(2));
-    followUpCostSoftLimitUsd = normalized;
-    followUpCostSoftLimitHasOverride = true;
-    window.localStorage.setItem(followUpCostSoftLimitUsdStorageKey, normalized.toFixed(2));
-    clearKeepRunningGate();
-  }
-
-  function resetFollowUpCostSoftLimitUsd() {
-    followUpCostSoftLimitUsd = defaultFollowUpCostSoftLimitUsd;
-    followUpCostSoftLimitHasOverride = false;
-    window.localStorage.removeItem(followUpCostSoftLimitUsdStorageKey);
-    clearKeepRunningGate();
   }
 
   function seedComposer(nextPrompt: string) {
@@ -542,17 +429,17 @@
     }
   }
 
-  async function loginPiToken(provider: string, token: string) {
+  async function submitPiAuth(endpoint: 'login-token' | 'logout', body: Record<string, string>, successMessage: string) {
     piAuthSubmitting = true;
     piAuthError = '';
 
     try {
-      const response = await apiFetch<PiAuthLoginTokenResponse>('/api/pi/auth/login-token', {
+      await apiFetch(`/api/pi/auth/${endpoint}`, {
         method: 'POST',
-        body: JSON.stringify({ provider, token })
+        body: JSON.stringify(body)
       });
 
-      showBanner(`Pi token for ${response.provider} saved.`, 'success');
+      showBanner(successMessage, 'success');
       await loadPiAuthStatus();
     } catch (error) {
       const message = toErrorMessage(error);
@@ -563,26 +450,8 @@
     }
   }
 
-  async function logoutPiProvider(provider: string) {
-    piAuthSubmitting = true;
-    piAuthError = '';
-
-    try {
-      await apiFetch('/api/pi/auth/logout', {
-        method: 'POST',
-        body: JSON.stringify({ provider })
-      });
-
-      showBanner(`Pi auth for ${provider} removed.`, 'success');
-      await loadPiAuthStatus();
-    } catch (error) {
-      const message = toErrorMessage(error);
-      piAuthError = message;
-      showBanner(message, 'error');
-    } finally {
-      piAuthSubmitting = false;
-    }
-  }
+  const loginPiToken = (provider: string, token: string) => submitPiAuth('login-token', { provider, token }, `Pi token for ${provider} saved.`);
+  const logoutPiProvider = (provider: string) => submitPiAuth('logout', { provider }, `Pi auth for ${provider} removed.`);
 
   function connectSocket() {
     if (reconnectTimer !== null) {
@@ -877,7 +746,6 @@
       commandState = null;
       resetToolTraceBatches();
       localSystemMessages = [];
-      clearKeepRunningGate();
       agentSnapshot = {
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
@@ -893,7 +761,7 @@
       unstagingAll = false;
       revertingHunkId = null;
       filePath = '.';
-      view = view === 'costs' || view === 'logs' ? view : 'chat';
+      view = view === 'logs' ? view : 'chat';
       void refreshCurrentRepoData();
       return;
     }
@@ -941,23 +809,12 @@
   }
 
   async function cloneRepo(remoteUrl: string, destinationPath?: string) {
-    const normalizedRemoteUrl = remoteUrl.trim();
-    const normalizedDestinationPath = destinationPath?.trim();
-
-    if (!normalizedRemoteUrl) {
-      showBanner('Remote URL is required.', 'error');
-      return;
-    }
-
     workspaceCloning = true;
 
     try {
       const response = await apiFetch<WorkspaceCloneResult>('/api/workspaces/clone', {
         method: 'POST',
-        body: JSON.stringify({
-          remoteUrl: normalizedRemoteUrl,
-          destinationPath: normalizedDestinationPath && normalizedDestinationPath.length > 0 ? normalizedDestinationPath : undefined,
-        })
+        body: JSON.stringify({ remoteUrl, destinationPath })
       });
 
       currentRepo = response.repo;
@@ -976,89 +833,10 @@
     await Promise.all([loadDiff(), loadFiles('.'), loadAgentState(), loadCommandState()]);
   }
 
-  async function openCostView() {
-    menuOpen = false;
-    view = 'costs';
-    await loadCosts();
-  }
-
   async function openLogView() {
     menuOpen = false;
     view = 'logs';
     await loadLogs(true);
-  }
-
-  async function loadCosts() {
-    costLoading = true;
-
-    try {
-      const query = new URLSearchParams();
-
-      if (costRepoFilter) {
-        query.set('repo', costRepoFilter);
-      }
-
-      if (costModelFilter) {
-        query.set('model', costModelFilter);
-      }
-
-      if (costFromDate) {
-        query.set('from', `${costFromDate}T00:00:00.000Z`);
-      }
-
-      if (costToDate) {
-        query.set('to', `${costToDate}T23:59:59.999Z`);
-      }
-
-      const suffix = query.size > 0 ? `?${query.toString()}` : '';
-      costReport = await apiFetch<CostReport>(`/api/costs${suffix}`);
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      costLoading = false;
-    }
-  }
-
-  function updateCostRepoFilter(value: string) {
-    costRepoFilter = value;
-    void loadCosts();
-  }
-
-  function updateCostModelFilter(value: string) {
-    costModelFilter = value;
-    void loadCosts();
-  }
-
-  function updateCostFromDate(value: string) {
-    costFromDate = value;
-    costPreset = 'custom';
-    void loadCosts();
-  }
-
-  function updateCostToDate(value: string) {
-    costToDate = value;
-    costPreset = 'custom';
-    void loadCosts();
-  }
-
-  function applyCostPreset(preset: Exclude<CostRangePreset, 'custom'>) {
-    costPreset = preset;
-
-    if (preset === 'all') {
-      costFromDate = '';
-      costToDate = '';
-      void loadCosts();
-      return;
-    }
-
-    const end = new Date();
-    const start = new Date(end);
-    const dayCount = preset === '7d' ? 6 : preset === '30d' ? 29 : 89;
-
-    start.setUTCDate(start.getUTCDate() - dayCount);
-    costFromDate = start.toISOString().slice(0, 10);
-    costToDate = end.toISOString().slice(0, 10);
-    void loadCosts();
   }
 
   async function loadAgentState(options: { silent?: boolean } = {}) {
@@ -1112,7 +890,6 @@
     }
 
     localSystemMessages = [];
-    clearKeepRunningGate();
     await executePaletteCommand({ command: 'new-session' });
   }
 
@@ -1184,33 +961,7 @@
       const fileDoc = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
 
       if (fileDoc.kind === 'binary' && fileDoc.binaryContentBase64) {
-        // Binary files (e.g. .apk, .zip) werden direkt runtergeladen
-        const mimeType = fileDoc.mimeType || 'application/octet-stream';
-        const byteString = atob(fileDoc.binaryContentBase64);
-        const byteArrays: Uint8Array[] = [];
-
-        for (let offset = 0; offset < byteString.length; offset += 512) {
-          const chunk = byteString.slice(offset, offset + 512);
-          const bytes = new Uint8Array(chunk.length);
-
-          for (let index = 0; index < chunk.length; index++) {
-            bytes[index] = chunk.charCodeAt(index);
-          }
-
-          byteArrays.push(bytes);
-        }
-
-        const blob = new Blob(byteArrays, { type: mimeType });
-        const blobUrl = URL.createObjectURL(blob);
-
-        const anchor = document.createElement('a');
-        anchor.href = blobUrl;
-        anchor.download = fileDoc.path.split('/').pop() || 'download';
-        document.body.appendChild(anchor);
-        anchor.click();
-        document.body.removeChild(anchor);
-        URL.revokeObjectURL(blobUrl);
-
+        saveBase64File(fileDoc.binaryContentBase64, fileDoc.mimeType, fileDoc.path.split('/').pop() || 'download');
         showBanner('Binary file downloaded.', 'success');
         return;
       }
@@ -1248,200 +999,48 @@
     }
   }
 
-  async function createFile(path: string, content: string) {
-    const normalizedPath = path.trim();
-
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('File path is required.', 'error');
-      return;
-    }
-
+  async function runFileAction(action: string, body: Record<string, string>, successMessage: string, openResult: boolean) {
     creatingFile = true;
 
     try {
-      const response = await apiFetch<FileCreateResult>('/api/files/create', {
+      const response = await apiFetch<FileCreateResult | FileMoveResult>(`/api/files/${action}`, {
         method: 'POST',
-        body: JSON.stringify({ path: normalizedPath, content })
+        body: JSON.stringify(body)
       });
-      await loadFiles(parentDirectoryFor(response.path));
-      await openFile(response.path);
-      showBanner('File created.', 'success');
+      const resultPath = 'toPath' in response ? response.toPath : response.path;
+      await loadFiles(parentDirectoryFor(resultPath));
+
+      if (openResult) {
+        await openFile(resultPath);
+      }
+
+      showBanner(successMessage, 'success');
+      return resultPath;
     } catch (error) {
       handleApiFailure(error);
+      return null;
     } finally {
       creatingFile = false;
     }
   }
 
-  async function createDirectory(path: string) {
-    const normalizedPath = path.trim();
-
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('Directory path is required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileCreateDirectoryResult>('/api/files/create-directory', {
-        method: 'POST',
-        body: JSON.stringify({ path: normalizedPath })
-      });
-      await loadFiles(parentDirectoryFor(response.path));
-      showBanner('Folder created.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
-
-  async function duplicateFile(sourcePath: string, targetPath: string) {
-    const normalizedSourcePath = sourcePath.trim();
-    const normalizedTargetPath = targetPath.trim();
-
-    if (!normalizedSourcePath || !normalizedTargetPath || normalizedSourcePath === '.' || normalizedTargetPath === '.') {
-      showBanner('Source and target file paths are required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileDuplicateResult>('/api/files/duplicate', {
-        method: 'POST',
-        body: JSON.stringify({ sourcePath: normalizedSourcePath, targetPath: normalizedTargetPath })
-      });
-      await loadFiles(parentDirectoryFor(response.path));
-      await openFile(response.path);
-      showBanner('File duplicated.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
-
-  async function renameFile(fromPath: string, toPath: string) {
-    const normalizedFromPath = fromPath.trim();
-    const normalizedToPath = toPath.trim();
-
-    if (!normalizedFromPath || !normalizedToPath || normalizedFromPath === '.' || normalizedToPath === '.') {
-      showBanner('Source and target file paths are required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileMoveResult>('/api/files/rename', {
-        method: 'POST',
-        body: JSON.stringify({ fromPath: normalizedFromPath, toPath: normalizedToPath })
-      });
-      await loadFiles(parentDirectoryFor(response.toPath));
-      await openFile(response.toPath);
-      showBanner('File renamed.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
-
-  async function moveFile(fromPath: string, toPath: string) {
-    const normalizedFromPath = fromPath.trim();
-    const normalizedToPath = toPath.trim();
-
-    if (!normalizedFromPath || !normalizedToPath || normalizedFromPath === '.' || normalizedToPath === '.') {
-      showBanner('Source and target file paths are required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileMoveResult>('/api/files/move', {
-        method: 'POST',
-        body: JSON.stringify({ fromPath: normalizedFromPath, toPath: normalizedToPath })
-      });
-      await loadFiles(parentDirectoryFor(response.toPath));
-      await openFile(response.toPath);
-      showBanner('File moved.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
-
-  async function uploadFile(targetPath: string, contentBase64: string) {
-    const normalizedPath = targetPath.trim();
-
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('File path is required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileUploadResult>('/api/files/upload', {
-        method: 'POST',
-        body: JSON.stringify({ path: normalizedPath, contentBase64 })
-      });
-      await loadFiles(parentDirectoryFor(response.path));
-      await openFile(response.path);
-      showBanner('File uploaded.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
-    }
-  }
+  const createFile = (path: string, content: string) => runFileAction('create', { path, content }, 'File created.', true);
+  const createDirectory = (path: string) => runFileAction('create-directory', { path }, 'Folder created.', false);
+  const duplicateFile = (sourcePath: string, targetPath: string) => runFileAction('duplicate', { sourcePath, targetPath }, 'File duplicated.', true);
+  const renameFile = (fromPath: string, toPath: string) => runFileAction('rename', { fromPath, toPath }, 'File renamed.', true);
+  const moveFile = (fromPath: string, toPath: string) => runFileAction('move', { fromPath, toPath }, 'File moved.', true);
+  const uploadFile = (path: string, contentBase64: string) => runFileAction('upload', { path, contentBase64 }, 'File uploaded.', true);
 
   async function downloadFile(filePathToDownload: string) {
-    const normalizedPath = filePathToDownload.trim();
-
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('File path is required.', 'error');
-      return;
-    }
-
     try {
-      const info = await apiFetch<FileDownloadInfo>(`/api/files/download?path=${encodeURIComponent(normalizedPath)}`);
+      const info = await apiFetch<FileDownloadInfo>(`/api/files/download?path=${encodeURIComponent(filePathToDownload)}`);
 
       if (!info.contentBase64) {
         showBanner('Download failed: no content received.', 'error');
         return;
       }
 
-      const mimeType = info.mimeType || 'application/octet-stream';
-      const byteString = atob(info.contentBase64);
-      const byteArrays: Uint8Array[] = [];
-
-      for (let offset = 0; offset < byteString.length; offset += 512) {
-        const chunk = byteString.slice(offset, offset + 512);
-        const bytes = new Uint8Array(chunk.length);
-
-        for (let index = 0; index < chunk.length; index++) {
-          bytes[index] = chunk.charCodeAt(index);
-        }
-
-        byteArrays.push(bytes);
-      }
-
-      const blob = new Blob(byteArrays, { type: mimeType });
-      const blobUrl = URL.createObjectURL(blob);
-
-      const anchor = document.createElement('a');
-      anchor.href = blobUrl;
-      anchor.download = info.name;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(blobUrl);
-
+      saveBase64File(info.contentBase64, info.mimeType, info.name);
       showBanner('File downloaded.', 'success');
     } catch (error) {
       handleApiFailure(error);
@@ -1449,33 +1048,12 @@
   }
 
   async function deleteFile(path: string) {
-    const normalizedPath = path.trim();
+    const deletedPath = await runFileAction('delete', { path }, 'File deleted.', false);
 
-    if (!normalizedPath || normalizedPath === '.') {
-      showBanner('File path is required.', 'error');
-      return;
-    }
-
-    creatingFile = true;
-
-    try {
-      const response = await apiFetch<FileDeleteResult>('/api/files/delete', {
-        method: 'POST',
-        body: JSON.stringify({ path: normalizedPath })
-      });
-      await loadFiles(parentDirectoryFor(response.path));
-
-      if (selectedDocument?.path === response.path) {
-        selectedDocument = null;
-        draftContent = '';
-        editorDirty = false;
-      }
-
-      showBanner('File deleted.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingFile = false;
+    if (deletedPath && selectedDocument?.path === deletedPath) {
+      selectedDocument = null;
+      draftContent = '';
+      editorDirty = false;
     }
   }
 
@@ -1498,50 +1076,15 @@
     // Interactive-Prompt-Antworten durchlaufen den gleichen Pfad
     // Der Server cleared interactivePrompt beim prompt()-Aufruf
 
-    const isFollowUp = agentSnapshot.runtimePhase !== 'idle';
-    let globalCostTotal = lastKnownGlobalCostUsd;
-    let consumedKeepRunningApproval = false;
-
-    if (isFollowUp && followUpCostGuardEnabled) {
-      globalCostTotal = await readGlobalCostTotal();
-    }
-
-    if (isFollowUp && followUpCostGuardEnabled && globalCostTotal >= followUpCostSoftLimitUsd && !keepRunningApproved) {
-      keepRunningRequired = true;
-      appendLocalSystemMessage(
-        `Global cost currently ${formatUsd(globalCostTotal)} (limit ${formatUsd(followUpCostSoftLimitUsd)}). Tap Keep running before the next follow-up step.`,
-      );
-      seedComposer(trimmed);
-      return;
-    }
-
-    if (!isFollowUp) {
-      clearKeepRunningGate();
-    } else if (keepRunningApproved) {
-      consumedKeepRunningApproval = true;
-      keepRunningApproved = false;
-      keepRunningRequired = false;
-    }
-
     try {
       await apiFetch('/api/agent/prompt', {
         method: 'POST',
         body: JSON.stringify({ prompt: trimmed })
       });
     } catch (error) {
-      if (consumedKeepRunningApproval) {
-        keepRunningApproved = true;
-      }
-
       seedComposer(trimmed);
       handleApiFailure(error);
     }
-  }
-
-  function allowKeepRunning() {
-    keepRunningRequired = false;
-    keepRunningApproved = true;
-    appendLocalSystemMessage(`Keep running confirmed. Next follow-up is allowed (global cost: ${formatUsd(lastKnownGlobalCostUsd)}).`);
   }
 
   async function abortRun() {
@@ -1602,7 +1145,6 @@
         if (request.command === 'new-session' || request.command === 'resume-session') {
           resetToolTraceBatches();
           localSystemMessages = [];
-          clearKeepRunningGate();
         }
 
         await loadCommandState();
@@ -1656,163 +1198,58 @@
     void commitChanges(trimmed);
   }
 
-  async function commitChanges(message: string) {
+  async function runGitAction<T>(
+    endpoint: string,
+    body: Record<string, string> | null,
+    setBusy: (busy: boolean) => void,
+    successMessage: (response: T) => string
+  ) {
     if (!currentRepo) {
-      showBanner('Select a repository before committing.', 'error');
-      return;
+      showBanner('Select a repository first.', 'error');
+      return false;
     }
 
-    committing = true;
+    setBusy(true);
 
     try {
-      const { commitSha } = await apiFetch<GitCommitResult>('/api/git/commit', {
+      const response = await apiFetch<T>(`/api/git/${endpoint}`, {
         method: 'POST',
-        body: JSON.stringify({ message })
+        ...(body ? { body: JSON.stringify(body) } : {})
       });
       await loadDiff();
-      showBanner(`Committed ${commitSha.slice(0, 7)}.`, 'success');
+      showBanner(successMessage(response), 'success');
+      return true;
     } catch (error) {
       handleApiFailure(error);
+      return false;
     } finally {
-      committing = false;
+      setBusy(false);
     }
   }
 
-  async function pullChanges() {
-    if (!currentRepo) {
-      showBanner('Select a repository before pulling.', 'error');
-      return;
-    }
-
-    pulling = true;
-
-    try {
-      const response = await apiFetch<GitSyncResult>('/api/git/pull', {
-        method: 'POST'
-      });
-      await loadDiff();
-      showBanner(response.summary || 'Pull completed.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      pulling = false;
-    }
-  }
-
-  async function pushChanges() {
-    if (!currentRepo) {
-      showBanner('Select a repository before pushing.', 'error');
-      return;
-    }
-
-    pushing = true;
-
-    try {
-      const response = await apiFetch<GitSyncResult>('/api/git/push', {
-        method: 'POST'
-      });
-      await loadDiff();
-      showBanner(response.summary || 'Push completed.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      pushing = false;
-    }
-  }
+  const commitChanges = (message: string) =>
+    runGitAction<GitCommitResult>('commit', { message }, (busy) => (committing = busy), ({ commitSha }) => `Committed ${commitSha.slice(0, 7)}.`);
+  const pullChanges = () => runGitAction<GitSyncResult>('pull', null, (busy) => (pulling = busy), (response) => response.summary || 'Pull completed.');
+  const pushChanges = () => runGitAction<GitSyncResult>('push', null, (busy) => (pushing = busy), (response) => response.summary || 'Push completed.');
+  const stageHunk = (diff: string, hunkId: string) =>
+    runGitAction('stage-hunk', { diff }, (busy) => (stagingHunkId = busy ? hunkId : null), () => 'Hunk staged.');
+  const unstageHunk = (diff: string, hunkId: string) =>
+    runGitAction('unstage-hunk', { diff }, (busy) => (unstagingHunkId = busy ? hunkId : null), () => 'Hunk unstaged.');
+  const stageAllChanges = () => runGitAction('stage-all', null, (busy) => (stagingAll = busy), () => 'All changes staged.');
+  const unstageAllChanges = () => runGitAction('unstage-all', null, (busy) => (unstagingAll = busy), () => 'All changes unstaged.');
+  const switchBranch = (name: string) => runGitAction('branch/switch', { name }, (busy) => (switchingBranch = busy), () => `Switched to ${name}.`);
 
   async function revertHunk(diff: string, hunkId: string) {
-    revertingHunkId = hunkId;
+    const reverted = await runGitAction('revert-hunk', { diff }, (busy) => (revertingHunkId = busy ? hunkId : null), () => 'Hunk reverted.');
 
-    try {
-      await apiFetch('/api/git/revert-hunk', {
-        method: 'POST',
-        body: JSON.stringify({ diff })
-      });
-      await loadDiff();
-      if (selectedDocument && !editorDirty) {
-        await openFile(selectedDocument.path);
-      }
-      showBanner('Hunk reverted.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      revertingHunkId = null;
+    if (reverted && selectedDocument && !editorDirty) {
+      await openFile(selectedDocument.path);
     }
   }
 
-  async function stageHunk(diff: string, hunkId: string) {
-    stagingHunkId = hunkId;
-
-    try {
-      await apiFetch('/api/git/stage-hunk', {
-        method: 'POST',
-        body: JSON.stringify({ diff })
-      });
-      await loadDiff();
-      showBanner('Hunk staged.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      stagingHunkId = null;
-    }
-  }
-
-  async function unstageHunk(diff: string, hunkId: string) {
-    unstagingHunkId = hunkId;
-
-    try {
-      await apiFetch('/api/git/unstage-hunk', {
-        method: 'POST',
-        body: JSON.stringify({ diff })
-      });
-      await loadDiff();
-      showBanner('Hunk unstaged.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      unstagingHunkId = null;
-    }
-  }
-
-  async function stageAllChanges() {
-    if (!currentRepo) {
-      showBanner('Select a repository before staging.', 'error');
-      return;
-    }
-
-    stagingAll = true;
-
-    try {
-      await apiFetch('/api/git/stage-all', {
-        method: 'POST'
-      });
-      await loadDiff();
-      showBanner('All changes staged.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      stagingAll = false;
-    }
-  }
-
-  async function unstageAllChanges() {
-    if (!currentRepo) {
-      showBanner('Select a repository before unstaging.', 'error');
-      return;
-    }
-
-    unstagingAll = true;
-
-    try {
-      await apiFetch('/api/git/unstage-all', {
-        method: 'POST'
-      });
-      await loadDiff();
-      showBanner('All changes unstaged.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      unstagingAll = false;
+  async function createBranch(name: string) {
+    if (await runGitAction('branch/create', { name }, (busy) => (creatingBranch = busy), () => `Created branch ${name}.`)) {
+      await loadBranches();
     }
   }
 
@@ -1831,51 +1268,6 @@
       branchList = [];
     } finally {
       branchListLoading = false;
-    }
-  }
-
-  async function switchBranch(name: string) {
-    if (!currentRepo) {
-      showBanner('Select a repository before switching branches.', 'error');
-      return;
-    }
-
-    switchingBranch = true;
-
-    try {
-      await apiFetch('/api/git/branch/switch', {
-        method: 'POST',
-        body: JSON.stringify({ name })
-      });
-      await loadDiff();
-      showBanner(`Switched to ${name}.`, 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      switchingBranch = false;
-    }
-  }
-
-  async function createBranch(name: string) {
-    if (!currentRepo) {
-      showBanner('Select a repository before creating branches.', 'error');
-      return;
-    }
-
-    creatingBranch = true;
-
-    try {
-      await apiFetch('/api/git/branch/create', {
-        method: 'POST',
-        body: JSON.stringify({ name })
-      });
-      await loadDiff();
-      await loadBranches();
-      showBanner(`Created branch ${name}.`, 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      creatingBranch = false;
     }
   }
 
@@ -2206,15 +1598,7 @@
     resetToolTraceBatches();
     localSystemMessages = [];
     chatMessages = [];
-    clearKeepRunningGate();
     dismissedPromptId = null;
-    lastKnownGlobalCostUsd = 0;
-    costReport = emptyCostReport;
-    costRepoFilter = '';
-    costModelFilter = '';
-    costFromDate = '';
-    costToDate = '';
-    costPreset = 'all';
     logEntries = [];
     logKnownSources = [];
     logViewError = '';
@@ -2227,6 +1611,16 @@
     backendResourceChecks = [];
     backendResourcesAccessible = false;
     loginError = message;
+  }
+
+  function saveBase64File(contentBase64: string, mimeType: string | null, fileName: string) {
+    const bytes = Uint8Array.from(atob(contentBase64), (character) => character.charCodeAt(0));
+    const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType || 'application/octet-stream' }));
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(blobUrl);
   }
 
   function parentDirectoryFor(relativePath: string) {
@@ -2280,39 +1674,6 @@
     ].slice(-maxLocalSystemMessages);
   }
 
-  function clearKeepRunningGate() {
-    keepRunningRequired = false;
-    keepRunningApproved = false;
-  }
-
-  function formatUsd(value: number) {
-    return `$${value.toFixed(2)}`;
-  }
-
-  function parseStoredBoolean(value: string) {
-    const normalized = value.trim().toLowerCase();
-
-    if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-      return true;
-    }
-
-    if (normalized === 'false' || normalized === '0' || normalized === 'no') {
-      return false;
-    }
-
-    return null;
-  }
-
-  function parseNonNegativeNumber(value: string) {
-    const parsed = Number.parseFloat(value);
-
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return null;
-    }
-
-    return parsed;
-  }
-
   function coalesceUsageCost(nextUsage: AgentUsage, previousUsage: AgentUsage) {
     if (nextUsage.totalCost === 0 && nextUsage.totalTokens > 0 && previousUsage.totalCost > 0) {
       return {
@@ -2322,39 +1683,6 @@
     }
 
     return nextUsage;
-  }
-
-  function resolveFollowUpCostGuardEnabled() {
-    const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_FOLLOW_UP_COST_GUARD_ENABLED;
-
-    if (typeof raw !== 'string' || raw.trim().length === 0) {
-      return true;
-    }
-
-    const parsed = parseStoredBoolean(raw);
-    return parsed ?? true;
-  }
-
-  function resolveFollowUpCostSoftLimitUsdFromEnv() {
-    const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_FOLLOW_UP_COST_SOFT_LIMIT_USD;
-
-    if (typeof raw !== 'string' || raw.trim().length === 0) {
-      return 0.5;
-    }
-
-    const parsed = parseNonNegativeNumber(raw);
-    return parsed ?? 0.5;
-  }
-
-  async function readGlobalCostTotal() {
-    try {
-      const report = await apiFetch<CostReport>('/api/costs');
-      lastKnownGlobalCostUsd = report.summary.totalCost;
-      return report.summary.totalCost;
-    } catch {
-      lastKnownGlobalCostUsd = agentSnapshot.usage.totalCost;
-      return lastKnownGlobalCostUsd;
-    }
   }
 
   function showBanner(message: string, tone: 'info' | 'success' | 'error') {
@@ -2433,23 +1761,7 @@
       />
     {/if}
 
-    {#if view === 'costs'}
-      <CostView
-        report={costReport}
-        loading={costLoading}
-        selectedRepo={costRepoFilter}
-        selectedModel={costModelFilter}
-        fromDate={costFromDate}
-        toDate={costToDate}
-        selectedPreset={costPreset}
-        on:refresh={() => void loadCosts()}
-        on:setRepo={(event) => updateCostRepoFilter(event.detail.value)}
-        on:setModel={(event) => updateCostModelFilter(event.detail.value)}
-        on:setFrom={(event) => updateCostFromDate(event.detail.value)}
-        on:setTo={(event) => updateCostToDate(event.detail.value)}
-        on:applyPreset={(event) => applyCostPreset(event.detail.value)}
-      />
-    {:else if view === 'logs'}
+    {#if view === 'logs'}
       <LogView
         entries={logEntries}
         loading={logLoading}
@@ -2480,7 +1792,6 @@
           runtimePhase={agentSnapshot.runtimePhase}
           pendingMessageCount={agentSnapshot.pendingMessageCount}
           canAbort={agentSnapshot.runtimePhase !== 'idle'}
-          showKeepRunning={keepRunningRequired}
           lastError={agentSnapshot.lastError}
           usage={agentSnapshot.usage}
           prefillPrompt={composerPrefill}
@@ -2490,7 +1801,6 @@
           interactivePrompt={agentSnapshot.interactivePrompt}
           on:submit={(event) => handleChatSubmit(event.detail.prompt)}
           on:abort={abortRun}
-          on:keepRunning={allowKeepRunning}
           on:newSession={() => void startNewChatFromComposer()}
           on:openCommands={() => void openCommandPalette()}
           on:openModelCommands={() => void openCommandPalette('/model')}
@@ -2601,32 +1911,22 @@
       </section>
     {/if}
 
-    <BottomNav currentView={view === 'costs' || view === 'logs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => navigateMainView(event.detail.view)} />
+    <BottomNav currentView={view === 'logs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => navigateMainView(event.detail.view)} />
     <AppMenu
       open={menuOpen}
       currentRepo={currentRepo}
       theme={theme}
-      followUpCostGuardEnabled={followUpCostGuardEnabled}
-      followUpCostGuardEnabledHasOverride={followUpCostGuardEnabledHasOverride}
-      followUpCostSoftLimitUsd={followUpCostSoftLimitUsd}
-      followUpCostSoftLimitUsdDefault={defaultFollowUpCostSoftLimitUsd}
-      followUpCostSoftLimitHasOverride={followUpCostSoftLimitHasOverride}
       on:close={() => (menuOpen = false)}
       on:chooseRepo={() => {
         menuOpen = false;
         workspaceOpen = true;
       }}
-      on:openCosts={() => void openCostView()}
       on:openLogs={() => void openLogView()}
       on:openPiLogin={() => {
         menuOpen = false;
         void openPiLogin();
       }}
       on:setTheme={(event) => setTheme(event.detail.value)}
-      on:setFollowUpCostGuardEnabled={(event) => setFollowUpCostGuardEnabled(event.detail.value)}
-      on:resetFollowUpCostGuardEnabled={resetFollowUpCostGuardEnabled}
-      on:setFollowUpCostSoftLimitUsd={(event) => setFollowUpCostSoftLimitUsd(event.detail.value)}
-      on:resetFollowUpCostSoftLimitUsd={resetFollowUpCostSoftLimitUsd}
       on:logout={logout}
     />
     <PiLoginModal

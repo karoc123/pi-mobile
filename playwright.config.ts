@@ -18,7 +18,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: "npm run build && npm start",
+    command: "npm start",
     cwd: process.cwd(),
     url: "http://127.0.0.1:3200/api/health",
     timeout: 180_000,
@@ -29,7 +29,6 @@ export default defineConfig({
       PORT: "3200",
       APP_PASSWORD: "test-password",
       WORKSPACE_ROOT: workspaceRoot,
-      COSTS_DB_PATH: path.join(workspaceRoot, ".pi-mobile", "costs.sqlite"),
       LOGS_DIR: path.join(workspaceRoot, ".pi-mobile", "logs"),
       PI_AGENT_DIR: path.join(workspaceRoot, ".pi-mobile", "agent"),
       PI_SESSION_DIR: path.join(workspaceRoot, ".pi-mobile", "sessions"),

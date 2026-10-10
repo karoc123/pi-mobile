@@ -26,6 +26,13 @@ export type LogChannel = {
   error: (message: string, metadata?: LogMetadata) => void;
 };
 
+export const noopLogger: LogChannel = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+};
+
 type LogServiceOptions = {
   logDirPath: string;
   maxEntries?: number;

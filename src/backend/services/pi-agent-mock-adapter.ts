@@ -13,7 +13,9 @@ import type {
   WebsocketEnvelope,
 } from "../../shared/contracts.js";
 
-type MockRuntimeContext = {
+import { deriveRuntimePhase } from "./pi-agent-session-adapter.js";
+
+export type MockRuntimeContext = {
   getCurrentRepo: () => SelectedRepo | null;
   getMessages: () => ChatMessage[];
   setMessages: (messages: ChatMessage[]) => void;
@@ -34,7 +36,6 @@ export class PiAgentMockAdapter {
   private isBashRunning = false;
   private sessionName: string | null = null;
   private usage: AgentUsage = createUsageSummary("mock/session", true);
-  private sessionId: string | null = null;
 
   resetForRepoSelection() {
     this.resetSessionState(true);
@@ -50,28 +51,11 @@ export class PiAgentMockAdapter {
     this.isRetrying = false;
     this.isBashRunning = false;
     this.sessionName = null;
-    this.sessionId = null;
   }
 
   abort() {
     this.clearReplyTimeout();
     this.isStreaming = false;
-  }
-
-  beginSession() {
-    this.sessionId = randomUUID();
-  }
-
-  ensureSessionReference(repoAbsolutePath: string) {
-    if (!this.sessionId) {
-      this.sessionId = randomUUID();
-    }
-
-    return {
-      sessionKey: `mock:${repoAbsolutePath}:${this.sessionId}`,
-      sessionId: this.sessionId,
-      sessionFile: null,
-    };
   }
 
   getRuntimeState(): {
@@ -137,6 +121,12 @@ export class PiAgentMockAdapter {
   }
 
   async executeCommand(request: AgentCommandRequest, context: MockRuntimeContext): Promise<AgentCommandResponse> {
+    const message = this.applyCommand(request, context);
+    context.emitStatus();
+    return { message, prompt: null };
+  }
+
+  private applyCommand(request: AgentCommandRequest, context: MockRuntimeContext): string {
     switch (request.command) {
       case "new-session": {
         context.setMessages([]);
@@ -147,11 +137,7 @@ export class PiAgentMockAdapter {
         this.isRetrying = false;
         this.isBashRunning = false;
         this.usage = createUsageSummary("mock/session", this.usage.autoCompactEnabled);
-        context.emitStatus();
-        return {
-          message: "Started a new session.",
-          prompt: null,
-        };
+        return "Started a new session.";
       }
 
       case "set-auto-compact": {
@@ -159,56 +145,31 @@ export class PiAgentMockAdapter {
           ...this.usage,
           autoCompactEnabled: request.enabled,
         };
-        context.emitStatus();
-        return {
-          message: request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.",
-          prompt: null,
-        };
+        return request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.";
       }
 
       case "set-steering-mode": {
         this.steeringMode = request.mode;
-        context.emitStatus();
-        return {
-          message: `Steering mode set to ${request.mode}.`,
-          prompt: null,
-        };
+        return `Steering mode set to ${request.mode}.`;
       }
 
       case "set-follow-up-mode": {
         this.followUpMode = request.mode;
-        context.emitStatus();
-        return {
-          message: `Follow-up mode set to ${request.mode}.`,
-          prompt: null,
-        };
+        return `Follow-up mode set to ${request.mode}.`;
       }
 
       case "set-auto-retry": {
         this.autoRetryEnabled = request.enabled;
-        context.emitStatus();
-        return {
-          message: request.enabled ? "Auto retry enabled." : "Auto retry disabled.",
-          prompt: null,
-        };
+        return request.enabled ? "Auto retry enabled." : "Auto retry disabled.";
       }
 
       case "abort-retry": {
         this.isRetrying = false;
-        context.emitStatus();
-        return {
-          message: "Retry aborted.",
-          prompt: null,
-        };
+        return "Retry aborted.";
       }
 
-      case "compact": {
-        context.emitStatus();
-        return {
-          message: "Context compacted.",
-          prompt: null,
-        };
-      }
+      case "compact":
+        return "Context compacted.";
 
       case "run-bash": {
         const commandText = request.commandText.trim();
@@ -221,21 +182,12 @@ export class PiAgentMockAdapter {
         context.emitStatus();
 
         this.isBashRunning = false;
-        context.emitStatus();
-
-        return {
-          message: "Mock bash completed (exit code 0).",
-          prompt: null,
-        };
+        return "Mock bash completed (exit code 0).";
       }
 
       case "abort-bash": {
         this.isBashRunning = false;
-        context.emitStatus();
-        return {
-          message: "Bash command aborted.",
-          prompt: null,
-        };
+        return "Bash command aborted.";
       }
 
       case "set-session-name": {
@@ -246,19 +198,11 @@ export class PiAgentMockAdapter {
         }
 
         this.sessionName = nextName;
-        context.emitStatus();
-        return {
-          message: `Session renamed to \"${nextName}\".`,
-          prompt: null,
-        };
+        return `Session renamed to \"${nextName}\".`;
       }
 
       case "export-session": {
-        context.emitStatus();
-        return {
-          message: `Session exported to mock-session.${request.format === "html" ? "html" : "jsonl"}.`,
-          prompt: null,
-        };
+        return `Session exported to mock-session.${request.format === "html" ? "html" : "jsonl"}.`;
       }
 
       default:
@@ -345,30 +289,6 @@ export class PiAgentMockAdapter {
       this.replyTimeout = null;
     }
   }
-}
-
-function deriveRuntimePhase(input: { isStreaming: boolean; isCompacting: boolean; isRetrying: boolean; isBashRunning: boolean; pendingMessageCount: number }): AgentRuntimePhase {
-  if (input.isRetrying) {
-    return "retrying";
-  }
-
-  if (input.isCompacting) {
-    return "compacting";
-  }
-
-  if (input.isBashRunning) {
-    return "bash-running";
-  }
-
-  if (input.isStreaming) {
-    return "streaming";
-  }
-
-  if (input.pendingMessageCount > 0) {
-    return "queued";
-  }
-
-  return "idle";
 }
 
 function createUsageSummary(modelId: string | null, autoCompactEnabled: boolean): AgentUsage {

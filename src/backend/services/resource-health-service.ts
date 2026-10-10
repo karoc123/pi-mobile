@@ -18,7 +18,6 @@ export class ResourceHealthService {
     const checks: BackendResourceCheck[] = [];
 
     checks.push(await this.checkDirectory("workspace_root", "Workspace root", this.config.workspaceRoot, true));
-    checks.push(await this.checkWritableFileTarget("costs_db", "Cost DB target", this.config.costsDbPath, true));
     checks.push(await this.checkWritableDirectory("logs_dir", "Logs directory", this.config.logsDirPath, true));
 
     const piAgentDirPath = this.resolvePiAgentDirPath();
@@ -95,42 +94,6 @@ export class ResourceHealthService {
         key,
         label,
         path: directoryPath,
-        required,
-        ok: false,
-        detail: toErrorDetail(error),
-      };
-    }
-  }
-
-  private async checkWritableFileTarget(key: BackendResourceCheck["key"], label: string, filePath: string, required: boolean): Promise<BackendResourceCheck> {
-    try {
-      const parentDir = path.dirname(filePath);
-      await mkdir(parentDir, { recursive: true });
-      await access(parentDir, fsConstants.R_OK | fsConstants.W_OK);
-
-      try {
-        await access(filePath, fsConstants.R_OK | fsConstants.W_OK);
-      } catch (error) {
-        const code = getErrorCode(error);
-
-        if (code !== "ENOENT") {
-          throw error;
-        }
-      }
-
-      return {
-        key,
-        label,
-        path: filePath,
-        required,
-        ok: true,
-        detail: null,
-      };
-    } catch (error) {
-      return {
-        key,
-        label,
-        path: filePath,
         required,
         ok: false,
         detail: toErrorDetail(error),

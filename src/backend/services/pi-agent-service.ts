@@ -7,7 +7,6 @@ import type {
   AgentCommandResponse,
   AgentCommandState,
   AgentMinimalState,
-  AgentModelOption,
   AgentSnapshot,
   AgentThinkingLevel,
   AgentUsage,
@@ -20,11 +19,11 @@ import type {
 
 import type { AppConfig } from "../config.js";
 import { PiAgentBroadcaster } from "./pi-agent-broadcaster.js";
-import { CostService } from "./cost-service.js";
 import { flattenMessageText, hydrateMessagesFromSession, summarizePayload, summarizeText, upsertTool } from "./pi-agent-hydrator.js";
-import { PiAgentMockAdapter } from "./pi-agent-mock-adapter.js";
+import { PiAgentMockAdapter, type MockRuntimeContext } from "./pi-agent-mock-adapter.js";
 import { PiAgentSessionAdapter, type SessionOpenOptions } from "./pi-agent-session-adapter.js";
-import type { LogChannel } from "./log-service.js";
+import { noopLogger, type LogChannel } from "./log-service.js";
+import type { ModelUsageStore } from "./model-usage-store.js";
 
 type Broadcast = (event: WebsocketEnvelope) => void;
 
@@ -38,17 +37,15 @@ export class PiAgentService {
   private readonly broadcaster: PiAgentBroadcaster;
   private readonly mockAdapter = new PiAgentMockAdapter();
   private readonly sessionAdapter: PiAgentSessionAdapter;
-  private activeCostSessionKey: string | null = null;
-  private activeCostSessionStartedAt: string | null = null;
   private readonly logger: LogChannel;
 
   constructor(
     private readonly config: AppConfig,
     broadcast: Broadcast,
-    private readonly costService: CostService,
+    private readonly modelUsage: ModelUsageStore,
     logger?: LogChannel,
   ) {
-    this.logger = logger ?? createNoopLogger();
+    this.logger = logger ?? noopLogger;
     this.broadcaster = new PiAgentBroadcaster(broadcast);
     this.sessionAdapter = new PiAgentSessionAdapter(this.config, this.logger, (event) => {
       this.handleSessionEvent(event);
@@ -112,12 +109,10 @@ export class PiAgentService {
     }
 
     const baseState = await this.sessionAdapter.getCommandState(this.currentRepo);
-    const repoUsageSummary = this.costService.getModelUsageSummary(this.currentRepo.relativePath);
-    const globalUsageSummary = this.costService.getModelUsageSummary();
 
     return {
       ...baseState,
-      models: rankModelsByUsage(baseState.models, repoUsageSummary, globalUsageSummary),
+      models: this.modelUsage.rank(baseState.models),
     };
   }
 
@@ -127,28 +122,7 @@ export class PiAgentService {
     }
 
     if (this.config.piMockMode) {
-      return this.mockAdapter.executeCommand(request, {
-        getCurrentRepo: () => this.currentRepo,
-        getMessages: () => this.messages,
-        setMessages: (messages) => {
-          this.messages = messages;
-        },
-        setTools: (tools) => {
-          this.tools = tools;
-        },
-        setLastError: (message) => {
-          this.lastError = message;
-        },
-        setActiveAssistantMessageId: (messageId) => {
-          this.activeAssistantMessageId = messageId;
-        },
-        broadcast: (event) => {
-          this.broadcaster.emit(event);
-        },
-        emitStatus: () => {
-          this.emitStatus();
-        },
-      });
+      return this.mockAdapter.executeCommand(request, this.createMockContext());
     }
 
     const session = await this.ensureSession();
@@ -162,84 +136,44 @@ export class PiAgentService {
         }
 
         await session.setModel(model);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Model switched to ${request.provider}/${request.modelId}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Model switched to ${request.provider}/${request.modelId}.`);
       }
 
       case "set-thinking": {
         session.setThinkingLevel(request.level);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Thinking set to ${session.thinkingLevel}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Thinking set to ${session.thinkingLevel}.`);
       }
 
       case "set-auto-compact": {
         session.setAutoCompactionEnabled(request.enabled);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.",
-          prompt: null,
-        };
+        return this.completeCommand(request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.");
       }
 
       case "set-steering-mode": {
         session.setSteeringMode(request.mode);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Steering mode set to ${request.mode}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Steering mode set to ${request.mode}.`);
       }
 
       case "set-follow-up-mode": {
         session.setFollowUpMode(request.mode);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Follow-up mode set to ${request.mode}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Follow-up mode set to ${request.mode}.`);
       }
 
       case "set-auto-retry": {
         session.setAutoRetryEnabled(request.enabled);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: request.enabled ? "Auto retry enabled." : "Auto retry disabled.",
-          prompt: null,
-        };
+        return this.completeCommand(request.enabled ? "Auto retry enabled." : "Auto retry disabled.");
       }
 
       case "abort-retry": {
         session.abortRetry();
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: "Retry aborted.",
-          prompt: null,
-        };
+        return this.completeCommand("Retry aborted.");
       }
 
       case "compact": {
         const customInstructions = typeof request.customInstructions === "string" && request.customInstructions.trim().length > 0 ? request.customInstructions.trim() : undefined;
         await session.compact(customInstructions);
         this.messages = hydrateMessagesFromSession(session.messages);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: "Context compacted.",
-          prompt: null,
-        };
+        return this.completeCommand("Context compacted.");
       }
 
       case "run-bash": {
@@ -268,12 +202,7 @@ export class PiAgentService {
 
       case "abort-bash": {
         session.abortBash();
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: "Bash command aborted.",
-          prompt: null,
-        };
+        return this.completeCommand("Bash command aborted.");
       }
 
       case "set-session-name": {
@@ -284,25 +213,14 @@ export class PiAgentService {
         }
 
         session.setSessionName(nextName);
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: `Session renamed to \"${nextName}\".`,
-          prompt: null,
-        };
+        return this.completeCommand(`Session renamed to \"${nextName}\".`);
       }
 
       case "export-session": {
         const outputPath = typeof request.outputPath === "string" && request.outputPath.trim().length > 0 ? request.outputPath.trim() : undefined;
         const exportedPath = request.format === "html" ? await session.exportToHtml(outputPath) : session.exportToJsonl(outputPath);
 
-        this.lastError = null;
-        this.emitStatus();
-
-        return {
-          message: `Session exported to ${exportedPath}.`,
-          prompt: null,
-        };
+        return this.completeCommand(`Session exported to ${exportedPath}.`);
       }
 
       case "new-session": {
@@ -339,12 +257,7 @@ export class PiAgentService {
 
         this.messages = hydrateMessagesFromSession(session.messages);
         this.tools = [];
-        this.lastError = null;
-        this.emitStatus();
-        return {
-          message: "Moved to the selected session point.",
-          prompt: result.editorText ?? null,
-        };
+        return this.completeCommand("Moved to the selected session point.", result.editorText ?? null);
       }
 
       case "fork-session": {
@@ -386,8 +299,6 @@ export class PiAgentService {
 
     if (!this.config.piMockMode) {
       await this.restoreSession();
-    } else {
-      this.beginMockSession();
     }
 
     this.emitStatus();
@@ -395,28 +306,7 @@ export class PiAgentService {
 
   async prompt(promptText: string) {
     if (this.config.piMockMode) {
-      await this.mockAdapter.prompt(promptText, {
-        getCurrentRepo: () => this.currentRepo,
-        getMessages: () => this.messages,
-        setMessages: (messages) => {
-          this.messages = messages;
-        },
-        setTools: (tools) => {
-          this.tools = tools;
-        },
-        setLastError: (message) => {
-          this.lastError = message;
-        },
-        setActiveAssistantMessageId: (messageId) => {
-          this.activeAssistantMessageId = messageId;
-        },
-        broadcast: (event) => {
-          this.broadcaster.emit(event);
-        },
-        emitStatus: () => {
-          this.emitStatus();
-        },
-      });
+      await this.mockAdapter.prompt(promptText, this.createMockContext());
       return;
     }
 
@@ -425,6 +315,10 @@ export class PiAgentService {
 
     if (!accepted) {
       throw new Error("The prompt was rejected by the pi runtime.");
+    }
+
+    if (session.model) {
+      this.modelUsage.record(session.model.provider, session.model.id);
     }
 
     // Clear any pending interactive prompt – the user is responding (or starting fresh).
@@ -480,8 +374,6 @@ export class PiAgentService {
       } catch (error) {
         this.recordError(error);
       }
-    } else {
-      this.beginMockSession();
     }
 
     this.emitStatus();
@@ -522,9 +414,7 @@ export class PiAgentService {
       throw new Error("No repository selected for pi session.");
     }
 
-    this.finalizeTrackedSession();
     const session = await this.sessionAdapter.createSession(this.currentRepo, continueRecent, options);
-    this.ensureTrackedSessionReference(new Date().toISOString());
     this.syncFromSession(session);
     this.emitStatus();
     return session;
@@ -535,9 +425,7 @@ export class PiAgentService {
       throw new Error("No repository selected for pi session.");
     }
 
-    this.finalizeTrackedSession();
     const session = await this.sessionAdapter.openSessionPath(this.currentRepo, sessionPath, options);
-    this.ensureTrackedSessionReference(new Date().toISOString());
     this.syncFromSession(session);
     this.emitStatus();
   }
@@ -707,6 +595,33 @@ export class PiAgentService {
     }
   }
 
+  private completeCommand(message: string, prompt: string | null = null): AgentCommandResponse {
+    this.lastError = null;
+    this.emitStatus();
+    return { message, prompt };
+  }
+
+  private createMockContext(): MockRuntimeContext {
+    return {
+      getCurrentRepo: () => this.currentRepo,
+      getMessages: () => this.messages,
+      setMessages: (messages) => {
+        this.messages = messages;
+      },
+      setTools: (tools) => {
+        this.tools = tools;
+      },
+      setLastError: (message) => {
+        this.lastError = message;
+      },
+      setActiveAssistantMessageId: (messageId) => {
+        this.activeAssistantMessageId = messageId;
+      },
+      broadcast: (event) => this.broadcaster.emit(event),
+      emitStatus: () => this.emitStatus(),
+    };
+  }
+
   private recordError(error: unknown) {
     const message = toErrorMessage(error);
     this.logger.error("Pi agent runtime reported an error.", {
@@ -724,7 +639,6 @@ export class PiAgentService {
   private emitStatus() {
     const runtimeState = this.getRuntimeState();
 
-    this.persistCostSnapshot();
     this.broadcaster.agentStatus({
       isConfigured: this.currentRepo !== null,
       ...runtimeState,
@@ -743,124 +657,8 @@ export class PiAgentService {
   }
 
   private async resetSession() {
-    this.finalizeTrackedSession();
-
     this.mockAdapter.dispose();
     await this.sessionAdapter.reset();
-  }
-
-  private beginMockSession() {
-    this.mockAdapter.beginSession();
-    this.ensureTrackedSessionReference(new Date().toISOString());
-  }
-
-  private ensureTrackedSessionReference(startedAt: string) {
-    if (!this.currentRepo) {
-      return null;
-    }
-
-    if (this.config.piMockMode) {
-      const session = this.mockAdapter.ensureSessionReference(this.currentRepo.absolutePath);
-      return this.registerTrackedSession(session.sessionKey, startedAt, session.sessionId, session.sessionFile);
-    }
-
-    if (!this.session) {
-      return null;
-    }
-
-    const sessionStats = this.session.getSessionStats();
-    const sessionId = sessionStats.sessionId ?? null;
-    const sessionFile = this.session.sessionFile ?? sessionStats.sessionFile ?? null;
-    const identity = sessionId ?? sessionFile;
-
-    if (!identity) {
-      return null;
-    }
-
-    return this.registerTrackedSession(`${this.currentRepo.absolutePath}:${identity}`, startedAt, sessionId, sessionFile);
-  }
-
-  private registerTrackedSession(sessionKey: string, startedAt: string, sessionId: string | null, sessionFile: string | null) {
-    if (this.activeCostSessionKey !== sessionKey) {
-      this.activeCostSessionKey = sessionKey;
-      this.activeCostSessionStartedAt = startedAt;
-    }
-
-    return {
-      sessionKey,
-      sessionId,
-      sessionFile,
-      startedAt: this.activeCostSessionStartedAt ?? startedAt,
-    };
-  }
-
-  private persistCostSnapshot() {
-    const usage = this.getUsageSummary();
-
-    if (!this.currentRepo || (usage.totalTokens === 0 && usage.totalCost === 0)) {
-      return;
-    }
-
-    const trackedSession = this.ensureTrackedSessionReference(new Date().toISOString());
-
-    if (!trackedSession) {
-      return;
-    }
-
-    try {
-      this.costService.recordSession({
-        sessionKey: trackedSession.sessionKey,
-        sessionId: trackedSession.sessionId,
-        sessionFile: trackedSession.sessionFile,
-        repoName: this.currentRepo.name,
-        repoRelativePath: this.currentRepo.relativePath,
-        repoAbsolutePath: this.currentRepo.absolutePath,
-        modelId: usage.modelId,
-        startedAt: trackedSession.startedAt,
-        updatedAt: new Date().toISOString(),
-        endedAt: null,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens,
-        cacheWriteTokens: usage.cacheWriteTokens,
-        totalTokens: usage.totalTokens,
-        totalCost: usage.totalCost,
-        contextTokens: usage.contextTokens,
-        contextWindow: usage.contextWindow,
-        contextPercent: usage.contextPercent,
-        usingSubscription: usage.usingSubscription,
-        autoCompactEnabled: usage.autoCompactEnabled,
-      });
-    } catch (error) {
-      this.logger.error("Failed to persist session costs.", {
-        event: "cost_persist_failed",
-        repo: this.currentRepo?.absolutePath ?? null,
-        details: {
-          message: error instanceof Error ? error.message : String(error),
-        },
-      });
-    }
-  }
-
-  private finalizeTrackedSession() {
-    if (!this.activeCostSessionKey) {
-      return;
-    }
-
-    try {
-      this.costService.finalizeSession(this.activeCostSessionKey, new Date().toISOString());
-    } catch (error) {
-      this.logger.error("Failed to finalize session costs.", {
-        event: "cost_finalize_failed",
-        repo: this.currentRepo?.absolutePath ?? null,
-        details: {
-          message: error instanceof Error ? error.message : String(error),
-        },
-      });
-    } finally {
-      this.activeCostSessionKey = null;
-      this.activeCostSessionStartedAt = null;
-    }
   }
 
   private getUsageSummary(): AgentUsage {
@@ -889,94 +687,6 @@ export class PiAgentService {
       autoCompactEnabled: false,
     };
   }
-}
-
-function rankModelsByUsage(
-  models: AgentModelOption[],
-  repoUsageSummary: Record<string, { usageCount: number; lastUsedAt: string }>,
-  globalUsageSummary: Record<string, { usageCount: number; lastUsedAt: string }>,
-): AgentModelOption[] {
-  return models
-    .map((model) => {
-      const repoUsage = resolveModelUsage(repoUsageSummary, model.provider, model.modelId);
-      const globalUsage = resolveModelUsage(globalUsageSummary, model.provider, model.modelId);
-
-      const usageCount = repoUsage?.usageCount ?? globalUsage?.usageCount;
-      const lastUsedAt = repoUsage?.lastUsedAt ?? globalUsage?.lastUsedAt ?? null;
-
-      return {
-        model,
-        repoUsageCount: repoUsage?.usageCount ?? 0,
-        repoLastUsedAt: repoUsage?.lastUsedAt ?? null,
-        globalUsageCount: globalUsage?.usageCount ?? 0,
-        globalLastUsedAt: globalUsage?.lastUsedAt ?? null,
-        usageCount,
-        lastUsedAt,
-      };
-    })
-    .sort((left, right) => {
-      if (left.model.isCurrent !== right.model.isCurrent) {
-        return left.model.isCurrent ? -1 : 1;
-      }
-
-      const repoLastUsedSort = compareIsoTimestampDesc(left.repoLastUsedAt, right.repoLastUsedAt);
-
-      if (repoLastUsedSort !== 0) {
-        return repoLastUsedSort;
-      }
-
-      if (left.repoUsageCount !== right.repoUsageCount) {
-        return right.repoUsageCount - left.repoUsageCount;
-      }
-
-      const globalLastUsedSort = compareIsoTimestampDesc(left.globalLastUsedAt, right.globalLastUsedAt);
-
-      if (globalLastUsedSort !== 0) {
-        return globalLastUsedSort;
-      }
-
-      if (left.globalUsageCount !== right.globalUsageCount) {
-        return right.globalUsageCount - left.globalUsageCount;
-      }
-
-      if (left.model.available !== right.model.available) {
-        return left.model.available ? -1 : 1;
-      }
-
-      return `${left.model.provider}/${left.model.modelId}`.localeCompare(`${right.model.provider}/${right.model.modelId}`);
-    })
-    .map((entry) => ({
-      ...entry.model,
-      usageCount: entry.usageCount,
-      lastUsedAt: entry.lastUsedAt,
-    }));
-}
-
-function resolveModelUsage(
-  usageSummary: Record<string, { usageCount: number; lastUsedAt: string }>,
-  provider: string,
-  modelId: string,
-) {
-  const compositeModelId = `${provider}/${modelId}`;
-  const modelIdWithoutProviderPrefix = modelId.startsWith(`${provider}/`) ? modelId.slice(provider.length + 1) : modelId;
-
-  return usageSummary[compositeModelId] ?? usageSummary[modelId] ?? usageSummary[modelIdWithoutProviderPrefix];
-}
-
-function compareIsoTimestampDesc(left: string | null, right: string | null) {
-  if (left === right) {
-    return 0;
-  }
-
-  if (!left) {
-    return 1;
-  }
-
-  if (!right) {
-    return -1;
-  }
-
-  return right.localeCompare(left);
 }
 
 function createEmptyCommandState(): AgentCommandState {
@@ -1079,14 +789,5 @@ export function parseInteractivePromptArgs(args: unknown): InteractivePrompt | n
     promptId: randomUUID(),
     title: raw.title.trim(),
     questions,
-  };
-}
-
-function createNoopLogger(): LogChannel {
-  return {
-    debug: () => undefined,
-    info: () => undefined,
-    warn: () => undefined,
-    error: () => undefined,
   };
 }
