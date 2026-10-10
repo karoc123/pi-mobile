@@ -18,13 +18,13 @@
   - Combined Node.js/TypeScript stack.
   - `src/backend/` — Express server, WebSocket management, and Git/Filesystem orchestration.
   - `src/frontend/` — Mobile-first web interface (Svelte).
-  - Persistent cost tracking is stored below `WORKSPACE_ROOT/.pi-mobile/costs.sqlite` unless `COSTS_DB_PATH` overrides it.
+  - Model usage counts for the model palette are stored in `model-usage.json` (`/data/db` in the container, otherwise `WORKSPACE_ROOT/.pi-mobile/`). There is no cost history.
 
 ### High-Value Commands
 
 - **Local Development Mode**: `npm run dev` (Starts backend server with live reload and frontend asset watch)
 - **Production Build**: `npm run build` (Compiles TypeScript and bundles static frontend assets into `dist/`)
-- **Start Production Server**: `node dist/index.js`
+- **Start Production Server**: `node dist/backend/index.js`
 - **Docker Stack**: `docker compose up --build`
 - **Run Test Suite**: `npm test`
 

@@ -26,14 +26,14 @@ The companion Wear OS client is maintained in the [PiMobile Wear OS repository](
 
 - No local Node/npm setup required
 - Reproducible runtime
-- Isolated state in named Docker volumes
+- All state in three directories next to `docker-compose.yml`
 - No bind-mount of your full `~/.ssh` or `~/.pi` directories
 
-PiMobile persists data in named volumes:
+PiMobile persists data in bind mounts:
 
-- `workspace` (`pi-mobile-workspace`) → repositories + file edits
-- `db` (`pi-mobile-db`) → `costs.sqlite`, logs, `known_hosts`
-- `pi` (`pi-mobile-pi`) → Pi auth/session data
+- `./workspace` → `/workspace`: repositories + file edits
+- `./db` → `/data/db`: logs, `known_hosts`, `model-usage.json`
+- `./pi` → `/data/pi`: Pi auth/session data
 
 ---
 
@@ -110,7 +110,7 @@ npm run verify:container # container hardening smoke test
 - **Docker secret error for SSH key**
   - Ensure `SSH_PRIVATE_KEY_FILE` points to an existing readable private key.
 - **First SSH clone fails due to host trust**
-  - `known_hosts` is persisted in the `db` volume at `/data/db/known_hosts` after first acceptance.
+  - `known_hosts` is persisted in `./db` (`/data/db/known_hosts` in the container) after first acceptance.
 
 ---
 

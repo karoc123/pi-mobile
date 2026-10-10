@@ -1,56 +1,31 @@
 # ARCHITECTURE.md — System and Software Architecture
 
-| | Persistent Volumes / Secrets v |
-| | • `workspace` <=======> /workspace |
-| | • `db` <=======> /data/db |
-| | • `pi` <=======> /data/pi |
-| | • `ssh_private_key` secret -> runtime `/home/node/.ssh/id_ed25519` |
+## 1. System Overview
 
-+------------------------------------------------------------------------+
-| SMARTPHONE / CLIENT |
-| +------------------------------------------------------------------+ |
-| | Web App (Mobile-First UI: Chat, Unified Diff, Text Editor) | |
-| +------------------------------------------------------------------+ |
-+----------------------------------|-------------------------------------+
-| HTTP / WebSockets (Port 3000)
-v
-+------------------------------------------------------------------------+
-| RASPBERRY PI (HOST) |
-| +------------------------------------------------------------------+ |
-| | Docker Bridge Network Listener | |
-| +-------------------------------+----------------------------------+ |
-| | |
-| +-------------------------------+--------------------------------+ |
-| | DOCKER CONTAINER (`pi-mobile-server`) | |
-| | | |
-| | +--------------------------------------------------------+ | |
-| | | 1. Security Gate (Password Authentication Middleware) | | |
-| | +---------------------------+----------------------------+ | |
-| | | Access Granted | | |
-| | v | |
-| | +--------------------------------------------------------+ | |
-| | | 2. Frontend Assets (Static HTML / JS / Tailwind) | | |
-| | +--------------------------------------------------------+ | |
-| | ^ | |
-| | | REST / WebSockets | |
-| | +---------------------------v----------------------------+ | |
-| | | 3. Backend (Node.js Workspace Wrapper) | | |
-| | | • Agent Runtime Instance (`pi` Core Engine) | | |
-| | | • Git Service (Hunk Parser & Revert Pipeline) | | |
-| | +---------------------------+----------------------------+ | |
-| | | | | |
-| | | Invokes natively in-container| | |
-| | +---------------------------v----------------------------+ | |
-| | | 4. Natively Installed `pi.dev` CLI Runtime | | |
-| | +---------------------------+----------------------------+ | |
-| +---|---------------------------|--------------------------------+ |
-| | | Modifies workspaces directly |
-| | Mapped Volumes v |
-| | • `/workspace` <=======> /home/pi/projects/ |
-| | • `/.pi` <=======> /home/pi/.pi/ (Auth Credentials) |
-| | • `/.gitconfig` <=======> /home/pi/.gitconfig |
-| | • `/.ssh` <=======> /home/pi/.ssh/ |
-+------+-----------------------------------------------------------------+
+```text
++--------------------------------------------------------------+
+| SMARTPHONE / WEAR OS CLIENT                                  |
+|   Svelte web app (Chat, Diff, Editor) | Wear OS app (subset)  |
++-------------------------------+------------------------------+
+                                | HTTP / WebSocket (port 3000)
+                                v
++--------------------------------------------------------------+
+| DOCKER CONTAINER `pi-mobile-server` (node:22-slim, git, ssh) |
+|                                                              |
+|  1. Security gate: APP_PASSWORD session cookie on /api + /ws |
+|  2. Static frontend bundle (dist/public)                     |
+|  3. Express backend                                          |
+|     - PiAgentService -> in-process pi SDK AgentSession       |
+|     - GitService, FileService, WorkspaceService              |
+|     - WatcherService (chokidar), LogService, ModelUsageStore |
++-------------------------------+------------------------------+
+                                | bind mounts / secret
+                                v
+   ./workspace -> /workspace    repositories
+   ./db        -> /data/db      logs, known_hosts, model-usage.json
+   ./pi        -> /data/pi      pi auth (agent/) and sessions/
+   ssh_private_key secret -> /home/node/.ssh/id_ed25519
+```
 
 ---
 
@@ -63,25 +38,25 @@ To secure filesystem access from the mobile client, an explicit authentication b
 - **Mechanism:** Simple Password-Only Authentication.
 - **Implementation:** A lightweight, HTTP-only cookie-based session token system managed within the Express backend.
 - **Configuration:** The master password is safe-guarded via environment variables (`APP_PASSWORD`) fed through Docker Compose or loaded from a local `.env` file during `npm start`.
-- **Flow:** Any unauthenticated requests to REST routes or WebSocket handshake upgrades are intercepted by an auth-middleware and redirected to a minimalist login screen.
+- **Flow:** `GET /api/health`, `GET /api/auth/session` and `POST /api/auth/login` are public. A single middleware registered after them rejects every other `/api` request without a valid session with `401`, and the WebSocket upgrade performs the same check. The frontend then shows the login screen.
 
 ### 2.2 Frontend (Mobile-Optimized Web App)
 
-To minimize memory footprint and execution latency on the Raspberry Pi, the frontend drops heavy client-side builds.
-
-- **Technology:** Svelte (compiled down to vanilla JS chunks).
-- **Navigation:** Bottom-anchored navigation drawer featuring three unified thumb views:
-  1. **Chat (`/chat`):** Feeds interactions directly into the active `pi` execution process. Utilizes modular Markdown text parsing with responsive fullscreen viewports for generated code blocks.
-  2. **Git Diff (`/diff`):** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap hunk manipulation (`stage`, `unstage`, `revert`) plus header-level `stage all` / `unstage all` / `pull` / `push` / `commit` actions. The header shows remote sync state (`↑ ahead`, `↓ behind`, or up-to-date) and commit counters.
-  3. **Editor (`/editor`):** A touch-first text editing surface implemented with **CodeMirror 6**, ensuring fluid virtual keyboard integration, real-time syntax highlighting, and a hidden actions menu for file/folder creation plus file duplicate/rename/move/delete operations.
+- **Technology:** Svelte (compiled down to vanilla JS chunks), plain CSS with two themes.
+- **Navigation:** A bottom navigation switches between three views; the app menu holds the repository picker, theme switch, log view and Pi login:
+  1. **Chat:** Feeds interactions directly into the active `pi` execution process. Utilizes modular Markdown text parsing with responsive fullscreen viewports for generated code blocks.
+  2. **Git Diff:** Uses `diff2html` in explicit `line-by-line` layout configuration. Augmented with overlay action nodes for single-tap hunk manipulation (`stage`, `unstage`, `revert`) plus header-level `stage all` / `unstage all` / `pull` / `push` / `commit` actions. The header shows remote sync state (`↑ ahead`, `↓ behind`, or up-to-date) and commit counters.
+  3. **Editor:** A touch-first text editing surface implemented with **CodeMirror 6**, ensuring fluid virtual keyboard integration, real-time syntax highlighting, and a hidden actions menu for file/folder creation plus file upload/download/duplicate/rename/move/delete operations.
 
 ### 2.3 Backend & Tool-Wrapper
 
 Written in TypeScript running on Node.js, the backend acts as a high-fidelity router orchestrating the host environment, Git states, and the `pi` runtime.
 
-- **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` (v1.0+) TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process using `ModelRuntime` for model discovery, selection, and auth credential synchronization, while Pi auth/model/session data persists inside the dedicated `pi` Docker volume. CLI JSON/RPC modes remain possible fallbacks, but are not the primary kickoff integration.
+- **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` (v1.0+) TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process using `ModelRuntime` for model discovery, selection, and auth credential synchronization, while Pi auth/model/session data persists below `/data/pi`. The chat shows live session cost, tokens and context usage taken directly from the SDK; no cost history is stored.
 - **`GitService`:** Parses the standard stream of `git diff -U3` into structural JSON objects, making raw line offsets and hunk chunks readable for the frontend.
-- **`FileService`:** Directs file writing from the mobile editor and monitors directory workspaces dynamically using `chokidar` for seamless change synchronization.
+- **`FileService`:** Executes editor file operations inside the selected repository. Paths are resolved within the repository, and mutating routes reject paths that normalize to the repository root.
+- **`WatcherService`:** Watches the selected repository with `chokidar` and broadcasts `workspace_changed` events.
+- **`ModelUsageStore`:** Counts accepted prompts per `provider/model` in a small JSON file (`model-usage.json`) and ranks the model palette by current model, usage count, availability and name. A missing or corrupt file starts an empty count.
 - **`Watcher Guardrails`:** Internal runtime directories (`.pi-mobile`, `.pi`) plus configured logs/session paths are ignored by the filesystem watcher so backend artifacts cannot trigger feedback loops (for example repeated diff reload cascades).
 - **`Runtime Phase Contract`:** Agent status is no longer modeled as a single boolean. The backend now exposes a phase model (`idle`, `streaming`, `queued`, `compacting`, `retrying`, `bash-running`) together with queue depth and retry/bash flags for richer mobile state rendering.
 
@@ -93,11 +68,19 @@ To reduce silent failures and make incidents reproducible directly from mobile d
 - **Dual Log Storage:** Logs are persisted to rotating files under `.pi-mobile/logs` while a bounded in-memory buffer powers fast UI retrieval.
 - **Request Correlation:** Every HTTP response includes `x-request-id`; API failures return a structured error payload with the same request ID.
 - **Live Log Streaming:** `GET /api/logs/stream` (SSE) pushes new backend events in real time, while `GET /api/logs` supports paged history queries.
-- **Client Status Panel:** A tool-icon toggle in the app chrome shows/hides runtime status chips. The panel exposes auth, WebSocket, backend health, log-stream state, and required resource-access checks (workspace/cost-db/log-dir/pi-session paths).
+- **Client Status Panel:** A tool-icon toggle in the app chrome shows/hides runtime status chips. The panel exposes auth, WebSocket, backend health, log-stream state, and required resource-access checks (workspace/log-dir/pi-agent/pi-session paths).
 
 ### 2.5 Wear OS Client
 
-The companion Android application is maintained in the standalone `pi-mobile-wear-app` repository. It connects to this backend over the authenticated HTTP API and uses the workspace, agent, and Git endpoints. `GET /api/agent/state?minimal=true` returns the shared `AgentMinimalState` contract for clients that need a compact agent snapshot; authentication requirements are identical to the full snapshot endpoint. Android source, Gradle configuration, and emulator tooling belong to the client repository.
+The companion Android application is maintained in the standalone `pi-mobile-wear-app` repository. It connects to this backend over the authenticated HTTP API and uses exactly these routes, which must stay compatible:
+
+- `POST /api/auth/login`, `GET /api/auth/session`
+- `GET /api/agent/state?minimal=true` (shared `AgentMinimalState` contract, including `usage.totalCost`)
+- `POST /api/agent/prompt`, `POST /api/agent/abort`, `POST /api/agent/new-session`
+- `GET /api/workspaces/browse`, `POST /api/workspaces/select`
+- `POST /api/git/commit`
+
+All other routes are consumed only by the web frontend. Android source, Gradle configuration, and emulator tooling belong to the client repository.
 
 ---
 
@@ -107,7 +90,7 @@ The companion Android application is maintained in the standalone `pi-mobile-wea
 
 When a file is manually modified via the integrated touchscreen editor or the editor actions menu runs a filesystem operation:
 
-1. The frontend dispatches writes to `POST /api/files/write` and file operations to dedicated endpoints (`/api/files/create`, `/api/files/create-directory`, `/api/files/duplicate`, `/api/files/rename`, `/api/files/move`, `/api/files/delete`).
+1. The frontend dispatches writes to `POST /api/files/write` and file operations to dedicated endpoints (`/api/files/create`, `/api/files/create-directory`, `/api/files/duplicate`, `/api/files/rename`, `/api/files/move`, `/api/files/delete`, `/api/files/upload`, `/api/files/download`). The file router maps `EEXIST` to `409` and `ENOENT` to `404`.
 2. The backend executes the matching `FileService` operation directly inside the selected repository path and keeps path resolution sandboxed within `/workspace`.
 3. The filesystem watcher (`chokidar`) catches resulting change/unlink events and instantly broadcasts a global WebSocket notification to the client: `{ "type": "workspace_changed", "payload": { ... } }`.
 4. The frontend schedules a debounced diff refresh and only reloads diff data while the diff view is active, preventing burst traffic during rapid file writes.
@@ -148,13 +131,13 @@ When backend behavior is unclear, the mobile client can inspect runtime activity
 4. Every displayed error includes request-correlation metadata, so API failures can be traced to server-side records quickly.
 5. The log view can trigger `DELETE /api/logs` to clear in-memory entries and persisted backend log files (`backend.log` + rotated files).
 
-### 3.5 Start a Fresh Agent Session (Context + Cost Reset)
+### 3.5 Start a Fresh Agent Session (Context + Usage Reset)
 
 To avoid carrying forward long-running conversation context, the chat UI exposes a **New session** action:
 
 1. The frontend calls `POST /api/agent/new-session`.
 2. The backend disposes the active `AgentSession`, clears in-memory chat/tool state, and creates a brand-new SDK session via `SessionManager.create(...)` for the current repository.
-3. The frontend refreshes `/api/agent/state`, so messages/tool activity become empty and usage/cost counters restart from zero for the new session.
+3. The frontend refreshes `/api/agent/state`, so messages/tool activity become empty and the live usage counters (tokens, cost, context) restart from zero for the new session.
 
 ### 3.6 Agent Status & Command Resilience
 
@@ -178,67 +161,20 @@ To reduce setup friction on mobile, repository cloning is integrated directly in
 
 ## 4. Container Deployment & Environment Setup
 
-### 4.1 The Dockerfile
+### 4.1 Image
 
-The container installs `git`, SSH tooling, and all Node.js dependencies required by the backend and frontend bundle.
+`Dockerfile` uses two stages. The build stage installs all dependencies, builds frontend and backend, and prunes dev dependencies. The runtime stage installs `git` and `openssh-client` and copies only `package.json`, the pruned `node_modules`, `dist/` and `docker/entrypoint.sh`. Frontend-only packages (Svelte, CodeMirror, diff2html, marked, DOMPurify) are dev dependencies because they are bundled into `dist/public`.
 
-```dockerfile
-FROM node:22-slim
+### 4.2 Compose and Persistence
 
-# Install system dependencies needed for Git and native Node packages
-RUN apt-get update && apt-get install -y \
-    git \
-  openssh-client \
-    && rm -rf /var/lib/apt/lists/*
+`docker-compose.yml` runs one service and persists state in three bind mounts next to the compose file:
 
-WORKDIR /app
+| Host path | Container path | Contents |
+| --- | --- | --- |
+| `./workspace` | `/workspace` | Repositories (`WORKSPACE_ROOT`) |
+| `./db` | `/data/db` | Backend logs, SSH `known_hosts`, `model-usage.json` |
+| `./pi` | `/data/pi` | Pi auth (`agent/`) and session files (`sessions/`) |
 
-COPY package*.json ./
-RUN npm ci
-COPY . .
+The SSH private key is provided as a Compose secret. The entrypoint copies it to `/home/node/.ssh/id_ed25519`, starts `ssh-agent`, creates the data directories (including `/data/pi/agent` and `/data/pi/sessions`), initializes `known_hosts` and sets global Git defaults before starting the server.
 
-RUN npm run build
-
-EXPOSE 3000
-CMD ["node", "dist/backend/index.js"]
-```
-
-### 4.2 Docker Compose Configuration
-
-The compose topology ensures network reachability across your network interfaces while enforcing volume isolation and environmental configuration.
-
-```yaml
-services:
-  pi-mobile-server:
-    build: .
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: production
-      WORKSPACE_ROOT: /workspace
-      COSTS_DB_PATH: /data/db/costs.sqlite
-      LOGS_DIR: /data/db/logs
-      PI_AGENT_DIR: /data/pi/agent
-      PI_SESSION_DIR: /data/pi/sessions
-      SSH_KNOWN_HOSTS_PATH: /data/db/known_hosts
-      APP_PASSWORD: DeinSicheresPasswortHier
-      SSH_PRIVATE_KEY_SECRET_PATH: /run/secrets/ssh_private_key
-    volumes:
-      - workspace:/workspace
-      - db:/data/db
-      - pi:/data/pi
-    secrets:
-      - ssh_private_key
-
-volumes:
-  workspace:
-  db:
-  pi:
-
-secrets:
-  ssh_private_key:
-    file: /path/to/id_ed25519
-```
-
-The container entrypoint copies the SSH private key secret into the runtime filesystem, initializes the persistent `known_hosts` file under `/data/db/known_hosts`, and keeps all mutable app state inside the named Docker volumes.
+Outside Docker, logs and `model-usage.json` default to `WORKSPACE_ROOT/.pi-mobile/`.

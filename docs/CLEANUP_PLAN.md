@@ -1,7 +1,7 @@
 # PiMobile verschlanken
 
 Stand: 2026-10-10. Ergebnis aus Repo-Sichtung, Planprüfung und Produktgespräch.
-Alle Entscheidungen sind getroffen; die Umsetzung hat noch nicht begonnen.
+P1–P5 sind auf dem Branch `cleanup/slim` umgesetzt; Ergebnis siehe Abschnitt „Ergebnis“.
 
 ## Ziel
 
@@ -157,3 +157,35 @@ Ersetzen:
   abdecken, und fehlende gezielt ergänzen.
 - Die Einsparung durch P3/P4 ist eine Schätzung; harte Zahlen erst nach Umsetzung.
 - Das Wear-OS-Repo wurde nur gelesen, nicht gebaut oder gegen den Server getestet.
+
+## Ergebnis
+
+Gemessen gegen `e43da6a` (versionierte Dateien ohne Lockfile und ohne diesen Plan):
+
+| Kennzahl | Vorher | Nachher |
+| --- | --- | --- |
+| Zeilen gesamt | 19 423 | ca. 17 100 |
+| `styles.css` | 2729 | 2421 |
+| `App.svelte` | 2675 | 1975 |
+| `pi-agent-service.ts` | 1092 | 793 |
+| `app.ts` | 856 | 715 |
+| Direkte Abhängigkeiten (Runtime + Dev) | 19 + 15 | 6 + 25 |
+| Runtime-Image | 1,09 GB | 719 MB |
+
+Entfernt wurden `zod`, `@codemirror/commands` und `@codemirror/language` als direkte Einträge
+sowie die SQLite-Kostenpersistenz. Frontend-Pakete sind Dev-Abhängigkeiten, weil sie gebündelt werden.
+
+Nebenbefunde:
+
+- `POST /api/files/delete` mit `notes/..` umging die alte `.`-Prüfung und hätte das Repo-Verzeichnis
+  rekursiv gelöscht. Die Pfadprüfung normalisiert jetzt und ist durch einen Test abgedeckt.
+- Auf frischen Volumes fehlte `/data/pi/agent`; der Container-Health-Check war dadurch schon vor
+  der Aufräumaktion `degraded`. Der Entrypoint legt das Verzeichnis jetzt an.
+
+Bewusst nicht umgesetzt:
+
+- Doppelt definierte CSS-Selektoren (7) wurden nicht zusammengeführt: Zwischen den Definitionen
+  liegen Regeln gleicher Spezifität, ein Verschieben würde die Kaskade ändern; ohne visuelle Tests
+  zu riskant für ca. 30 Zeilen.
+- Vorbestehende `svelte-check`-Fehler (9, kein Projekt-Skript) und Typfehler in zwei Testdateien
+  wurden nicht behoben; zwei Blob-Typfehler sind durch den Download-Umbau entfallen.

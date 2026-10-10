@@ -9,7 +9,7 @@ A repository-bound pi runtime conversation state, identified by session id or se
 _Avoid_: chat runtime object, prompt history
 
 **Mock session**:
-A deterministic local simulation of an agent session used for wiring, mobile flow validation, and cost/status behavior without a live model call.
+A deterministic local simulation of an agent session used for wiring, mobile flow validation, and usage/status behavior without a live model call.
 _Avoid_: fake chat, demo thread
 
 **Repository runtime selection**:
