@@ -67,7 +67,7 @@ function createConfig(piAgentDir: string): AppConfig {
     port: 3000,
     appPassword: "secret-pass",
     workspaceRoot: "/workspace",
-    costsDbPath: "/tmp/costs.sqlite",
+    modelUsagePath: "/tmp/model-usage.json",
     logsDirPath: "/tmp/logs",
     logLevel: "info",
     sessionCookieName: "pi_mobile_session",

@@ -57,17 +57,7 @@
   }
 
   function formatModelUsage(model: AgentModelOption) {
-    const parts: string[] = [];
-
-    if (typeof model.usageCount === 'number' && model.usageCount > 0) {
-      parts.push(`Used ${model.usageCount}x`);
-    }
-
-    if (model.lastUsedAt) {
-      parts.push(`Last ${formatTimestamp(model.lastUsedAt)}`);
-    }
-
-    return parts.join(' · ');
+    return model.usageCount ? `Used ${model.usageCount}x` : '';
   }
 </script>
 

@@ -9,11 +9,6 @@ describe("AppMenu", () => {
       open: true,
       currentRepo: null,
       theme: "vscode-dark",
-      followUpCostGuardEnabled: true,
-      followUpCostGuardEnabledHasOverride: false,
-      followUpCostSoftLimitUsd: 0.5,
-      followUpCostSoftLimitUsdDefault: 0.5,
-      followUpCostSoftLimitHasOverride: false,
     });
 
     expect(screen.getByRole("button", { name: "Pi Login" })).toBeTruthy();
@@ -24,11 +19,6 @@ describe("AppMenu", () => {
       open: true,
       currentRepo: null,
       theme: "vscode-dark",
-      followUpCostGuardEnabled: true,
-      followUpCostGuardEnabledHasOverride: false,
-      followUpCostSoftLimitUsd: 0.5,
-      followUpCostSoftLimitUsdDefault: 0.5,
-      followUpCostSoftLimitHasOverride: false,
     });
 
     expect(screen.getByRole("button", { name: "Pi Login" })).toBeTruthy();

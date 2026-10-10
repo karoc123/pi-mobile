@@ -1063,16 +1063,6 @@ code {
   background: color-mix(in srgb, #7ac57a 34%, var(--cli-panel));
 }
 
-.chat-view .composer-actions .keep-running-button {
-  background: color-mix(in srgb, #f8aa3a 20%, var(--cli-panel));
-  border-color: color-mix(in srgb, #f8aa3a 60%, var(--terminal-panel-border));
-  color: #fff6e6;
-}
-
-.chat-view .composer-actions .keep-running-button:hover {
-  background: color-mix(in srgb, #f8aa3a 32%, var(--cli-panel));
-}
-
 .chat-view .composer-footer .send-button {
   display: inline-flex;
   align-items: baseline;
@@ -1559,12 +1549,6 @@ code {
   border-color: color-mix(in srgb, var(--danger) 55%, var(--terminal-panel-border));
 }
 
-.cost-view,
-.cost-session-list {
-  display: grid;
-  gap: 1rem;
-}
-
 .log-view,
 .log-entry-list {
   display: grid;
@@ -1672,82 +1656,6 @@ code {
 
 .log-level-error {
   border-left: 4px solid color-mix(in srgb, var(--danger) 90%, transparent);
-}
-
-.cost-header {
-  align-items: start;
-}
-
-.cost-summary-grid,
-.cost-filter-grid {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.cost-summary-grid {
-  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
-}
-
-.cost-metric-card {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.cost-metric-card strong,
-.cost-session-total {
-  font-size: 1.25rem;
-}
-
-.cost-metric-card span,
-.cost-session-meta span,
-.cost-session-timeline span {
-  color: var(--muted);
-  font-size: 0.88rem;
-}
-
-.cost-filter-card {
-  display: grid;
-  gap: 1rem;
-}
-
-.cost-preset-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.cost-preset {
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  background: var(--surface-strong);
-  color: var(--ink);
-  padding: 0.75rem 0.85rem;
-}
-
-.cost-preset.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 15%, var(--surface-strong));
-}
-
-.cost-session-card {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.cost-session-card h2 {
-  margin: 0.35rem 0 0;
-  overflow-wrap: anywhere;
-}
-
-.cost-session-meta,
-.cost-session-timeline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem 0.85rem;
-}
-
-.cost-session-total {
-  white-space: nowrap;
 }
 
 .menu-copy {
@@ -2628,10 +2536,6 @@ code {
   .command-layout {
     grid-template-columns: 15rem minmax(0, 1fr);
     align-items: stretch;
-  }
-
-  .cost-filter-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .system-status-grid {

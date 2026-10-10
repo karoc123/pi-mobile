@@ -34,7 +34,6 @@ export class PiAgentMockAdapter {
   private isBashRunning = false;
   private sessionName: string | null = null;
   private usage: AgentUsage = createUsageSummary("mock/session", true);
-  private sessionId: string | null = null;
 
   resetForRepoSelection() {
     this.resetSessionState(true);
@@ -50,28 +49,11 @@ export class PiAgentMockAdapter {
     this.isRetrying = false;
     this.isBashRunning = false;
     this.sessionName = null;
-    this.sessionId = null;
   }
 
   abort() {
     this.clearReplyTimeout();
     this.isStreaming = false;
-  }
-
-  beginSession() {
-    this.sessionId = randomUUID();
-  }
-
-  ensureSessionReference(repoAbsolutePath: string) {
-    if (!this.sessionId) {
-      this.sessionId = randomUUID();
-    }
-
-    return {
-      sessionKey: `mock:${repoAbsolutePath}:${this.sessionId}`,
-      sessionId: this.sessionId,
-      sessionFile: null,
-    };
   }
 
   getRuntimeState(): {

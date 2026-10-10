@@ -40,7 +40,7 @@ describe("createApp", () => {
       port: 3000,
       appPassword: "secret-pass",
       workspaceRoot: tempDir,
-      costsDbPath: path.join(tempDir, ".pi-mobile", "costs.sqlite"),
+      modelUsagePath: path.join(tempDir, ".pi-mobile", "model-usage.json"),
       logsDirPath: path.join(tempDir, ".pi-mobile", "logs"),
       logLevel: "debug" as const,
       sessionCookieName: "pi_mobile_session",
@@ -71,47 +71,6 @@ describe("createApp", () => {
     const executeCommand = vi.fn(async () => ({
       message: "Started a new session.",
       prompt: null,
-    }));
-    const getCostReport = vi.fn(() => ({
-      summary: {
-        totalSessions: 1,
-        totalCost: 2.75,
-        totalTokens: 355,
-        inputTokens: 240,
-        outputTokens: 95,
-        cacheReadTokens: 20,
-        cacheWriteTokens: 0,
-      },
-      sessions: [
-        {
-          sessionKey: "repo-a:session-1",
-          sessionId: "session-1",
-          sessionFile: "/workspace/repo-a/.pi/sessions/session-1.json",
-          repoName: path.basename(tempDir),
-          repoRelativePath: path.basename(tempDir),
-          repoAbsolutePath: tempDir,
-          modelId: "anthropic/claude-sonnet-4",
-          modelsUsed: ["anthropic/claude-sonnet-4"],
-          startedAt: "2026-05-01T10:00:00.000Z",
-          updatedAt: "2026-05-01T10:05:00.000Z",
-          endedAt: "2026-05-01T10:06:00.000Z",
-          inputTokens: 240,
-          outputTokens: 95,
-          cacheReadTokens: 20,
-          cacheWriteTokens: 0,
-          totalTokens: 355,
-          totalCost: 2.75,
-          contextTokens: 355,
-          contextWindow: 200000,
-          contextPercent: 0.2,
-          usingSubscription: true,
-          autoCompactEnabled: true,
-        },
-      ],
-      filters: {
-        repos: [{ value: path.basename(tempDir), label: path.basename(tempDir) }],
-        models: [{ value: "anthropic/claude-sonnet-4", label: "anthropic/claude-sonnet-4" }],
-      },
     }));
     const getResourceHealth = vi.fn(async () => ({
       allRequiredAccessible: true,
@@ -177,9 +136,6 @@ describe("createApp", () => {
         unstageAll: gitUnstageAll,
         revertHunk: vi.fn(async () => undefined),
       } as never,
-      costService: {
-        getReport: getCostReport,
-      } as never,
       resourceHealthService: {
         check: getResourceHealth,
       } as never,
@@ -243,7 +199,6 @@ describe("createApp", () => {
     const authorized = await request(app).get("/api/workspaces/browse").set("Cookie", cookie);
     const commandStateResponse = await request(app).get("/api/agent/command-state").set("Cookie", cookie);
     const commandExecuteResponse = await request(app).post("/api/agent/command").set("Cookie", cookie).send({ command: "new-session" });
-    const costResponse = await request(app).get("/api/costs?repo=repo-a&model=anthropic%2Fclaude-sonnet-4&from=2026-05-01T00%3A00%3A00.000Z&to=2026-05-02T00%3A00%3A00.000Z").set("Cookie", cookie);
     const logsResponse = await request(app).get("/api/logs?limit=50").set("Cookie", cookie);
     const healthResponse = await request(app).get("/api/health").set("Cookie", cookie);
     const pullResponse = await request(app).post("/api/git/pull").set("Cookie", cookie);
@@ -293,15 +248,6 @@ describe("createApp", () => {
       prompt: null,
     });
     expect(executeCommand).toHaveBeenCalledWith({ command: "new-session" });
-    expect(costResponse.status).toBe(200);
-    expect(costResponse.body.summary.totalCost).toBe(2.75);
-    expect(costResponse.headers["cache-control"]).toContain("no-store");
-    expect(getCostReport).toHaveBeenCalledWith({
-      repo: "repo-a",
-      model: "anthropic/claude-sonnet-4",
-      from: "2026-05-01T00:00:00.000Z",
-      to: "2026-05-02T00:00:00.000Z",
-    });
     expect(logsResponse.status).toBe(200);
     expect(Array.isArray(logsResponse.body.entries)).toBe(true);
     expect(logsResponse.body.entries.length).toBeGreaterThan(0);

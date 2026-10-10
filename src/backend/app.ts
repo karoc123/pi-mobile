@@ -42,7 +42,6 @@ import { LogService } from "./services/log-service.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { PiAuthService, PiAuthServiceError } from "./services/pi-auth-service.js";
 import { RepositoryRuntimeService } from "./services/repository-runtime-service.js";
-import { CostService } from "./services/cost-service.js";
 import { ResourceHealthService } from "./services/resource-health-service.js";
 import { WorkspaceService } from "./services/workspace-service.js";
 import { HttpError, isHttpError } from "./utils/http-error.js";
@@ -55,7 +54,6 @@ type AppServices = {
   repositoryRuntimeService: RepositoryRuntimeService;
   fileService: FileService;
   gitService: GitService;
-  costService: CostService;
   resourceHealthService: ResourceHealthService;
   piAgentService: PiAgentService;
   piAuthService: PiAuthService;
@@ -529,17 +527,6 @@ export function createApp(services: AppServices) {
     const repo = services.workspaceService.requireCurrentRepo();
     await services.gitService.unstageAll(repo);
     response.json({ ok: true });
-  });
-
-  app.get("/api/costs", requireAuth(services), (request, response) => {
-    response.json(
-      services.costService.getReport({
-        repo: getOptionalQueryString(request, "repo"),
-        model: getOptionalQueryString(request, "model"),
-        from: getOptionalQueryString(request, "from"),
-        to: getOptionalQueryString(request, "to"),
-      }),
-    );
   });
 
   app.post("/api/git/revert-hunk", requireAuth(services), async (request, response) => {

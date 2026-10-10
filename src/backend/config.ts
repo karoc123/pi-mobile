@@ -12,7 +12,7 @@ export type AppConfig = {
   port: number;
   appPassword: string;
   workspaceRoot: string;
-  costsDbPath: string;
+  modelUsagePath: string;
   logsDirPath: string;
   logLevel: BackendLogLevel;
   defaultRepo?: string;
@@ -74,7 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     host: read("HOST") ?? "0.0.0.0",
     port,
     appPassword,
-    costsDbPath: resolveOr("COSTS_DB_PATH", resolveDefaultCostsDbPath(workspaceRoot, nodeEnv)),
+    modelUsagePath: resolveDefaultModelUsagePath(workspaceRoot, nodeEnv),
     logsDirPath: resolveOr("LOGS_DIR", resolveDefaultLogsDirPath(workspaceRoot, nodeEnv)),
     logLevel: readEnum("LOG_LEVEL", read("LOG_LEVEL"), logLevels) ?? "info",
     defaultRepo: read("DEFAULT_REPO"),
@@ -127,12 +127,12 @@ function asBoolean(value: string | undefined) {
   return value === "1" || value === "true" || value === "yes";
 }
 
-function resolveDefaultCostsDbPath(workspaceRoot: string, nodeEnv: AppConfig["nodeEnv"]) {
+function resolveDefaultModelUsagePath(workspaceRoot: string, nodeEnv: AppConfig["nodeEnv"]) {
   if (nodeEnv === "production") {
-    return path.resolve("/data/db/costs.sqlite");
+    return path.resolve("/data/db/model-usage.json");
   }
 
-  return path.resolve(workspaceRoot, ".pi-mobile", "costs.sqlite");
+  return path.resolve(workspaceRoot, ".pi-mobile", "model-usage.json");
 }
 
 function resolveDefaultLogsDirPath(workspaceRoot: string, nodeEnv: AppConfig["nodeEnv"]) {

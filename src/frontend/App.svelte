@@ -15,7 +15,6 @@
     BackendLogEntry,
     BackendLogLevel,
     BackendLogQueryResponse,
-    CostReport,
     DiffFile,
     GitBranchesResponse,
     GitBranchInfo,
@@ -45,7 +44,6 @@
   import BottomNav from './components/BottomNav.svelte';
   import ChatView from './components/ChatView.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
-  import CostView from './components/CostView.svelte';
   import LogView from './components/LogView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import PiLoginModal from './components/PiLoginModal.svelte';
@@ -55,8 +53,7 @@
 
   type ThemeName = 'vscode-dark' | 'vscode-light';
   type ViewName = 'chat' | 'diff' | 'editor';
-  type CostRangePreset = '7d' | '30d' | '90d' | 'all' | 'custom';
-  type AppViewName = ViewName | 'costs' | 'logs';
+  type AppViewName = ViewName | 'logs';
   type AsyncViewName = Exclude<ViewName, 'chat'>;
   type SocketStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
   type BackendStatus = 'healthy' | 'degraded' | 'unreachable' | 'unknown';
@@ -76,10 +73,6 @@
   const maxToolBatchCount = 8;
   const maxToolsPerBatch = 24;
   const maxLocalSystemMessages = 40;
-  const followUpCostGuardEnabledStorageKey = 'pimobile.follow-up-cost-guard-enabled';
-  const followUpCostSoftLimitUsdStorageKey = 'pimobile.follow-up-cost-soft-limit-usd';
-  const defaultFollowUpCostGuardEnabled = resolveFollowUpCostGuardEnabled();
-  const defaultFollowUpCostSoftLimitUsd = resolveFollowUpCostSoftLimitUsdFromEnv();
 
   const emptyUsage: AgentUsage = {
     inputTokens: 0,
@@ -110,23 +103,6 @@
     lastError: null,
     usage: emptyUsage,
     interactivePrompt: null,
-  };
-
-  const emptyCostReport: CostReport = {
-    summary: {
-      totalSessions: 0,
-      totalCost: 0,
-      totalTokens: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-    },
-    sessions: [],
-    filters: {
-      repos: [],
-      models: [],
-    },
   };
 
   let authChecked = false;
@@ -173,13 +149,6 @@
   let chatMessages: ChatMessage[] = [];
   let toolTraceBatches: ToolTraceBatch[] = [];
   let toolTraceBoundary = 0;
-  let followUpCostGuardEnabled = defaultFollowUpCostGuardEnabled;
-  let followUpCostGuardEnabledHasOverride = false;
-  let followUpCostSoftLimitUsd = defaultFollowUpCostSoftLimitUsd;
-  let followUpCostSoftLimitHasOverride = false;
-  let keepRunningRequired = false;
-  let keepRunningApproved = false;
-  let lastKnownGlobalCostUsd = 0;
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
   let socketManualClose = false;
@@ -219,13 +188,6 @@
   let commandPaletteSelectionToken = 0;
   let composerPrefill = '';
   let composerPrefillToken = 0;
-  let costReport: CostReport = emptyCostReport;
-  let costLoading = false;
-  let costRepoFilter = '';
-  let costModelFilter = '';
-  let costFromDate = '';
-  let costToDate = '';
-  let costPreset: CostRangePreset = 'all';
 
   let logEntries: BackendLogEntry[] = [];
   let logLoading = false;
@@ -248,7 +210,6 @@
 
   onMount(() => {
     initializeTheme();
-    initializeFollowUpCostGuardSettings();
     void initialize();
 
     return () => {
@@ -277,11 +238,6 @@
   }
 
   $: chatMessages = [...agentSnapshot.messages, ...localSystemMessages];
-
-  $: if (agentSnapshot.runtimePhase === 'idle' && (keepRunningRequired || keepRunningApproved)) {
-    keepRunningRequired = false;
-    keepRunningApproved = false;
-  }
 
   $: {
     const unresolvedUsageCost =
@@ -345,70 +301,6 @@
     if (persist) {
       window.localStorage.setItem(themeStorageKey, nextTheme);
     }
-  }
-
-  function initializeFollowUpCostGuardSettings() {
-    const storedGuardEnabled = window.localStorage.getItem(followUpCostGuardEnabledStorageKey);
-
-    if (storedGuardEnabled !== null) {
-      const parsed = parseStoredBoolean(storedGuardEnabled);
-
-      if (parsed !== null) {
-        followUpCostGuardEnabled = parsed;
-        followUpCostGuardEnabledHasOverride = true;
-      } else {
-        window.localStorage.removeItem(followUpCostGuardEnabledStorageKey);
-      }
-    }
-
-    const storedSoftLimitUsd = window.localStorage.getItem(followUpCostSoftLimitUsdStorageKey);
-
-    if (storedSoftLimitUsd !== null) {
-      const parsed = parseNonNegativeNumber(storedSoftLimitUsd);
-
-      if (parsed !== null) {
-        followUpCostSoftLimitUsd = parsed;
-        followUpCostSoftLimitHasOverride = true;
-      } else {
-        window.localStorage.removeItem(followUpCostSoftLimitUsdStorageKey);
-      }
-    }
-  }
-
-  function setFollowUpCostGuardEnabled(value: boolean) {
-    followUpCostGuardEnabled = value;
-    followUpCostGuardEnabledHasOverride = true;
-    window.localStorage.setItem(followUpCostGuardEnabledStorageKey, value ? 'true' : 'false');
-    clearKeepRunningGate();
-  }
-
-  function resetFollowUpCostGuardEnabled() {
-    followUpCostGuardEnabled = defaultFollowUpCostGuardEnabled;
-    followUpCostGuardEnabledHasOverride = false;
-    window.localStorage.removeItem(followUpCostGuardEnabledStorageKey);
-    clearKeepRunningGate();
-  }
-
-  function setFollowUpCostSoftLimitUsd(valueRaw: string) {
-    const parsed = parseNonNegativeNumber(valueRaw);
-
-    if (parsed === null) {
-      showBanner('Soft limit must be a non-negative number.', 'error');
-      return;
-    }
-
-    const normalized = Number(parsed.toFixed(2));
-    followUpCostSoftLimitUsd = normalized;
-    followUpCostSoftLimitHasOverride = true;
-    window.localStorage.setItem(followUpCostSoftLimitUsdStorageKey, normalized.toFixed(2));
-    clearKeepRunningGate();
-  }
-
-  function resetFollowUpCostSoftLimitUsd() {
-    followUpCostSoftLimitUsd = defaultFollowUpCostSoftLimitUsd;
-    followUpCostSoftLimitHasOverride = false;
-    window.localStorage.removeItem(followUpCostSoftLimitUsdStorageKey);
-    clearKeepRunningGate();
   }
 
   function seedComposer(nextPrompt: string) {
@@ -877,7 +769,6 @@
       commandState = null;
       resetToolTraceBatches();
       localSystemMessages = [];
-      clearKeepRunningGate();
       agentSnapshot = {
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
@@ -893,7 +784,7 @@
       unstagingAll = false;
       revertingHunkId = null;
       filePath = '.';
-      view = view === 'costs' || view === 'logs' ? view : 'chat';
+      view = view === 'logs' ? view : 'chat';
       void refreshCurrentRepoData();
       return;
     }
@@ -976,89 +867,10 @@
     await Promise.all([loadDiff(), loadFiles('.'), loadAgentState(), loadCommandState()]);
   }
 
-  async function openCostView() {
-    menuOpen = false;
-    view = 'costs';
-    await loadCosts();
-  }
-
   async function openLogView() {
     menuOpen = false;
     view = 'logs';
     await loadLogs(true);
-  }
-
-  async function loadCosts() {
-    costLoading = true;
-
-    try {
-      const query = new URLSearchParams();
-
-      if (costRepoFilter) {
-        query.set('repo', costRepoFilter);
-      }
-
-      if (costModelFilter) {
-        query.set('model', costModelFilter);
-      }
-
-      if (costFromDate) {
-        query.set('from', `${costFromDate}T00:00:00.000Z`);
-      }
-
-      if (costToDate) {
-        query.set('to', `${costToDate}T23:59:59.999Z`);
-      }
-
-      const suffix = query.size > 0 ? `?${query.toString()}` : '';
-      costReport = await apiFetch<CostReport>(`/api/costs${suffix}`);
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      costLoading = false;
-    }
-  }
-
-  function updateCostRepoFilter(value: string) {
-    costRepoFilter = value;
-    void loadCosts();
-  }
-
-  function updateCostModelFilter(value: string) {
-    costModelFilter = value;
-    void loadCosts();
-  }
-
-  function updateCostFromDate(value: string) {
-    costFromDate = value;
-    costPreset = 'custom';
-    void loadCosts();
-  }
-
-  function updateCostToDate(value: string) {
-    costToDate = value;
-    costPreset = 'custom';
-    void loadCosts();
-  }
-
-  function applyCostPreset(preset: Exclude<CostRangePreset, 'custom'>) {
-    costPreset = preset;
-
-    if (preset === 'all') {
-      costFromDate = '';
-      costToDate = '';
-      void loadCosts();
-      return;
-    }
-
-    const end = new Date();
-    const start = new Date(end);
-    const dayCount = preset === '7d' ? 6 : preset === '30d' ? 29 : 89;
-
-    start.setUTCDate(start.getUTCDate() - dayCount);
-    costFromDate = start.toISOString().slice(0, 10);
-    costToDate = end.toISOString().slice(0, 10);
-    void loadCosts();
   }
 
   async function loadAgentState(options: { silent?: boolean } = {}) {
@@ -1112,7 +924,6 @@
     }
 
     localSystemMessages = [];
-    clearKeepRunningGate();
     await executePaletteCommand({ command: 'new-session' });
   }
 
@@ -1498,50 +1309,15 @@
     // Interactive-Prompt-Antworten durchlaufen den gleichen Pfad
     // Der Server cleared interactivePrompt beim prompt()-Aufruf
 
-    const isFollowUp = agentSnapshot.runtimePhase !== 'idle';
-    let globalCostTotal = lastKnownGlobalCostUsd;
-    let consumedKeepRunningApproval = false;
-
-    if (isFollowUp && followUpCostGuardEnabled) {
-      globalCostTotal = await readGlobalCostTotal();
-    }
-
-    if (isFollowUp && followUpCostGuardEnabled && globalCostTotal >= followUpCostSoftLimitUsd && !keepRunningApproved) {
-      keepRunningRequired = true;
-      appendLocalSystemMessage(
-        `Global cost currently ${formatUsd(globalCostTotal)} (limit ${formatUsd(followUpCostSoftLimitUsd)}). Tap Keep running before the next follow-up step.`,
-      );
-      seedComposer(trimmed);
-      return;
-    }
-
-    if (!isFollowUp) {
-      clearKeepRunningGate();
-    } else if (keepRunningApproved) {
-      consumedKeepRunningApproval = true;
-      keepRunningApproved = false;
-      keepRunningRequired = false;
-    }
-
     try {
       await apiFetch('/api/agent/prompt', {
         method: 'POST',
         body: JSON.stringify({ prompt: trimmed })
       });
     } catch (error) {
-      if (consumedKeepRunningApproval) {
-        keepRunningApproved = true;
-      }
-
       seedComposer(trimmed);
       handleApiFailure(error);
     }
-  }
-
-  function allowKeepRunning() {
-    keepRunningRequired = false;
-    keepRunningApproved = true;
-    appendLocalSystemMessage(`Keep running confirmed. Next follow-up is allowed (global cost: ${formatUsd(lastKnownGlobalCostUsd)}).`);
   }
 
   async function abortRun() {
@@ -1602,7 +1378,6 @@
         if (request.command === 'new-session' || request.command === 'resume-session') {
           resetToolTraceBatches();
           localSystemMessages = [];
-          clearKeepRunningGate();
         }
 
         await loadCommandState();
@@ -2206,15 +1981,7 @@
     resetToolTraceBatches();
     localSystemMessages = [];
     chatMessages = [];
-    clearKeepRunningGate();
     dismissedPromptId = null;
-    lastKnownGlobalCostUsd = 0;
-    costReport = emptyCostReport;
-    costRepoFilter = '';
-    costModelFilter = '';
-    costFromDate = '';
-    costToDate = '';
-    costPreset = 'all';
     logEntries = [];
     logKnownSources = [];
     logViewError = '';
@@ -2280,39 +2047,6 @@
     ].slice(-maxLocalSystemMessages);
   }
 
-  function clearKeepRunningGate() {
-    keepRunningRequired = false;
-    keepRunningApproved = false;
-  }
-
-  function formatUsd(value: number) {
-    return `$${value.toFixed(2)}`;
-  }
-
-  function parseStoredBoolean(value: string) {
-    const normalized = value.trim().toLowerCase();
-
-    if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
-      return true;
-    }
-
-    if (normalized === 'false' || normalized === '0' || normalized === 'no') {
-      return false;
-    }
-
-    return null;
-  }
-
-  function parseNonNegativeNumber(value: string) {
-    const parsed = Number.parseFloat(value);
-
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      return null;
-    }
-
-    return parsed;
-  }
-
   function coalesceUsageCost(nextUsage: AgentUsage, previousUsage: AgentUsage) {
     if (nextUsage.totalCost === 0 && nextUsage.totalTokens > 0 && previousUsage.totalCost > 0) {
       return {
@@ -2322,39 +2056,6 @@
     }
 
     return nextUsage;
-  }
-
-  function resolveFollowUpCostGuardEnabled() {
-    const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_FOLLOW_UP_COST_GUARD_ENABLED;
-
-    if (typeof raw !== 'string' || raw.trim().length === 0) {
-      return true;
-    }
-
-    const parsed = parseStoredBoolean(raw);
-    return parsed ?? true;
-  }
-
-  function resolveFollowUpCostSoftLimitUsdFromEnv() {
-    const raw = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_FOLLOW_UP_COST_SOFT_LIMIT_USD;
-
-    if (typeof raw !== 'string' || raw.trim().length === 0) {
-      return 0.5;
-    }
-
-    const parsed = parseNonNegativeNumber(raw);
-    return parsed ?? 0.5;
-  }
-
-  async function readGlobalCostTotal() {
-    try {
-      const report = await apiFetch<CostReport>('/api/costs');
-      lastKnownGlobalCostUsd = report.summary.totalCost;
-      return report.summary.totalCost;
-    } catch {
-      lastKnownGlobalCostUsd = agentSnapshot.usage.totalCost;
-      return lastKnownGlobalCostUsd;
-    }
   }
 
   function showBanner(message: string, tone: 'info' | 'success' | 'error') {
@@ -2433,23 +2134,7 @@
       />
     {/if}
 
-    {#if view === 'costs'}
-      <CostView
-        report={costReport}
-        loading={costLoading}
-        selectedRepo={costRepoFilter}
-        selectedModel={costModelFilter}
-        fromDate={costFromDate}
-        toDate={costToDate}
-        selectedPreset={costPreset}
-        on:refresh={() => void loadCosts()}
-        on:setRepo={(event) => updateCostRepoFilter(event.detail.value)}
-        on:setModel={(event) => updateCostModelFilter(event.detail.value)}
-        on:setFrom={(event) => updateCostFromDate(event.detail.value)}
-        on:setTo={(event) => updateCostToDate(event.detail.value)}
-        on:applyPreset={(event) => applyCostPreset(event.detail.value)}
-      />
-    {:else if view === 'logs'}
+    {#if view === 'logs'}
       <LogView
         entries={logEntries}
         loading={logLoading}
@@ -2480,7 +2165,6 @@
           runtimePhase={agentSnapshot.runtimePhase}
           pendingMessageCount={agentSnapshot.pendingMessageCount}
           canAbort={agentSnapshot.runtimePhase !== 'idle'}
-          showKeepRunning={keepRunningRequired}
           lastError={agentSnapshot.lastError}
           usage={agentSnapshot.usage}
           prefillPrompt={composerPrefill}
@@ -2490,7 +2174,6 @@
           interactivePrompt={agentSnapshot.interactivePrompt}
           on:submit={(event) => handleChatSubmit(event.detail.prompt)}
           on:abort={abortRun}
-          on:keepRunning={allowKeepRunning}
           on:newSession={() => void startNewChatFromComposer()}
           on:openCommands={() => void openCommandPalette()}
           on:openModelCommands={() => void openCommandPalette('/model')}
@@ -2601,32 +2284,22 @@
       </section>
     {/if}
 
-    <BottomNav currentView={view === 'costs' || view === 'logs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => navigateMainView(event.detail.view)} />
+    <BottomNav currentView={view === 'logs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => navigateMainView(event.detail.view)} />
     <AppMenu
       open={menuOpen}
       currentRepo={currentRepo}
       theme={theme}
-      followUpCostGuardEnabled={followUpCostGuardEnabled}
-      followUpCostGuardEnabledHasOverride={followUpCostGuardEnabledHasOverride}
-      followUpCostSoftLimitUsd={followUpCostSoftLimitUsd}
-      followUpCostSoftLimitUsdDefault={defaultFollowUpCostSoftLimitUsd}
-      followUpCostSoftLimitHasOverride={followUpCostSoftLimitHasOverride}
       on:close={() => (menuOpen = false)}
       on:chooseRepo={() => {
         menuOpen = false;
         workspaceOpen = true;
       }}
-      on:openCosts={() => void openCostView()}
       on:openLogs={() => void openLogView()}
       on:openPiLogin={() => {
         menuOpen = false;
         void openPiLogin();
       }}
       on:setTheme={(event) => setTheme(event.detail.value)}
-      on:setFollowUpCostGuardEnabled={(event) => setFollowUpCostGuardEnabled(event.detail.value)}
-      on:resetFollowUpCostGuardEnabled={resetFollowUpCostGuardEnabled}
-      on:setFollowUpCostSoftLimitUsd={(event) => setFollowUpCostSoftLimitUsd(event.detail.value)}
-      on:resetFollowUpCostSoftLimitUsd={resetFollowUpCostSoftLimitUsd}
       on:logout={logout}
     />
     <PiLoginModal

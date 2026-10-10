@@ -29,7 +29,6 @@ export default defineConfig({
       PORT: "3200",
       APP_PASSWORD: "test-password",
       WORKSPACE_ROOT: workspaceRoot,
-      COSTS_DB_PATH: path.join(workspaceRoot, ".pi-mobile", "costs.sqlite"),
       LOGS_DIR: path.join(workspaceRoot, ".pi-mobile", "logs"),
       PI_AGENT_DIR: path.join(workspaceRoot, ".pi-mobile", "agent"),
       PI_SESSION_DIR: path.join(workspaceRoot, ".pi-mobile", "sessions"),

@@ -5,10 +5,10 @@ import type { WebsocketEnvelope } from "../shared/contracts.js";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { AuthService } from "./services/auth-service.js";
-import { CostService } from "./services/cost-service.js";
 import { FileService } from "./services/file-service.js";
 import { GitService } from "./services/git-service.js";
 import { LogService } from "./services/log-service.js";
+import { ModelUsageStore } from "./services/model-usage-store.js";
 import { PiAgentService } from "./services/pi-agent-service.js";
 import { PiAuthService } from "./services/pi-auth-service.js";
 import { ResourceHealthService } from "./services/resource-health-service.js";
@@ -26,7 +26,6 @@ const logService = new LogService({
 });
 const bootstrapLog = logService.child({ source: "bootstrap" });
 const authService = new AuthService(config.appPassword);
-const costService = new CostService(config.costsDbPath);
 const resourceHealthService = new ResourceHealthService(config);
 const gitIdentity = config.gitUserName && config.gitUserEmail ? { name: config.gitUserName, email: config.gitUserEmail } : undefined;
 const gitRuntimeEnv = createGitRuntimeEnv({
@@ -57,7 +56,7 @@ const piAgentService = new PiAgentService(
   (event) => {
     websocketHub.broadcast(event);
   },
-  costService,
+  new ModelUsageStore(config.modelUsagePath, logService.child({ source: "model-usage" })),
   logService.child({ source: "pi-agent" }),
 );
 
@@ -91,7 +90,6 @@ const app = createApp({
   repositoryRuntimeService,
   fileService: new FileService(),
   gitService,
-  costService,
   resourceHealthService,
   piAgentService,
   piAuthService,

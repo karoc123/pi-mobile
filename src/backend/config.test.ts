@@ -59,7 +59,7 @@ describe("loadConfig", () => {
       NODE_ENV: "production",
     });
 
-    expect(config.costsDbPath).toBe("/data/db/costs.sqlite");
+    expect(config.modelUsagePath).toBe("/data/db/model-usage.json");
     expect(config.logsDirPath).toBe("/data/db/logs");
     expect(config.piAgentDir).toBe("/data/pi/agent");
     expect(config.piSessionDir).toBe("/data/pi/sessions");
