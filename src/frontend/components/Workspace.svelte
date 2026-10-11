@@ -279,3 +279,77 @@
     }}
   />
 </main>
+
+<style>
+  .app-shell {
+    min-height: 100vh;
+    padding: 1.25rem 1rem 6.5rem;
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+  }
+
+  .app-chrome-actions {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .menu-trigger,
+  .status-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.25rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    color: var(--ink);
+    backdrop-filter: blur(8px);
+    font-weight: 500;
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+
+  .status-trigger {
+    padding: 0.4rem;
+    width: 2.25rem;
+  }
+
+  .status-trigger svg {
+    display: block;
+  }
+
+  .menu-trigger:hover,
+  .status-trigger:hover {
+    background: var(--surface-strong);
+    border-color: var(--accent);
+  }
+
+  .hero-card {
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    width: min(100%, 34rem);
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .hero-card h2 {
+    margin: 0.25rem 0;
+  }
+
+  @media (min-width: 860px) {
+    .app-shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding-bottom: 2rem;
+    }
+  }
+</style>
