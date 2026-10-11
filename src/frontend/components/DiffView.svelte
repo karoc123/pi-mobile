@@ -1,162 +1,254 @@
 <script lang="ts">
   import 'diff2html/bundles/css/diff2html.min.css';
 
-  import { createEventDispatcher } from 'svelte';
-
   import type {
     DiffFile,
+    GitBranchesResponse,
     GitBranchInfo,
+    GitCommitResult,
+    GitDiffResponse,
     GitRemoteSyncStatus,
-  } from '../../../src/shared/contracts.js';
+    GitSyncResult,
+  } from '../../shared/contracts.js';
+  import { api, apiFetch, run } from '../lib/api.js';
   import { renderDiff } from '../lib/diff.js';
+  import { toast } from '../lib/toast.svelte.js';
+  import Sheet from './Sheet.svelte';
 
-  export let files: DiffFile[] = [];
-  export let loading = false;
-  export let syncStatus: GitRemoteSyncStatus | null = null;
-  export let revertingHunkId: string | null = null;
-  export let stagingHunkId: string | null = null;
-  export let unstagingHunkId: string | null = null;
-  export let stagingAll = false;
-  export let unstagingAll = false;
-  export let committing = false;
-  export let pulling = false;
-  export let pushing = false;
-  export let branches: GitBranchInfo[] = [];
-  export let branchesLoading = false;
-  export let switchingBranch = false;
-  export let creatingBranch = false;
-
-  const dispatch = createEventDispatcher<{
-    revert: { diff: string; hunkId: string };
-    stageHunk: { diff: string; hunkId: string };
-    unstageHunk: { diff: string; hunkId: string };
-    stageAll: void;
-    unstageAll: void;
-    pull: void;
-    push: void;
-    commit: void;
-    branchSwitch: { name: string };
-    branchCreate: { name: string };
-    loadBranches: void;
-  }>();
-
-  let actionsOpen = false;
-  let branchActionMode: 'menu' | 'switch' | 'create' = 'menu';
-  let branchToCreate = '';
-
-  $: allHunks = files.flatMap((file) => file.hunks);
-  $: stagedHunkCount = allHunks.filter((hunk) => hunk.staged).length;
-  $: unstagedHunkCount = allHunks.length - stagedHunkCount;
-  $: actionsBusy =
-    loading ||
-    pulling ||
-    pushing ||
-    committing ||
-    stagingAll ||
-    unstagingAll ||
-    switchingBranch ||
-    creatingBranch;
-  $: syncHeadline = describeSyncHeadline(syncStatus);
-  $: pullLabel = pulling
-    ? 'Pulling…'
-    : buildActionLabel('Pull', '↓', syncStatus?.behind ?? 0, Boolean(syncStatus?.hasUpstream));
-  $: pushLabel = pushing
-    ? 'Pushing…'
-    : buildActionLabel('Push', '↑', syncStatus?.ahead ?? 0, Boolean(syncStatus?.hasUpstream));
-
-  function triggerPull() {
-    closeOverlays();
-    dispatch('pull');
+  interface Props {
+    active?: boolean;
+    workspaceChange?: unknown;
+    onworkspacechange?: (path?: string) => void;
   }
 
-  function triggerPush() {
-    closeOverlays();
-    dispatch('push');
+  const { active = false, workspaceChange = null, onworkspacechange = () => {} }: Props = $props();
+
+  let files = $state<DiffFile[]>([]);
+  let syncStatus = $state<GitRemoteSyncStatus | null>(null);
+  let loading = $state(false);
+  let busy = $state<string | null>(null);
+
+  let actionsOpen = $state(false);
+  let branchSheetMode = $state<'switch' | 'create' | null>(null);
+  let branches = $state<GitBranchInfo[]>([]);
+  let branchToCreate = $state('');
+
+  const allHunks = $derived(files.flatMap((file) => file.hunks));
+  const stagedHunkCount = $derived(allHunks.filter((hunk) => hunk.staged).length);
+  const unstagedHunkCount = $derived(allHunks.length - stagedHunkCount);
+  const syncHeadline = $derived(describeSyncHeadline(syncStatus));
+  const pullLabel = $derived(
+    busy === 'pull'
+      ? 'Pulling…'
+      : buildActionLabel('Pull', '↓', syncStatus?.behind ?? 0, Boolean(syncStatus?.hasUpstream)),
+  );
+  const pushLabel = $derived(
+    busy === 'push'
+      ? 'Pushing…'
+      : buildActionLabel('Push', '↑', syncStatus?.ahead ?? 0, Boolean(syncStatus?.hasUpstream)),
+  );
+
+  export async function loadDiff() {
+    loading = true;
+    try {
+      const response = await apiFetch<GitDiffResponse>('/api/git/diff');
+      files = response.files;
+      syncStatus = response.sync;
+    } catch {
+      files = [];
+      syncStatus = null;
+    } finally {
+      loading = false;
+    }
   }
 
-  function triggerCommit() {
-    closeOverlays();
-    dispatch('commit');
+  $effect(() => {
+    if (active) {
+      void loadDiff();
+    }
+  });
+
+  $effect(() => {
+    if (workspaceChange !== null && active) {
+      void loadDiff();
+    }
+  });
+
+  async function applyHunkAction(
+    diff: string,
+    hunkId: string,
+    action: 'stage' | 'unstage' | 'revert',
+  ) {
+    const successMsg =
+      action === 'stage'
+        ? 'Hunk staged.'
+        : action === 'unstage'
+          ? 'Hunk unstaged.'
+          : 'Hunk reverted.';
+
+    await run(
+      async () => {
+        await api.post('/api/git/hunk', { diff, action });
+        await loadDiff();
+        if (action === 'revert') {
+          onworkspacechange();
+        }
+      },
+      successMsg,
+      (isBusy) => {
+        busy = isBusy ? `hunk:${action}:${hunkId}` : null;
+      },
+    );
   }
 
-  function triggerStageAll() {
-    closeOverlays();
-    dispatch('stageAll');
+  async function triggerStageAll() {
+    actionsOpen = false;
+    await run(
+      async () => {
+        await api.post('/api/git/stage-all');
+        await loadDiff();
+      },
+      'All changes staged.',
+      (isBusy) => {
+        busy = isBusy ? 'stage-all' : null;
+      },
+    );
   }
 
-  function triggerUnstageAll() {
-    closeOverlays();
-    dispatch('unstageAll');
+  async function triggerUnstageAll() {
+    actionsOpen = false;
+    await run(
+      async () => {
+        await api.post('/api/git/unstage-all');
+        await loadDiff();
+      },
+      'All changes unstaged.',
+      (isBusy) => {
+        busy = isBusy ? 'unstage-all' : null;
+      },
+    );
+  }
+
+  async function triggerPull() {
+    actionsOpen = false;
+    await run(
+      async () => {
+        const response = await api.post<GitSyncResult>('/api/git/pull');
+        await loadDiff();
+        return response;
+      },
+      (res) => res.summary || 'Pull completed.',
+      (isBusy) => {
+        busy = isBusy ? 'pull' : null;
+      },
+    );
+  }
+
+  async function triggerPush() {
+    actionsOpen = false;
+    await run(
+      async () => {
+        const response = await api.post<GitSyncResult>('/api/git/push');
+        await loadDiff();
+        return response;
+      },
+      (res) => res.summary || 'Push completed.',
+      (isBusy) => {
+        busy = isBusy ? 'push' : null;
+      },
+    );
+  }
+
+  async function triggerCommit() {
+    actionsOpen = false;
+    const input = window.prompt('Commit message', '');
+    if (input === null) {
+      return;
+    }
+    const trimmed = input.trim();
+    if (!trimmed) {
+      toast.show('Commit message is required.', 'error');
+      return;
+    }
+
+    await run(
+      async () => {
+        const res = await api.post<GitCommitResult>('/api/git/commit', { message: trimmed });
+        await loadDiff();
+        onworkspacechange();
+        return res;
+      },
+      (res) => `Committed ${res.commitSha.slice(0, 7)}.`,
+      (isBusy) => {
+        busy = isBusy ? 'commit' : null;
+      },
+    );
+  }
+
+  async function loadBranches() {
+    await run(
+      async () => {
+        const res = await apiFetch<GitBranchesResponse>('/api/git/branches');
+        branches = res.branches;
+      },
+      undefined,
+      (isBusy) => {
+        busy = isBusy ? 'branches' : null;
+      },
+    );
   }
 
   function openBranchSwitch() {
     actionsOpen = false;
-    branchActionMode = 'switch';
-    dispatch('loadBranches');
+    branchSheetMode = 'switch';
+    void loadBranches();
   }
 
   function openBranchCreate() {
     actionsOpen = false;
-    branchActionMode = 'create';
+    branchSheetMode = 'create';
     branchToCreate = '';
   }
 
-  function triggerSwitchBranch(name: string) {
-    closeOverlays();
-    dispatch('branchSwitch', { name });
+  function closeBranchSheet() {
+    branchSheetMode = null;
+    branchToCreate = '';
   }
 
-  function triggerCreateBranch() {
-    const trimmed = branchToCreate.trim();
+  async function triggerSwitchBranch(name: string) {
+    await run(
+      async () => {
+        await api.post('/api/git/branch/switch', { name });
+        closeBranchSheet();
+        await loadDiff();
+        onworkspacechange();
+      },
+      `Switched to ${name}.`,
+      (isBusy) => {
+        busy = isBusy ? 'switch-branch' : null;
+      },
+    );
+  }
 
+  async function triggerCreateBranch(event: SubmitEvent) {
+    event.preventDefault();
+    const trimmed = branchToCreate.trim();
     if (!trimmed) {
       return;
     }
 
-    closeOverlays();
-    dispatch('branchCreate', { name: trimmed });
-  }
-
-  function closeOverlays() {
-    actionsOpen = false;
-    branchActionMode = 'menu';
-    branchToCreate = '';
-  }
-
-  function handleWindowClick(event: MouseEvent) {
-    if (!actionsOpen && branchActionMode === 'menu') {
-      return;
-    }
-
-    const target = event.target;
-    if (!(target instanceof Element)) {
-      return;
-    }
-
-    // Close dropdown menu when clicking outside
-    if (branchActionMode === 'menu') {
-      if (!target.closest('.diff-actions') && !target.closest('.diff-actions-menu')) {
-        actionsOpen = false;
-      }
-      return;
-    }
-
-    // Overlay is open. Don't close if click originated from the actions dropdown
-    // (transition from menu to branch-switch/create overlay).
-    if (target.closest('.diff-actions-menu')) {
-      return;
-    }
-
-    // Close overlay when clicking outside the sheet
-    if (!target.closest('.branch-sheet')) {
-      closeOverlays();
-    }
-  }
-
-  function handleWindowKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      closeOverlays();
-    }
+    await run(
+      async () => {
+        await api.post('/api/git/branch/create', { name: trimmed });
+        closeBranchSheet();
+        await loadDiff();
+        onworkspacechange();
+      },
+      `Created branch ${trimmed}.`,
+      (isBusy) => {
+        busy = isBusy ? 'create-branch' : null;
+      },
+    );
   }
 
   function describeSyncHeadline(status: GitRemoteSyncStatus | null) {
@@ -189,8 +281,6 @@
   }
 </script>
 
-<svelte:window on:click={handleWindowClick} on:keydown={handleWindowKeydown} />
-
 <section class="view-shell diff-view">
   <div class="section-header">
     <div>
@@ -207,8 +297,8 @@
           type="button"
           aria-expanded={actionsOpen}
           aria-label="Open git actions"
-          disabled={actionsBusy}
-          on:click={() => (actionsOpen = !actionsOpen)}
+          disabled={Boolean(busy)}
+          onclick={() => (actionsOpen = !actionsOpen)}
         >
           Actions
         </button>
@@ -219,26 +309,26 @@
               class="secondary-button"
               type="button"
               role="menuitem"
-              disabled={actionsBusy || unstagedHunkCount === 0}
-              on:click={triggerStageAll}
+              disabled={Boolean(busy) || unstagedHunkCount === 0}
+              onclick={triggerStageAll}
             >
-              {stagingAll ? 'Staging all…' : `Stage all (${unstagedHunkCount})`}
+              {busy === 'stage-all' ? 'Staging all…' : `Stage all (${unstagedHunkCount})`}
             </button>
             <button
               class="secondary-button"
               type="button"
               role="menuitem"
-              disabled={actionsBusy || stagedHunkCount === 0}
-              on:click={triggerUnstageAll}
+              disabled={Boolean(busy) || stagedHunkCount === 0}
+              onclick={triggerUnstageAll}
             >
-              {unstagingAll ? 'Unstaging all…' : `Unstage all (${stagedHunkCount})`}
+              {busy === 'unstage-all' ? 'Unstaging all…' : `Unstage all (${stagedHunkCount})`}
             </button>
             <button
               class="secondary-button"
               type="button"
               role="menuitem"
-              disabled={actionsBusy}
-              on:click={triggerPull}
+              disabled={Boolean(busy)}
+              onclick={triggerPull}
             >
               {pullLabel}
             </button>
@@ -246,8 +336,8 @@
               class="secondary-button"
               type="button"
               role="menuitem"
-              disabled={actionsBusy}
-              on:click={triggerPush}
+              disabled={Boolean(busy)}
+              onclick={triggerPush}
             >
               {pushLabel}
             </button>
@@ -255,8 +345,8 @@
               class="secondary-button"
               type="button"
               role="menuitem"
-              disabled={actionsBusy}
-              on:click={openBranchSwitch}
+              disabled={Boolean(busy)}
+              onclick={openBranchSwitch}
             >
               Switch branch…
             </button>
@@ -264,8 +354,8 @@
               class="secondary-button"
               type="button"
               role="menuitem"
-              disabled={actionsBusy}
-              on:click={openBranchCreate}
+              disabled={Boolean(busy)}
+              onclick={openBranchCreate}
             >
               Create branch…
             </button>
@@ -273,10 +363,10 @@
               class="primary-button"
               type="button"
               role="menuitem"
-              disabled={actionsBusy || stagedHunkCount === 0}
-              on:click={triggerCommit}
+              disabled={Boolean(busy) || stagedHunkCount === 0}
+              onclick={triggerCommit}
             >
-              {committing ? 'Committing…' : 'Commit staged'}
+              {busy === 'commit' ? 'Committing…' : 'Commit staged'}
             </button>
           </div>
         {/if}
@@ -284,101 +374,67 @@
     </div>
   </div>
 
-  {#if branchActionMode !== 'menu'}
-    <div class="overlay" role="presentation" on:click={closeOverlays}>
-      {#if branchActionMode === 'switch'}
-        <div
-          class="sheet-card branch-sheet"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Switch branch"
-          tabindex="-1"
-          on:click|stopPropagation
-          on:keydown|stopPropagation
+  <Sheet
+    open={branchSheetMode === 'switch'}
+    title="Switch branch"
+    eyebrow="Git branch"
+    onclose={closeBranchSheet}
+  >
+    {#if busy === 'branches'}
+      <p class="empty-state small">Loading branches...</p>
+    {:else if branches.length === 0}
+      <p class="empty-state small">No branches found.</p>
+    {:else}
+      <div class="branch-list">
+        {#each branches as branch (branch.name)}
+          <button
+            class="branch-item"
+            class:current={branch.current}
+            type="button"
+            disabled={branch.current || busy === 'switch-branch'}
+            onclick={() => triggerSwitchBranch(branch.name)}
+          >
+            <strong>{branch.name}</strong>
+            {#if branch.current}
+              <span class="branch-current-badge">current</span>
+            {:else if busy === 'switch-branch'}
+              <span>Switching...</span>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </Sheet>
+
+  <Sheet
+    open={branchSheetMode === 'create'}
+    title="Create branch"
+    eyebrow="Git branch"
+    onclose={closeBranchSheet}
+  >
+    <form class="branch-create-form" onsubmit={triggerCreateBranch}>
+      <label class="field-label" for="new-branch-name">Branch name</label>
+      <input
+        id="new-branch-name"
+        class="text-input"
+        bind:value={branchToCreate}
+        placeholder="feature/my-new-feature"
+        autocomplete="off"
+      />
+      <p class="empty-state small">Creates a new branch from the current HEAD.</p>
+
+      <div class="branch-create-footer">
+        <button class="ghost-button" type="button" onclick={closeBranchSheet}>Back</button>
+        <button
+          class="primary-button"
+          type="submit"
+          disabled={!branchToCreate.trim() || busy === 'create-branch'}
         >
-          <div class="branch-sheet-header">
-            <div>
-              <p class="eyebrow">Git branch</p>
-              <h3>Switch branch</h3>
-            </div>
-            <button class="ghost-button" type="button" on:click={closeOverlays}>Close</button>
-          </div>
-
-          {#if branchesLoading}
-            <p class="empty-state small">Loading branches...</p>
-          {:else if branches.length === 0}
-            <p class="empty-state small">No branches found.</p>
-          {:else}
-            <div class="branch-list">
-              {#each branches as branch (branch.name)}
-                <button
-                  class="branch-item"
-                  class:current={branch.current}
-                  type="button"
-                  disabled={branch.current || switchingBranch}
-                  on:click={() => triggerSwitchBranch(branch.name)}
-                >
-                  <strong>{branch.name}</strong>
-                  {#if branch.current}
-                    <span class="branch-current-badge">current</span>
-                  {:else if switchingBranch}
-                    <span>Switching...</span>
-                  {/if}
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {:else if branchActionMode === 'create'}
-        <div
-          class="sheet-card branch-sheet"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Create branch"
-          tabindex="-1"
-          on:click|stopPropagation
-          on:keydown|stopPropagation
-        >
-          <div class="branch-sheet-header">
-            <div>
-              <p class="eyebrow">Git branch</p>
-              <h3>Create branch</h3>
-            </div>
-            <button class="ghost-button" type="button" on:click={closeOverlays}>Close</button>
-          </div>
-
-          <form class="branch-create-form" on:submit|preventDefault={triggerCreateBranch}>
-            <label class="field-label" for="new-branch-name">Branch name</label>
-            <!-- svelte-ignore a11y_autofocus -->
-            <input
-              id="new-branch-name"
-              class="text-input"
-              bind:value={branchToCreate}
-              placeholder="feature/my-new-feature"
-              autocomplete="off"
-              autofocus
-            />
-            <p class="empty-state small">Creates a new branch from the current HEAD.</p>
-
-            <div class="branch-create-footer">
-              <button
-                class="ghost-button"
-                type="button"
-                on:click={() => (branchActionMode = 'menu')}>Back</button
-              >
-              <button
-                class="primary-button"
-                type="submit"
-                disabled={!branchToCreate.trim() || creatingBranch}
-              >
-                {creatingBranch ? 'Creating...' : 'Create branch'}
-              </button>
-            </div>
-          </form>
-        </div>
-      {/if}
-    </div>
-  {/if}
+          {busy === 'create-branch' ? 'Creating...' : 'Create branch'}
+        </button>
+      </div>
+    </form>
+  </Sheet>
 
   {#if loading}
     <div class="empty-state-card">
@@ -419,29 +475,28 @@
                       <button
                         class="secondary-button"
                         type="button"
-                        disabled={unstagingHunkId === hunk.id || actionsBusy}
-                        on:click={() =>
-                          dispatch('unstageHunk', { diff: hunk.diff, hunkId: hunk.id })}
+                        disabled={Boolean(busy)}
+                        onclick={() => applyHunkAction(hunk.diff, hunk.id, 'unstage')}
                       >
-                        {unstagingHunkId === hunk.id ? 'Unstaging...' : 'Unstage hunk'}
+                        {busy === `hunk:unstage:${hunk.id}` ? 'Unstaging...' : 'Unstage hunk'}
                       </button>
                     {:else}
                       <button
                         class="secondary-button"
                         type="button"
-                        disabled={stagingHunkId === hunk.id || actionsBusy}
-                        on:click={() => dispatch('stageHunk', { diff: hunk.diff, hunkId: hunk.id })}
+                        disabled={Boolean(busy)}
+                        onclick={() => applyHunkAction(hunk.diff, hunk.id, 'stage')}
                       >
-                        {stagingHunkId === hunk.id ? 'Staging...' : 'Stage hunk'}
+                        {busy === `hunk:stage:${hunk.id}` ? 'Staging...' : 'Stage hunk'}
                       </button>
                     {/if}
                     <button
                       class="secondary-button"
                       type="button"
-                      disabled={revertingHunkId === hunk.id}
-                      on:click={() => dispatch('revert', { diff: hunk.diff, hunkId: hunk.id })}
+                      disabled={Boolean(busy)}
+                      onclick={() => applyHunkAction(hunk.diff, hunk.id, 'revert')}
                     >
-                      {revertingHunkId === hunk.id ? 'Reverting...' : 'Revert hunk'}
+                      {busy === `hunk:revert:${hunk.id}` ? 'Reverting...' : 'Revert hunk'}
                     </button>
                   </div>
                 </div>
@@ -455,3 +510,426 @@
     </div>
   {/if}
 </section>
+
+<style>
+  .diff-view {
+    color: var(--ink);
+  }
+
+  .diff-view .eyebrow {
+    color: var(--muted);
+  }
+
+  .diff-view .section-header {
+    align-items: end;
+  }
+
+  .diff-actions {
+    position: relative;
+  }
+
+  .diff-actions-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.45rem);
+    z-index: 4;
+    min-width: 11.5rem;
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: 0.35rem;
+    background: var(--surface);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  }
+
+  .diff-actions-menu .primary-button,
+  .diff-actions-menu .secondary-button {
+    width: 100%;
+    text-align: left;
+  }
+
+  .diff-view .status-pill,
+  .diff-view .primary-button,
+  .diff-view .secondary-button {
+    background: var(--surface);
+    border-color: var(--line);
+    color: var(--ink);
+  }
+
+  .diff-view .primary-button:hover,
+  .diff-view .secondary-button:hover {
+    background: var(--surface-strong);
+  }
+
+  .diff-stack {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .diff-card,
+  .empty-state-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-color: var(--line);
+    color: var(--ink);
+    border-radius: 0.4rem;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  }
+
+  .diff-card {
+    display: grid;
+    gap: 0.9rem;
+    padding: 1rem;
+  }
+
+  .diff-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.75rem;
+  }
+
+  .empty-state-card p,
+  .diff-card-header p {
+    color: var(--muted);
+    margin: 0;
+  }
+
+  .diff-card h3,
+  .hunk-toolbar code {
+    margin: 0;
+  }
+
+  .hunk-stack {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .hunk-card {
+    background: var(--surface-strong);
+    border: 1px solid var(--line);
+    border-color: var(--line);
+    color: var(--ink);
+    border-radius: 0.22rem;
+    padding: 0.85rem;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  }
+
+  .hunk-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    padding-bottom: 0.7rem;
+    margin-bottom: 0.8rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 30%, transparent);
+  }
+
+  .hunk-toolbar-main {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+
+  .hunk-toolbar-actions {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+
+  .hunk-toolbar code {
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--line) 10%, transparent);
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.2rem;
+  }
+
+  .hunk-stage-badge {
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--muted);
+    padding: 0.16rem 0.5rem;
+    font-size: 0.67rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .hunk-stage-badge.staged {
+    border-color: var(--diff-added-border);
+    background: color-mix(in srgb, var(--diff-added-bg) 70%, var(--surface));
+    color: var(--diff-added-text);
+  }
+
+  .hunk-stage-badge.unstaged {
+    border-color: color-mix(in srgb, var(--warning) 80%, var(--line));
+    background: color-mix(in srgb, var(--diff-change-bg) 68%, var(--surface));
+    color: var(--ink);
+  }
+
+  .diff-html {
+    --d2h-bg-color: var(--surface-strong);
+    --d2h-border-color: var(--line);
+    --d2h-dim-color: var(--diff-dim);
+    --d2h-line-border-color: color-mix(in srgb, var(--line) 50%, transparent);
+    --d2h-file-header-bg-color: var(--surface-raised);
+    --d2h-file-header-border-color: var(--line);
+    --d2h-empty-placeholder-bg-color: var(--diff-gutter);
+    --d2h-empty-placeholder-border-color: var(--line);
+    --d2h-ins-bg-color: var(--diff-added-bg);
+    --d2h-ins-border-color: var(--diff-added-border);
+    --d2h-ins-highlight-bg-color: var(--diff-added-highlight);
+    --d2h-ins-label-color: var(--diff-added-text);
+    --d2h-del-bg-color: var(--diff-removed-bg);
+    --d2h-del-border-color: var(--diff-removed-border);
+    --d2h-del-highlight-bg-color: var(--diff-removed-highlight);
+    --d2h-del-label-color: var(--diff-removed-text);
+    --d2h-change-del-color: var(--diff-change-bg);
+    --d2h-change-ins-color: var(--diff-added-highlight);
+    --d2h-info-bg-color: var(--diff-info-bg);
+    --d2h-info-border-color: var(--diff-info-border);
+    --d2h-change-label-color: var(--accent-strong);
+    --d2h-moved-label-color: var(--accent-strong);
+    font-family: 'IBM Plex Mono', 'Consolas', 'Liberation Mono', monospace;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .diff-html :global(.d2h-wrapper),
+  .diff-html :global(.d2h-file-wrapper),
+  .diff-html :global(.d2h-file-diff) {
+    border-radius: 0.22rem;
+    overflow: hidden;
+  }
+
+  .diff-html :global(.d2h-file-wrapper) {
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
+  }
+
+  .diff-html :global(.d2h-code-line),
+  .diff-html :global(.d2h-code-side-line),
+  .diff-html :global(.d2h-code-line-ctn),
+  .diff-html :global(.d2h-code-side-line-ctn),
+  .diff-html :global(.d2h-code-line-prefix),
+  .diff-html :global(.d2h-code-linenumber),
+  .diff-html :global(.d2h-code-side-linenumber) {
+    font-family: inherit;
+  }
+
+  .diff-html :global(.d2h-code-linenumber),
+  .diff-html :global(.d2h-code-side-linenumber) {
+    background: var(--diff-gutter);
+    color: var(--diff-dim);
+  }
+
+  .diff-html :global(.d2h-ins),
+  .diff-html :global(.d2h-ins .d2h-code-line-ctn),
+  .diff-html :global(.d2h-ins .d2h-code-side-line-ctn),
+  .diff-html :global(.d2h-added),
+  .diff-html :global(.d2h-lines-added) {
+    color: var(--diff-added-text);
+  }
+
+  .diff-html :global(.d2h-del),
+  .diff-html :global(.d2h-del .d2h-code-line-ctn),
+  .diff-html :global(.d2h-del .d2h-code-side-line-ctn),
+  .diff-html :global(.d2h-deleted),
+  .diff-html :global(.d2h-lines-deleted) {
+    color: var(--diff-removed-text);
+  }
+
+  .diff-html :global(.d2h-info),
+  .diff-html :global(.d2h-emptyplaceholder),
+  .diff-html :global(.d2h-code-side-emptyplaceholder) {
+    color: var(--diff-dim);
+  }
+
+  .diff-html :global(.d2h-wrapper) {
+    margin: 0;
+  }
+
+  .diff-html :global(.d2h-file-header),
+  .diff-html :global(.d2h-file-list-wrapper) {
+    display: none;
+  }
+
+  .diff-html :global(.d2h-diff-table) {
+    font-size: 0.85rem;
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  .diff-html :global(.d2h-code-wrapper),
+  .diff-html :global(.d2h-file-diff),
+  .diff-html :global(.d2h-file-side-diff) {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .diff-html :global(.d2h-code-linenumber),
+  .diff-html :global(.d2h-code-side-linenumber) {
+    display: table-cell;
+    position: static;
+    width: clamp(5.25rem, 10vw, 7.5rem);
+    min-width: clamp(5.25rem, 10vw, 7.5rem);
+    max-width: clamp(5.25rem, 10vw, 7.5rem);
+    padding: 0 0.45rem;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    vertical-align: top;
+    white-space: nowrap;
+    direction: ltr;
+  }
+
+  .diff-html :global(.d2h-code-linenumber .line-num1),
+  .diff-html :global(.d2h-code-linenumber .line-num2),
+  .diff-html :global(.d2h-code-side-linenumber .line-num1),
+  .diff-html :global(.d2h-code-side-linenumber .line-num2) {
+    float: none;
+    display: inline-block;
+    width: auto;
+    max-width: 100%;
+    padding: 0;
+  }
+
+  .diff-html :global(.d2h-code-linenumber .line-num1),
+  .diff-html :global(.d2h-code-side-linenumber .line-num1) {
+    margin-right: 0.35rem;
+  }
+
+  .diff-html :global(.d2h-code-line),
+  .diff-html :global(.d2h-code-side-line) {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0 0.45rem;
+    box-sizing: border-box;
+    white-space: normal !important;
+  }
+
+  .diff-html :global(.d2h-code-line-prefix) {
+    flex: 0 0 auto;
+    white-space: pre;
+  }
+
+  .diff-html :global(.d2h-code-line-ctn),
+  .diff-html :global(.d2h-code-side-line-ctn) {
+    display: block;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .diff-html :global(.d2h-code-line del),
+  .diff-html :global(.d2h-code-line ins),
+  .diff-html :global(.d2h-code-side-line del),
+  .diff-html :global(.d2h-code-side-line ins) {
+    display: inline;
+    white-space: inherit;
+  }
+
+  .branch-list {
+    display: grid;
+    gap: 0.4rem;
+    max-height: 40vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 0.2rem 0;
+  }
+
+  .branch-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 0.35rem;
+    background: var(--surface);
+    color: var(--ink);
+    text-align: left;
+    font-size: 0.88rem;
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .branch-item:disabled {
+    cursor: default;
+    opacity: 0.7;
+  }
+
+  .branch-item:not(:disabled):active {
+    background: var(--surface-strong);
+  }
+
+  .branch-item.current {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  }
+
+  .branch-current-badge {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.2rem;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .branch-create-form {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .branch-create-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    margin-top: 0.5rem;
+  }
+
+  @media (max-width: 1180px) {
+    .diff-card,
+    .hunk-card {
+      padding: 0.85rem;
+    }
+  }
+
+  @media (max-width: 540px) {
+    .diff-html :global(.d2h-code-linenumber),
+    .diff-html :global(.d2h-code-side-linenumber) {
+      width: clamp(4.5rem, 15vw, 6rem);
+      min-width: clamp(4.5rem, 15vw, 6rem);
+      max-width: clamp(4.5rem, 15vw, 6rem);
+    }
+    .diff-html :global(.line-num1),
+    .diff-html :global(.line-num2) {
+      font-size: 0.78rem;
+    }
+  }
+</style>

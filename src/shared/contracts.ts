@@ -124,6 +124,11 @@ export type GitCommitResult = {
   commitSha: string;
 };
 
+export type GitHunkActionRequest = {
+  diff: string;
+  action: 'stage' | 'unstage' | 'revert';
+};
+
 export type GitRemoteSyncStatus = {
   ahead: number;
   behind: number;

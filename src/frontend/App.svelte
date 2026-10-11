@@ -10,18 +10,11 @@
     AgentUsage,
     ChatMessage,
     ToolActivity,
-    DiffFile,
-    GitBranchesResponse,
-    GitBranchInfo,
-    GitCommitResult,
     FileCreateResult,
     FileDocument,
     FileDownloadInfo,
     FileEntry,
     FileMoveResult,
-    GitDiffResponse,
-    GitRemoteSyncStatus,
-    GitSyncResult,
     SelectedRepo,
     SessionResponse,
     WebsocketEnvelope,
@@ -30,6 +23,7 @@
   import BottomNav from './components/BottomNav.svelte';
   import ChatView from './components/ChatView.svelte';
   import CommandPalette from './components/CommandPalette.svelte';
+  import DiffView from './components/DiffView.svelte';
   import LogView from './components/LogView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import PiLoginSheet from './components/PiLoginSheet.svelte';
@@ -59,7 +53,6 @@
 
   const themeStorageKey = 'pimobile.theme';
   const agentStatePollIntervalMs = 7_000;
-  const diffRefreshDebounceMs = 450;
   const maxToolBatchCount = 8;
   const maxToolsPerBatch = 24;
 
@@ -99,23 +92,14 @@
   let currentRepo: SelectedRepo | null = null;
   let view: AppViewName = 'chat';
 
-  let diffLoading = false;
-  let diffFiles: DiffFile[] = [];
-  let diffSyncStatus: GitRemoteSyncStatus | null = null;
-  let diffRefreshPending = false;
-  let diffReloadTimer: number | null = null;
-  let revertingHunkId: string | null = null;
-  let stagingHunkId: string | null = null;
-  let unstagingHunkId: string | null = null;
-  let stagingAll = false;
-  let unstagingAll = false;
-  let committing = false;
-  let pulling = false;
-  let pushing = false;
-  let branchList: GitBranchInfo[] = [];
-  let branchListLoading = false;
-  let switchingBranch = false;
-  let creatingBranch = false;
+  let workspaceChange = { path: '', version: 0 };
+
+  function handleWorkspaceChange(path = '') {
+    workspaceChange = { path, version: workspaceChange.version + 1 };
+    if (selectedDocument && !editorDirty && (!path || selectedDocument.path === path)) {
+      void openFile(selectedDocument.path, false);
+    }
+  }
 
   let fileLoading = false;
   let filePath = '.';
@@ -154,9 +138,7 @@
   let piLoginOpen = false;
   let lazyViewLoading: AsyncViewName | null = null;
   let lazyViewError = '';
-  let diffViewComponent: ComponentType | null = null;
   let editorViewComponent: ComponentType | null = null;
-  let diffViewPromise: Promise<void> | null = null;
   let editorViewPromise: Promise<void> | null = null;
   let theme: ThemeName = 'vscode-dark';
   let commandPaletteOpen = false;
@@ -178,21 +160,8 @@
     return () => {
       stopAgentStatePolling();
       closeSocket();
-
-      if (diffReloadTimer !== null) {
-        window.clearTimeout(diffReloadTimer);
-        diffReloadTimer = null;
-      }
     };
   });
-
-  $: if (currentRepo && view === 'diff') {
-    void ensureDiffViewLoaded();
-  }
-
-  $: if (currentRepo && view === 'diff' && diffRefreshPending) {
-    scheduleDiffReload();
-  }
 
   $: if (currentRepo && view === 'editor') {
     void ensureEditorViewLoaded();
@@ -276,31 +245,6 @@
       closeSocket();
       throw error;
     }
-  }
-
-  async function ensureDiffViewLoaded() {
-    if (diffViewComponent || diffViewPromise) {
-      return diffViewPromise;
-    }
-
-    lazyViewLoading = 'diff';
-    lazyViewError = '';
-    diffViewPromise = import('./components/DiffView.svelte')
-      .then((module) => {
-        diffViewComponent = module.default;
-      })
-      .catch((error) => {
-        lazyViewError = toErrorMessage(error);
-      })
-      .finally(() => {
-        if (lazyViewLoading === 'diff') {
-          lazyViewLoading = null;
-        }
-
-        diffViewPromise = null;
-      });
-
-    return diffViewPromise;
   }
 
   async function ensureEditorViewLoaded() {
@@ -549,10 +493,7 @@
     }
 
     if (event.type === 'workspace_changed') {
-      scheduleDiffReload();
-      if (selectedDocument && !editorDirty && selectedDocument.path === event.payload.path) {
-        void openFile(selectedDocument.path);
-      }
+      handleWorkspaceChange(event.payload.path);
       return;
     }
 
@@ -580,12 +521,6 @@
       selectedDocument = null;
       draftContent = '';
       editorDirty = false;
-      diffRefreshPending = false;
-      stagingHunkId = null;
-      unstagingHunkId = null;
-      stagingAll = false;
-      unstagingAll = false;
-      revertingHunkId = null;
       filePath = '.';
       view = view === 'logs' ? view : 'chat';
       void refreshCurrentRepoData();
@@ -601,7 +536,8 @@
   }
 
   async function refreshCurrentRepoData() {
-    await Promise.all([loadDiff(), loadFiles('.'), loadAgentState(), loadCommandState()]);
+    handleWorkspaceChange();
+    await Promise.all([loadFiles('.'), loadAgentState(), loadCommandState()]);
   }
 
   function openLogView() {
@@ -663,50 +599,6 @@
     await executePaletteCommand({ command: 'new-session' });
   }
 
-  function scheduleDiffReload(force = false) {
-    if (!currentRepo) {
-      return;
-    }
-
-    if (!force && view !== 'diff') {
-      diffRefreshPending = true;
-      return;
-    }
-
-    diffRefreshPending = false;
-
-    if (diffReloadTimer !== null) {
-      window.clearTimeout(diffReloadTimer);
-    }
-
-    diffReloadTimer = window.setTimeout(() => {
-      diffReloadTimer = null;
-      void loadDiff();
-    }, diffRefreshDebounceMs);
-  }
-
-  async function loadDiff() {
-    if (!currentRepo) {
-      diffFiles = [];
-      diffSyncStatus = null;
-      diffRefreshPending = false;
-      return;
-    }
-
-    diffLoading = true;
-
-    try {
-      const response = await apiFetch<GitDiffResponse>('/api/git/diff');
-      diffFiles = response.files;
-      diffSyncStatus = response.sync;
-      diffRefreshPending = false;
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      diffLoading = false;
-    }
-  }
-
   async function loadFiles(path: string) {
     if (!currentRepo) {
       fileEntries = [];
@@ -728,7 +620,7 @@
     }
   }
 
-  async function openFile(path: string) {
+  async function openFile(path: string, switchView = true) {
     try {
       const fileDoc = await apiFetch<FileDocument>(
         `/api/files/content?path=${encodeURIComponent(path)}`,
@@ -747,7 +639,9 @@
       selectedDocument = fileDoc;
       draftContent = selectedDocument.kind === 'text' ? selectedDocument.content : '';
       editorDirty = false;
-      view = 'editor';
+      if (switchView) {
+        view = 'editor';
+      }
     } catch (error) {
       handleApiFailure(error);
     }
@@ -764,7 +658,7 @@
         selectedDocument = { ...selectedDocument!, content };
         draftContent = content;
         editorDirty = false;
-        await loadDiff();
+        handleWorkspaceChange(selectedDocument.path);
       },
       'File saved.',
       (busy) => {
@@ -956,151 +850,6 @@
     }
   }
 
-  function requestCommit() {
-    if (committing) {
-      return;
-    }
-
-    const input = window.prompt('Commit message', '');
-
-    if (input === null) {
-      return;
-    }
-
-    const trimmed = input.trim();
-
-    if (!trimmed) {
-      showBanner('Commit message is required.', 'error');
-      return;
-    }
-
-    void commitChanges(trimmed);
-  }
-
-  async function runGitAction<T>(
-    endpoint: string,
-    body: Record<string, string> | null,
-    setBusy: (busy: boolean) => void,
-    successMessage: (response: T) => string,
-  ) {
-    if (!currentRepo) {
-      showBanner('Select a repository first.', 'error');
-      return false;
-    }
-
-    const result = await run(
-      async () => {
-        const response = await api.post<T>(`/api/git/${endpoint}`, body ?? undefined);
-        await loadDiff();
-        return response;
-      },
-      (res) => successMessage(res),
-      setBusy,
-    );
-    return Boolean(result);
-  }
-
-  const commitChanges = (message: string) =>
-    runGitAction<GitCommitResult>(
-      'commit',
-      { message },
-      (busy) => (committing = busy),
-      ({ commitSha }) => `Committed ${commitSha.slice(0, 7)}.`,
-    );
-  const pullChanges = () =>
-    runGitAction<GitSyncResult>(
-      'pull',
-      null,
-      (busy) => (pulling = busy),
-      (response) => response.summary || 'Pull completed.',
-    );
-  const pushChanges = () =>
-    runGitAction<GitSyncResult>(
-      'push',
-      null,
-      (busy) => (pushing = busy),
-      (response) => response.summary || 'Push completed.',
-    );
-  const stageHunk = (diff: string, hunkId: string) =>
-    runGitAction(
-      'stage-hunk',
-      { diff },
-      (busy) => (stagingHunkId = busy ? hunkId : null),
-      () => 'Hunk staged.',
-    );
-  const unstageHunk = (diff: string, hunkId: string) =>
-    runGitAction(
-      'unstage-hunk',
-      { diff },
-      (busy) => (unstagingHunkId = busy ? hunkId : null),
-      () => 'Hunk unstaged.',
-    );
-  const stageAllChanges = () =>
-    runGitAction(
-      'stage-all',
-      null,
-      (busy) => (stagingAll = busy),
-      () => 'All changes staged.',
-    );
-  const unstageAllChanges = () =>
-    runGitAction(
-      'unstage-all',
-      null,
-      (busy) => (unstagingAll = busy),
-      () => 'All changes unstaged.',
-    );
-  const switchBranch = (name: string) =>
-    runGitAction(
-      'branch/switch',
-      { name },
-      (busy) => (switchingBranch = busy),
-      () => `Switched to ${name}.`,
-    );
-
-  async function revertHunk(diff: string, hunkId: string) {
-    const reverted = await runGitAction(
-      'revert-hunk',
-      { diff },
-      (busy) => (revertingHunkId = busy ? hunkId : null),
-      () => 'Hunk reverted.',
-    );
-
-    if (reverted && selectedDocument && !editorDirty) {
-      await openFile(selectedDocument.path);
-    }
-  }
-
-  async function createBranch(name: string) {
-    if (
-      await runGitAction(
-        'branch/create',
-        { name },
-        (busy) => (creatingBranch = busy),
-        () => `Created branch ${name}.`,
-      )
-    ) {
-      await loadBranches();
-    }
-  }
-
-  async function loadBranches() {
-    if (!currentRepo) {
-      return;
-    }
-
-    branchListLoading = true;
-
-    try {
-      const response = await apiFetch<GitBranchesResponse>('/api/git/branches');
-      branchList = response.branches;
-    } catch (error) {
-      handleApiFailure(error);
-      branchList = [];
-    } finally {
-      branchListLoading = false;
-    }
-  }
-
   function startAgentStatePolling() {
     if (agentStatePollTimer !== null) {
       return;
@@ -1155,19 +904,7 @@
     commandState = null;
     workspaceOpen = false;
     piLoginOpen = false;
-    diffFiles = [];
-    diffSyncStatus = null;
-    diffRefreshPending = false;
-    revertingHunkId = null;
-    stagingHunkId = null;
-    unstagingHunkId = null;
-    stagingAll = false;
-    unstagingAll = false;
-
-    if (diffReloadTimer !== null) {
-      window.clearTimeout(diffReloadTimer);
-      diffReloadTimer = null;
-    }
+    workspaceChange = { path: '', version: 0 };
 
     fileEntries = [];
     filePath = '.';
@@ -1303,56 +1040,11 @@
           }}
         />
       {:else if view === 'diff'}
-        {#if diffViewComponent}
-          <svelte:component
-            this={diffViewComponent}
-            files={diffFiles}
-            loading={diffLoading}
-            syncStatus={diffSyncStatus}
-            {revertingHunkId}
-            {stagingHunkId}
-            {unstagingHunkId}
-            {stagingAll}
-            {unstagingAll}
-            {committing}
-            {pulling}
-            {pushing}
-            on:commit={requestCommit}
-            on:pull={() => void pullChanges()}
-            on:push={() => void pushChanges()}
-            on:stageAll={() => void stageAllChanges()}
-            on:unstageAll={() => void unstageAllChanges()}
-            on:stageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) =>
-              stageHunk(event.detail.diff, event.detail.hunkId)}
-            on:unstageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) =>
-              unstageHunk(event.detail.diff, event.detail.hunkId)}
-            on:revert={(event: CustomEvent<{ diff: string; hunkId: string }>) =>
-              revertHunk(event.detail.diff, event.detail.hunkId)}
-            branches={branchList}
-            branchesLoading={branchListLoading}
-            {switchingBranch}
-            {creatingBranch}
-            on:loadBranches={loadBranches}
-            on:branchSwitch={(event: CustomEvent<{ name: string }>) =>
-              switchBranch(event.detail.name)}
-            on:branchCreate={(event: CustomEvent<{ name: string }>) =>
-              createBranch(event.detail.name)}
-          />
-        {:else if lazyViewLoading === 'diff'}
-          <section class="view-shell">
-            <div class="empty-state-card compact">
-              <h2>Loading diff tools...</h2>
-              <p>Diff2Html is being loaded only when you open this view.</p>
-            </div>
-          </section>
-        {:else}
-          <section class="view-shell">
-            <div class="empty-state-card compact">
-              <h2>Could not load diff view</h2>
-              <p>{lazyViewError || 'Unexpected lazy-load error.'}</p>
-            </div>
-          </section>
-        {/if}
+        <DiffView
+          active={view === 'diff'}
+          {workspaceChange}
+          onworkspacechange={handleWorkspaceChange}
+        />
       {:else}
         {#if editorViewComponent}
           <svelte:component

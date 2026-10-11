@@ -266,7 +266,7 @@ describe('GitService', () => {
     expect(initialDiff).toHaveLength(1);
     expect(initialDiff[0].hunks).toHaveLength(2);
 
-    await service.stageHunk(repo, initialDiff[0].hunks[0].diff);
+    await service.applyHunk(repo, initialDiff[0].hunks[0].diff, 'stage');
 
     const stagedDiff = await service.getDiff(repo);
     const stagedHunks = stagedDiff[0].hunks.filter((hunk) => hunk.staged);
@@ -275,7 +275,7 @@ describe('GitService', () => {
     expect(stagedHunks.length).toBeGreaterThan(0);
     expect(unstagedHunks.length).toBeGreaterThan(0);
 
-    await service.unstageHunk(repo, stagedHunks[0].diff);
+    await service.applyHunk(repo, stagedHunks[0].diff, 'unstage');
 
     const finalDiff = await service.getDiff(repo);
     expect(finalDiff[0].hunks.every((hunk) => !hunk.staged)).toBe(true);

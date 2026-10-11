@@ -384,17 +384,14 @@ export function createApp(services: AppServices) {
   );
 
   app.post(
-    '/api/git/stage-hunk',
-    repoRoute((repo, request) =>
-      services.gitService.stageHunk(repo, getBodyString(request, 'diff')),
-    ),
-  );
-
-  app.post(
-    '/api/git/unstage-hunk',
-    repoRoute((repo, request) =>
-      services.gitService.unstageHunk(repo, getBodyString(request, 'diff')),
-    ),
+    '/api/git/hunk',
+    repoRoute((repo, request) => {
+      const action = getBodyString(request, 'action');
+      if (action !== 'stage' && action !== 'unstage' && action !== 'revert') {
+        throw new HttpError(400, 'bad_request', 'Action must be stage, unstage, or revert.');
+      }
+      return services.gitService.applyHunk(repo, getBodyString(request, 'diff'), action);
+    }),
   );
 
   app.post(
@@ -405,13 +402,6 @@ export function createApp(services: AppServices) {
   app.post(
     '/api/git/unstage-all',
     repoRoute((repo) => services.gitService.unstageAll(repo)),
-  );
-
-  app.post(
-    '/api/git/revert-hunk',
-    repoRoute((repo, request) =>
-      services.gitService.revertHunk(repo, getBodyString(request, 'diff')),
-    ),
   );
 
   app.get(

@@ -56,23 +56,29 @@ export class GitService {
     };
   }
 
-  async revertHunk(repo: SelectedRepo, diff: string) {
+  async applyHunk(repo: SelectedRepo, diff: string, action: 'stage' | 'unstage' | 'revert') {
     const normalizedDiff = normalizePatch(diff);
-    await this.runGit(repo, ['apply', '-R', '--recount', '--whitespace=nowarn', '-'], {
+    const args =
+      action === 'stage'
+        ? ['apply', '--cached', '--recount', '--whitespace=nowarn', '-']
+        : action === 'unstage'
+          ? ['apply', '-R', '--cached', '--recount', '--whitespace=nowarn', '-']
+          : ['apply', '-R', '--recount', '--whitespace=nowarn', '-'];
+    await this.runGit(repo, args, {
       input: normalizedDiff,
     });
   }
 
+  async revertHunk(repo: SelectedRepo, diff: string) {
+    await this.applyHunk(repo, diff, 'revert');
+  }
+
   async stageHunk(repo: SelectedRepo, diff: string) {
-    await this.runGit(repo, ['apply', '--cached', '--recount', '--whitespace=nowarn', '-'], {
-      input: normalizePatch(diff),
-    });
+    await this.applyHunk(repo, diff, 'stage');
   }
 
   async unstageHunk(repo: SelectedRepo, diff: string) {
-    await this.runGit(repo, ['apply', '-R', '--cached', '--recount', '--whitespace=nowarn', '-'], {
-      input: normalizePatch(diff),
-    });
+    await this.applyHunk(repo, diff, 'unstage');
   }
 
   async stageAll(repo: SelectedRepo) {

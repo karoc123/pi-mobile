@@ -90,8 +90,7 @@ describe('createApp', () => {
     }));
     const gitPull = vi.fn(async () => 'Already up to date.');
     const gitPush = vi.fn(async () => 'Everything up-to-date');
-    const gitStageHunk = vi.fn(async () => undefined);
-    const gitUnstageHunk = vi.fn(async () => undefined);
+    const gitApplyHunk = vi.fn(async () => undefined);
     const gitStageAll = vi.fn(async () => undefined);
     const gitUnstageAll = vi.fn(async () => undefined);
     const cloneRepo = vi
@@ -132,11 +131,12 @@ describe('createApp', () => {
         getRemoteSyncStatus: vi.fn(async () => ({ ahead: 0, behind: 0, hasUpstream: true })),
         pull: gitPull,
         push: gitPush,
-        stageHunk: gitStageHunk,
-        unstageHunk: gitUnstageHunk,
+        applyHunk: gitApplyHunk,
+        stageHunk: vi.fn(),
+        unstageHunk: vi.fn(),
         stageAll: gitStageAll,
         unstageAll: gitUnstageAll,
-        revertHunk: vi.fn(async () => undefined),
+        revertHunk: vi.fn(),
       } as never,
       resourceHealthService: {
         check: getResourceHealth,
@@ -229,13 +229,21 @@ describe('createApp', () => {
       .post('/api/git/unstage-all')
       .set('Cookie', cookie);
     const stageHunkResponse = await request(app)
-      .post('/api/git/stage-hunk')
+      .post('/api/git/hunk')
       .set('Cookie', cookie)
-      .send({ diff: 'diff --git a/a.txt b/a.txt\n' });
+      .send({ diff: 'diff --git a/a.txt b/a.txt\n', action: 'stage' });
     const unstageHunkResponse = await request(app)
-      .post('/api/git/unstage-hunk')
+      .post('/api/git/hunk')
       .set('Cookie', cookie)
-      .send({ diff: 'diff --git a/a.txt b/a.txt\n' });
+      .send({ diff: 'diff --git a/a.txt b/a.txt\n', action: 'unstage' });
+    const revertHunkResponse = await request(app)
+      .post('/api/git/hunk')
+      .set('Cookie', cookie)
+      .send({ diff: 'diff --git a/a.txt b/a.txt\n', action: 'revert' });
+    const invalidHunkResponse = await request(app)
+      .post('/api/git/hunk')
+      .set('Cookie', cookie)
+      .send({ diff: 'diff --git a/a.txt b/a.txt\n', action: 'invalid' });
     const createFileResponse = await request(app)
       .post('/api/files/create')
       .set('Cookie', cookie)
@@ -311,14 +319,26 @@ describe('createApp', () => {
     expect(unstageAllResponse.status).toBe(200);
     expect(gitUnstageAll).toHaveBeenCalledTimes(1);
     expect(stageHunkResponse.status).toBe(200);
-    expect(gitStageHunk).toHaveBeenCalledWith(
-      workspaceService.requireCurrentRepo(),
-      'diff --git a/a.txt b/a.txt\n',
-    );
     expect(unstageHunkResponse.status).toBe(200);
-    expect(gitUnstageHunk).toHaveBeenCalledWith(
+    expect(revertHunkResponse.status).toBe(200);
+    expect(invalidHunkResponse.status).toBe(400);
+    expect(gitApplyHunk).toHaveBeenNthCalledWith(
+      1,
       workspaceService.requireCurrentRepo(),
       'diff --git a/a.txt b/a.txt\n',
+      'stage',
+    );
+    expect(gitApplyHunk).toHaveBeenNthCalledWith(
+      2,
+      workspaceService.requireCurrentRepo(),
+      'diff --git a/a.txt b/a.txt\n',
+      'unstage',
+    );
+    expect(gitApplyHunk).toHaveBeenNthCalledWith(
+      3,
+      workspaceService.requireCurrentRepo(),
+      'diff --git a/a.txt b/a.txt\n',
+      'revert',
     );
     expect(createFileResponse.status).toBe(200);
     expect(createFileResponse.body).toEqual({ ok: true, path: 'notes/new-file.md' });
