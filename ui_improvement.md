@@ -99,7 +99,7 @@ Dieses Dokument fasst die Ergebnisse des **Impeccable Audits** für die Oberflä
 
 ### [P2] Accessibility: Reine Farbcodierung in der System-Statusleiste
 
-- **Problem:** In [`src/frontend/components/SystemStatusBar.svelte#L97-L103`](file:///home/zink/dev/pi-mobile/src/frontend/components/SystemStatusBar.svelte#L97-L103) und [`src/frontend/styles.css#L1430-L1440`](file:///home/zink/dev/pi-mobile/src/frontend/styles.css#L1430-L1440) unterscheiden sich `.status-chip.ok`, `.warn` und `.error` ausschließlich durch eine dezente Rahmenfarbe (`border-color`).
+- **Problem:** In [`src/frontend/components/SystemStatus.svelte`](file:///home/zink/dev/pi-mobile/src/frontend/components/SystemStatus.svelte) unterscheiden sich `.status-chip.ok`, `.warn` und `.error` ausschließlich durch eine dezente Rahmenfarbe (`border-color`).
 - **Standard:** WCAG 1.4.1 Use of Color (Farbe darf nicht das einzige Mittel zur Informationsübertragung sein).
 - **Maßnahme:**
   1. Visuelle Statusindikatoren (z. B. Icons wie `✓`, `▲`, `✕` oder Dot-Marker) hinzufügen.

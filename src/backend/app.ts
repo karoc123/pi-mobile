@@ -437,6 +437,7 @@ export function createApp(services: AppServices) {
     response.setHeader('Cache-Control', 'no-cache, no-transform');
     response.setHeader('Connection', 'keep-alive');
     response.flushHeaders();
+    response.write('retry: 3000\n\n');
 
     const writeEvent = (event: string, payload: unknown) => {
       response.write(`event: ${event}\n`);

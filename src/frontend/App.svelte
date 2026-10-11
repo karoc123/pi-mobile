@@ -1,7 +1,6 @@
 <script lang="ts">
   /* eslint-disable svelte/infinite-reactive-loop */
   import { onMount, type ComponentType } from 'svelte';
-  import { SvelteMap, SvelteURLSearchParams } from 'svelte/reactivity';
 
   import type {
     AgentCommandRequest,
@@ -11,11 +10,6 @@
     AgentUsage,
     ChatMessage,
     ToolActivity,
-    BackendHealthResponse,
-    BackendResourceCheck,
-    BackendLogEntry,
-    BackendLogLevel,
-    BackendLogQueryResponse,
     DiffFile,
     GitBranchesResponse,
     GitBranchInfo,
@@ -43,7 +37,7 @@
   import LogView from './components/LogView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
   import PiLoginModal from './components/PiLoginModal.svelte';
-  import SystemStatusBar from './components/SystemStatusBar.svelte';
+  import SystemStatus from './components/SystemStatus.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
   import {
     api,
@@ -61,7 +55,6 @@
   type AppViewName = ViewName | 'logs';
   type AsyncViewName = Exclude<ViewName, 'chat'>;
   type SocketStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
-  type BackendStatus = 'healthy' | 'degraded' | 'unreachable' | 'unknown';
   type ToolTraceBatch = {
     id: string;
     boundary: number;
@@ -69,11 +62,8 @@
   };
 
   const themeStorageKey = 'pimobile.theme';
-  const backendHealthPollIntervalMs = 10_000;
   const agentStatePollIntervalMs = 7_000;
   const diffRefreshDebounceMs = 450;
-  const logStreamRetryDelayMs = 1_500;
-  const maxVisibleLogEntries = 600;
   const maxToolBatchCount = 8;
   const maxToolsPerBatch = 24;
 
@@ -157,12 +147,6 @@
   let socketStatus: SocketStatus = 'offline';
   let socketReconnectAttempt = 0;
 
-  let backendStatus: BackendStatus = 'unknown';
-  let backendLastSeen: string | null = null;
-  let backendUptimeSeconds: number | null = null;
-  let backendResourceChecks: BackendResourceCheck[] = [];
-  let backendResourcesAccessible = false;
-  let backendHealthTimer: number | null = null;
   let agentStatePollTimer: number | null = null;
 
   let bannerMessage = '';
@@ -198,22 +182,6 @@
   let composerPrefill = '';
   let composerPrefillToken = 0;
 
-  let logEntries: BackendLogEntry[] = [];
-  let logLoading = false;
-  let logLoadingMore = false;
-  let logHasMore = false;
-  let logViewError = '';
-  let logLive = true;
-  let logStreamConnected = false;
-  let logLevelFilter: BackendLogLevel | '' = '';
-  let logSourceFilter = '';
-  let logSearchFilter = '';
-  let logKnownSources: string[] = [];
-  let logEventSource: EventSource | null = null;
-  let logStreamRetryTimer: number | null = null;
-  let activeLogStreamUrl = '';
-  let clearingLogs = false;
-
   let systemStatusVisible = false;
   let dismissedPromptId: string | null = null;
 
@@ -224,8 +192,6 @@
     return () => {
       stopAgentStatePolling();
       closeSocket();
-      stopBackendHealthPolling();
-      stopLogStream();
 
       if (diffReloadTimer !== null) {
         window.clearTimeout(diffReloadTimer);
@@ -259,12 +225,6 @@
     } else {
       stopAgentStatePolling();
     }
-  }
-
-  $: if (authenticated && view === 'logs' && logLive) {
-    startLogStream();
-  } else {
-    stopLogStream();
   }
 
   async function initialize() {
@@ -318,8 +278,6 @@
 
   async function bootstrapWorkspace() {
     connectSocket();
-    startBackendHealthPolling();
-    await checkBackendHealth();
 
     try {
       agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
@@ -797,10 +755,9 @@
     await Promise.all([loadDiff(), loadFiles('.'), loadAgentState(), loadCommandState()]);
   }
 
-  async function openLogView() {
+  function openLogView() {
     menuOpen = false;
     view = 'logs';
-    await loadLogs(true);
   }
 
   async function loadAgentState(options: { silent?: boolean } = {}) {
@@ -1295,235 +1252,6 @@
     }
   }
 
-  async function loadLogs(refresh = false) {
-    if (refresh) {
-      logLoading = true;
-    } else {
-      logLoadingMore = true;
-    }
-
-    try {
-      const query = new SvelteURLSearchParams();
-      query.set('limit', '200');
-
-      if (!refresh && logEntries.length > 0) {
-        query.set('beforeSeq', String(logEntries[0].seq));
-      }
-
-      if (logLevelFilter) {
-        query.set('level', logLevelFilter);
-      }
-
-      if (logSourceFilter) {
-        query.set('source', logSourceFilter);
-      }
-
-      if (logSearchFilter) {
-        query.set('search', logSearchFilter);
-      }
-
-      const response = await apiFetch<BackendLogQueryResponse>(`/api/logs?${query.toString()}`);
-      logEntries = refresh ? response.entries : mergeLogEntries(logEntries, response.entries);
-      logEntries = logEntries.slice(-maxVisibleLogEntries);
-      logHasMore = response.hasMore;
-      logKnownSources = collectLogSources(logEntries);
-      logViewError = '';
-    } catch (error) {
-      logViewError = toErrorMessage(error);
-      handleApiFailure(error);
-    } finally {
-      if (refresh) {
-        logLoading = false;
-      } else {
-        logLoadingMore = false;
-      }
-    }
-  }
-
-  async function loadOlderLogs() {
-    if (logLoadingMore || !logHasMore) {
-      return;
-    }
-
-    await loadLogs(false);
-  }
-
-  async function clearAllLogs() {
-    if (clearingLogs) {
-      return;
-    }
-
-    if (!window.confirm('Delete in-memory and persisted backend logs?')) {
-      return;
-    }
-
-    await run(
-      async () => {
-        await api.del('/api/logs');
-        logEntries = [];
-        logKnownSources = [];
-        logHasMore = false;
-        logViewError = '';
-        await loadLogs(true);
-      },
-      'Backend log deleted.',
-      (busy) => {
-        clearingLogs = busy;
-      },
-    );
-  }
-
-  function setLogLevel(value: BackendLogLevel | '') {
-    logLevelFilter = value;
-    void reloadLogView();
-  }
-
-  function setLogSource(value: string) {
-    logSourceFilter = value;
-    void reloadLogView();
-  }
-
-  function setLogSearch(value: string) {
-    logSearchFilter = value;
-    void reloadLogView();
-  }
-
-  function clearLogFilters() {
-    logLevelFilter = '';
-    logSourceFilter = '';
-    logSearchFilter = '';
-    void reloadLogView();
-  }
-
-  function toggleLogLive(value: boolean) {
-    logLive = value;
-
-    if (logLive) {
-      startLogStream(true);
-      return;
-    }
-
-    stopLogStream();
-  }
-
-  async function reloadLogView() {
-    await loadLogs(true);
-    if (view === 'logs' && logLive) {
-      startLogStream(true);
-    }
-  }
-
-  function startLogStream(forceRestart = false) {
-    if (!authenticated || view !== 'logs' || !logLive) {
-      return;
-    }
-
-    const query = new SvelteURLSearchParams();
-
-    if (logLevelFilter) {
-      query.set('level', logLevelFilter);
-    }
-
-    if (logSourceFilter) {
-      query.set('source', logSourceFilter);
-    }
-
-    if (logSearchFilter) {
-      query.set('search', logSearchFilter);
-    }
-
-    const streamUrl = query.size > 0 ? `/api/logs/stream?${query.toString()}` : '/api/logs/stream';
-
-    if (!forceRestart && logEventSource && activeLogStreamUrl === streamUrl) {
-      return;
-    }
-
-    stopLogStream();
-
-    const source = new EventSource(streamUrl, { withCredentials: true });
-    logEventSource = source;
-    activeLogStreamUrl = streamUrl;
-
-    source.addEventListener('ready', () => {
-      if (logEventSource !== source) {
-        return;
-      }
-
-      logStreamConnected = true;
-      logViewError = '';
-    });
-
-    source.addEventListener('log', (event) => {
-      if (logEventSource !== source) {
-        return;
-      }
-
-      const payload = event as MessageEvent<string>;
-
-      try {
-        const entry = JSON.parse(payload.data) as BackendLogEntry;
-        logEntries = mergeLogEntries(logEntries, [entry]).slice(-maxVisibleLogEntries);
-        logKnownSources = collectLogSources(logEntries);
-      } catch {
-        // Ignore malformed stream payloads but keep stream open.
-      }
-    });
-
-    source.onerror = () => {
-      if (logEventSource !== source) {
-        return;
-      }
-
-      source.close();
-      logEventSource = null;
-      activeLogStreamUrl = '';
-      logStreamConnected = false;
-
-      if (!authenticated || view !== 'logs' || !logLive) {
-        return;
-      }
-
-      if (logStreamRetryTimer === null) {
-        logStreamRetryTimer = window.setTimeout(() => {
-          logStreamRetryTimer = null;
-          startLogStream(true);
-        }, logStreamRetryDelayMs);
-      }
-    };
-  }
-
-  function stopLogStream() {
-    if (logStreamRetryTimer !== null) {
-      window.clearTimeout(logStreamRetryTimer);
-      logStreamRetryTimer = null;
-    }
-
-    if (logEventSource) {
-      logEventSource.close();
-      logEventSource = null;
-    }
-
-    activeLogStreamUrl = '';
-    logStreamConnected = false;
-  }
-
-  function startBackendHealthPolling() {
-    if (backendHealthTimer !== null) {
-      return;
-    }
-
-    backendHealthTimer = window.setInterval(() => {
-      void checkBackendHealth();
-    }, backendHealthPollIntervalMs);
-  }
-
-  function stopBackendHealthPolling() {
-    if (backendHealthTimer !== null) {
-      window.clearInterval(backendHealthTimer);
-      backendHealthTimer = null;
-    }
-  }
-
   function startAgentStatePolling() {
     if (agentStatePollTimer !== null) {
       return;
@@ -1540,21 +1268,6 @@
     if (agentStatePollTimer !== null) {
       window.clearInterval(agentStatePollTimer);
       agentStatePollTimer = null;
-    }
-  }
-
-  async function checkBackendHealth() {
-    try {
-      const health = await apiFetch<BackendHealthResponse>('/api/health');
-      backendStatus = health.status;
-      backendLastSeen = health.serverTime;
-      backendUptimeSeconds = health.uptimeSeconds;
-      backendResourceChecks = health.resources.checks;
-      backendResourcesAccessible = health.resources.allRequiredAccessible;
-    } catch {
-      backendStatus = 'unreachable';
-      backendResourceChecks = [];
-      backendResourcesAccessible = false;
     }
   }
 
@@ -1620,17 +1333,9 @@
     localSystemMessages = [];
     chatMessages = [];
     dismissedPromptId = null;
-    logEntries = [];
-    logKnownSources = [];
-    logViewError = '';
-    logHasMore = false;
-    stopLogStream();
     closeSocket();
-    stopBackendHealthPolling();
     stopAgentStatePolling();
     socketReconnectAttempt = 0;
-    backendResourceChecks = [];
-    backendResourcesAccessible = false;
     loginError = message;
   }
 
@@ -1654,26 +1359,6 @@
     const segments = relativePath.split('/').filter(Boolean);
     segments.pop();
     return segments.length === 0 ? '.' : segments.join('/');
-  }
-
-  function mergeLogEntries(current: BackendLogEntry[], incoming: BackendLogEntry[]) {
-    const bySeq = new SvelteMap<number, BackendLogEntry>();
-
-    for (const entry of current) {
-      bySeq.set(entry.seq, entry);
-    }
-
-    for (const entry of incoming) {
-      bySeq.set(entry.seq, entry);
-    }
-
-    return [...bySeq.values()].sort((left, right) => left.seq - right.seq);
-  }
-
-  function collectLogSources(entries: BackendLogEntry[]) {
-    return [
-      ...new Set(entries.map((entry) => entry.source).filter((source) => source.length > 0)),
-    ].sort((left, right) => left.localeCompare(right));
   }
 
   function showBanner(message: string, tone: 'info' | 'success' | 'error') {
@@ -1733,42 +1418,11 @@
     {/if}
 
     {#if systemStatusVisible}
-      <SystemStatusBar
-        authStatus="authenticated"
-        {socketStatus}
-        reconnectAttempt={socketReconnectAttempt}
-        {backendStatus}
-        {backendLastSeen}
-        {backendUptimeSeconds}
-        logStreamLive={view === 'logs' && logLive && logStreamConnected}
-        resourcesAccessible={backendResourcesAccessible}
-        resourceChecks={backendResourceChecks}
-      />
+      <SystemStatus {socketStatus} reconnectAttempt={socketReconnectAttempt} />
     {/if}
 
     {#if view === 'logs'}
-      <LogView
-        entries={logEntries}
-        loading={logLoading}
-        loadingMore={logLoadingMore}
-        clearing={clearingLogs}
-        hasMore={logHasMore}
-        live={logLive}
-        streamConnected={logStreamConnected}
-        levelFilter={logLevelFilter}
-        sourceFilter={logSourceFilter}
-        searchFilter={logSearchFilter}
-        knownSources={logKnownSources}
-        lastError={logViewError}
-        on:refresh={() => void loadLogs(true)}
-        on:loadMore={() => void loadOlderLogs()}
-        on:clearAll={() => void clearAllLogs()}
-        on:toggleLive={(event) => toggleLogLive(event.detail.value)}
-        on:setLevel={(event) => setLogLevel(event.detail.value)}
-        on:setSource={(event) => setLogSource(event.detail.value)}
-        on:setSearch={(event) => setLogSearch(event.detail.value)}
-        on:clearFilters={clearLogFilters}
-      />
+      <LogView />
     {:else if currentRepo}
       {#if view === 'chat'}
         <ChatView
