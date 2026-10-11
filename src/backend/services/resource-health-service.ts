@@ -1,10 +1,10 @@
-import { constants as fsConstants } from "node:fs";
-import { access, mkdir } from "node:fs/promises";
-import path from "node:path";
+import { constants as fsConstants } from 'node:fs';
+import { access, mkdir } from 'node:fs/promises';
+import path from 'node:path';
 
-import type { BackendResourceCheck } from "../../shared/contracts.js";
+import type { BackendResourceCheck } from '../../shared/contracts.js';
 
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from '../config.js';
 
 export type ResourceHealthReport = {
   allRequiredAccessible: boolean;
@@ -17,15 +17,38 @@ export class ResourceHealthService {
   async check(): Promise<ResourceHealthReport> {
     const checks: BackendResourceCheck[] = [];
 
-    checks.push(await this.checkDirectory("workspace_root", "Workspace root", this.config.workspaceRoot, true));
-    checks.push(await this.checkWritableDirectory("logs_dir", "Logs directory", this.config.logsDirPath, true));
+    checks.push(
+      await this.checkDirectory(
+        'workspace_root',
+        'Workspace root',
+        this.config.workspaceRoot,
+        true,
+      ),
+    );
+    checks.push(
+      await this.checkWritableDirectory(
+        'logs_dir',
+        'Logs directory',
+        this.config.logsDirPath,
+        true,
+      ),
+    );
 
     const piAgentDirPath = this.resolvePiAgentDirPath();
     const piSessionDirPath = this.resolvePiSessionDirPath(piAgentDirPath);
-    const piRequired = !this.config.piMockMode;
+    const piRequired = true;
 
-    checks.push(await this.checkDirectory("pi_agent_dir", "Pi agent directory", piAgentDirPath, piRequired));
-    checks.push(await this.checkWritableDirectory("pi_session_dir", "Pi session directory", piSessionDirPath, piRequired));
+    checks.push(
+      await this.checkDirectory('pi_agent_dir', 'Pi agent directory', piAgentDirPath, piRequired),
+    );
+    checks.push(
+      await this.checkWritableDirectory(
+        'pi_session_dir',
+        'Pi session directory',
+        piSessionDirPath,
+        piRequired,
+      ),
+    );
 
     return {
       allRequiredAccessible: checks.every((check) => !check.required || check.ok),
@@ -40,10 +63,10 @@ export class ResourceHealthService {
 
     const homeDir = process.env.HOME;
     if (homeDir && homeDir.length > 0) {
-      return path.join(homeDir, ".pi", "agent");
+      return path.join(homeDir, '.pi', 'agent');
     }
 
-    return path.resolve(".pi", "agent");
+    return path.resolve('.pi', 'agent');
   }
 
   private resolvePiSessionDirPath(piAgentDirPath: string) {
@@ -51,10 +74,15 @@ export class ResourceHealthService {
       return this.config.piSessionDir;
     }
 
-    return path.join(piAgentDirPath, "sessions");
+    return path.join(piAgentDirPath, 'sessions');
   }
 
-  private async checkDirectory(key: BackendResourceCheck["key"], label: string, directoryPath: string, required: boolean): Promise<BackendResourceCheck> {
+  private async checkDirectory(
+    key: BackendResourceCheck['key'],
+    label: string,
+    directoryPath: string,
+    required: boolean,
+  ): Promise<BackendResourceCheck> {
     try {
       await access(directoryPath, fsConstants.R_OK | fsConstants.W_OK);
       return {
@@ -77,7 +105,12 @@ export class ResourceHealthService {
     }
   }
 
-  private async checkWritableDirectory(key: BackendResourceCheck["key"], label: string, directoryPath: string, required: boolean): Promise<BackendResourceCheck> {
+  private async checkWritableDirectory(
+    key: BackendResourceCheck['key'],
+    label: string,
+    directoryPath: string,
+    required: boolean,
+  ): Promise<BackendResourceCheck> {
     try {
       await mkdir(directoryPath, { recursive: true });
       await access(directoryPath, fsConstants.R_OK | fsConstants.W_OK);
@@ -103,7 +136,9 @@ export class ResourceHealthService {
 }
 
 function getErrorCode(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error ? (error as NodeJS.ErrnoException).code : undefined;
+  return typeof error === 'object' && error !== null && 'code' in error
+    ? (error as NodeJS.ErrnoException).code
+    : undefined;
 }
 
 function toErrorDetail(error: unknown) {

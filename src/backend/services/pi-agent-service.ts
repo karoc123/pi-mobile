@@ -18,16 +18,14 @@ import type {
 } from '../../shared/contracts.js';
 
 import type { AppConfig } from '../config.js';
-import { PiAgentBroadcaster } from './pi-agent-broadcaster.js';
 import {
   flattenMessageText,
   hydrateMessagesFromSession,
   summarizePayload,
   upsertTool,
 } from './pi-agent-hydrator.js';
-import { PiAgentMockAdapter, type MockRuntimeContext } from './pi-agent-mock-adapter.js';
 import { PiAgentSessionAdapter, type SessionOpenOptions } from './pi-agent-session-adapter.js';
-import { noopLogger, type LogChannel } from './log-service.js';
+import type { LogChannel } from './log-service.js';
 import type { ModelUsageStore } from './model-usage-store.js';
 
 type Broadcast = (event: WebsocketEnvelope) => void;
@@ -39,21 +37,23 @@ export class PiAgentService {
   private lastError: string | null = null;
   private activeAssistantMessageId: string | null = null;
   private interactivePrompt: InteractivePrompt | null = null;
-  private readonly broadcaster: PiAgentBroadcaster;
-  private readonly mockAdapter = new PiAgentMockAdapter();
   private readonly sessionAdapter: PiAgentSessionAdapter;
-  private readonly logger: LogChannel;
 
   constructor(
     private readonly config: AppConfig,
-    broadcast: Broadcast,
+    private readonly broadcast: Broadcast,
     private readonly modelUsage: ModelUsageStore,
-    logger?: LogChannel,
+    private readonly logger: LogChannel,
   ) {
-    this.logger = logger ?? noopLogger;
-    this.broadcaster = new PiAgentBroadcaster(broadcast);
     this.sessionAdapter = new PiAgentSessionAdapter(this.config, this.logger, (event) => {
       this.handleSessionEvent(event);
+    });
+  }
+
+  private emitSnapshot() {
+    this.broadcast({
+      type: 'snapshot',
+      payload: this.getSnapshot(),
     });
   }
 
@@ -109,10 +109,6 @@ export class PiAgentService {
       return createEmptyCommandState();
     }
 
-    if (this.config.piMockMode) {
-      return this.mockAdapter.getCommandState(this.currentRepo, this.messages);
-    }
-
     const baseState = await this.sessionAdapter.getCommandState(this.currentRepo);
 
     return {
@@ -124,10 +120,6 @@ export class PiAgentService {
   async executeCommand(request: AgentCommandRequest): Promise<AgentCommandResponse> {
     if (!request || typeof request !== 'object' || typeof request.command !== 'string') {
       throw new Error('Missing agent command.');
-    }
-
-    if (this.config.piMockMode) {
-      return this.mockAdapter.executeCommand(request, this.createMockContext());
     }
 
     const session = await this.ensureSession();
@@ -188,6 +180,7 @@ export class PiAgentService {
             : undefined;
         await session.compact(customInstructions);
         this.messages = hydrateMessagesFromSession(session.messages);
+        this.emitSnapshot();
         return this.completeCommand('Context compacted.');
       }
 
@@ -208,6 +201,7 @@ export class PiAgentService {
         const result = await runPromise;
         this.messages = hydrateMessagesFromSession(session.messages);
         this.emitStatus();
+        this.emitSnapshot();
 
         return {
           message: formatBashResultMessage(result.exitCode, result.cancelled, result.truncated),
@@ -250,6 +244,7 @@ export class PiAgentService {
           preferredThinkingLevel: session.thinkingLevel as AgentThinkingLevel,
           useConfiguredDefaults: true,
         });
+        this.emitSnapshot();
         return {
           message: 'Started a new session.',
           prompt: null,
@@ -260,6 +255,7 @@ export class PiAgentService {
         await this.openSessionPath(request.sessionPath, {
           useConfiguredDefaults: false,
         });
+        this.emitSnapshot();
         return {
           message: 'Session resumed.',
           prompt: null,
@@ -278,6 +274,7 @@ export class PiAgentService {
 
         this.messages = hydrateMessagesFromSession(session.messages);
         this.tools = [];
+        this.emitSnapshot();
         return this.completeCommand(
           'Moved to the selected session point.',
           result.editorText ?? null,
@@ -297,6 +294,7 @@ export class PiAgentService {
         await this.openSessionPath(sessionPath, {
           useConfiguredDefaults: false,
         });
+        this.emitSnapshot();
         return {
           message: 'Forked a new session from the selected prompt.',
           prompt: userMessage.text,
@@ -317,25 +315,14 @@ export class PiAgentService {
     this.activeAssistantMessageId = null;
     this.interactivePrompt = null;
 
-    if (this.config.piMockMode) {
-      this.mockAdapter.resetForRepoSelection();
-    }
-
     await this.resetSession();
-
-    if (!this.config.piMockMode) {
-      await this.restoreSession();
-    }
+    await this.restoreSession();
 
     this.emitStatus();
+    this.emitSnapshot();
   }
 
   async prompt(promptText: string) {
-    if (this.config.piMockMode) {
-      await this.mockAdapter.prompt(promptText, this.createMockContext());
-      return;
-    }
-
     const session = await this.ensureSession();
     const accepted = await this.acceptPrompt(session, promptText);
 
@@ -359,16 +346,15 @@ export class PiAgentService {
     };
 
     this.messages = [...this.messages, userMessage];
-    this.broadcaster.chatMessageAdded(userMessage);
+    this.broadcast({
+      type: 'chat_message_added',
+      payload: { message: userMessage },
+    });
     this.lastError = null;
     this.emitStatus();
   }
 
   async abort() {
-    if (this.config.piMockMode) {
-      this.mockAdapter.abort();
-    }
-
     await this.session?.abort();
 
     // Also clear queued steering/follow-up prompts so UI can't remain stuck in `queued`.
@@ -388,21 +374,16 @@ export class PiAgentService {
     this.activeAssistantMessageId = null;
     this.interactivePrompt = null;
 
-    if (this.config.piMockMode) {
-      this.mockAdapter.resetForNewSession();
-    }
-
     await this.resetSession();
 
-    if (!this.config.piMockMode) {
-      try {
-        await this.createSession(false);
-      } catch (error) {
-        this.recordError(error);
-      }
+    try {
+      await this.createSession(false);
+    } catch (error) {
+      this.recordError(error);
     }
 
     this.emitStatus();
+    this.emitSnapshot();
   }
 
   async dispose() {
@@ -421,10 +402,6 @@ export class PiAgentService {
   private async ensureSession() {
     if (!this.currentRepo) {
       throw new Error('No repository selected for pi session.');
-    }
-
-    if (this.config.piMockMode) {
-      throw new Error('Mock mode does not create a real pi session.');
     }
 
     return this.sessionAdapter.ensureSession(this.currentRepo);
@@ -515,7 +492,10 @@ export class PiAgentService {
 
       this.activeAssistantMessageId = message.id;
       this.messages = [...this.messages, message];
-      this.broadcaster.chatMessageAdded(message);
+      this.broadcast({
+        type: 'chat_message_added',
+        payload: { message },
+      });
       this.emitStatus();
       return;
     }
@@ -542,11 +522,14 @@ export class PiAgentService {
         updatedMessage,
         ...this.messages.slice(index + 1),
       ];
-      this.broadcaster.chatMessageUpdated(
-        updatedMessage.id,
-        updatedMessage.text,
-        updatedMessage.status,
-      );
+      this.broadcast({
+        type: 'chat_message_updated',
+        payload: {
+          messageId: updatedMessage.id,
+          text: updatedMessage.text,
+          status: updatedMessage.status,
+        },
+      });
       return;
     }
 
@@ -574,11 +557,14 @@ export class PiAgentService {
         ...this.messages.slice(index + 1),
       ];
       this.activeAssistantMessageId = null;
-      this.broadcaster.chatMessageUpdated(
-        updatedMessage.id,
-        updatedMessage.text,
-        updatedMessage.status,
-      );
+      this.broadcast({
+        type: 'chat_message_updated',
+        payload: {
+          messageId: updatedMessage.id,
+          text: updatedMessage.text,
+          status: updatedMessage.status,
+        },
+      });
       this.emitStatus();
       return;
     }
@@ -588,7 +574,10 @@ export class PiAgentService {
 
       if (prompt) {
         this.interactivePrompt = prompt;
-        this.broadcaster.interactivePrompt(prompt);
+        this.broadcast({
+          type: 'interactive_prompt',
+          payload: prompt,
+        });
       } else {
         this.logger.warn('Invalid ask_user tool arguments – skipping interactive prompt.', {
           event: 'ask_user_invalid',
@@ -606,7 +595,10 @@ export class PiAgentService {
       };
 
       this.tools = upsertTool(this.tools, tool);
-      this.broadcaster.toolActivity(tool);
+      this.broadcast({
+        type: 'tool_activity',
+        payload: { tool },
+      });
       this.emitStatus();
       return;
     }
@@ -630,7 +622,10 @@ export class PiAgentService {
       };
 
       this.tools = upsertTool(this.tools, tool);
-      this.broadcaster.toolActivity(tool);
+      this.broadcast({
+        type: 'tool_activity',
+        payload: { tool },
+      });
       this.emitStatus();
       return;
     }
@@ -656,27 +651,6 @@ export class PiAgentService {
     return { message, prompt };
   }
 
-  private createMockContext(): MockRuntimeContext {
-    return {
-      getCurrentRepo: () => this.currentRepo,
-      getMessages: () => this.messages,
-      setMessages: (messages) => {
-        this.messages = messages;
-      },
-      setTools: (tools) => {
-        this.tools = tools;
-      },
-      setLastError: (message) => {
-        this.lastError = message;
-      },
-      setActiveAssistantMessageId: (messageId) => {
-        this.activeAssistantMessageId = messageId;
-      },
-      broadcast: (event) => this.broadcaster.emit(event),
-      emitStatus: () => this.emitStatus(),
-    };
-  }
-
   private recordError(error: unknown) {
     const message = toErrorMessage(error);
     this.logger.error('Pi agent runtime reported an error.', {
@@ -687,32 +661,33 @@ export class PiAgentService {
       },
     });
     this.lastError = message;
-    this.broadcaster.agentError(message);
+    this.broadcast({
+      type: 'agent_error',
+      payload: { message },
+    });
     this.emitStatus();
   }
 
   private emitStatus() {
     const runtimeState = this.getRuntimeState();
 
-    this.broadcaster.agentStatus({
-      isConfigured: this.currentRepo !== null,
-      ...runtimeState,
-      lastError: this.lastError,
-      repo: this.currentRepo,
-      usage: this.getUsageSummary(),
+    this.broadcast({
+      type: 'agent_status',
+      payload: {
+        isConfigured: this.currentRepo !== null,
+        ...runtimeState,
+        lastError: this.lastError,
+        repo: this.currentRepo,
+        usage: this.getUsageSummary(),
+      },
     });
   }
 
   private getRuntimeState() {
-    if (this.config.piMockMode) {
-      return this.mockAdapter.getRuntimeState();
-    }
-
     return this.sessionAdapter.getRuntimeState();
   }
 
   private async resetSession() {
-    this.mockAdapter.dispose();
     await this.sessionAdapter.reset();
   }
 
@@ -721,10 +696,6 @@ export class PiAgentService {
 
     if (realUsage) {
       return realUsage;
-    }
-
-    if (this.config.piMockMode) {
-      return this.mockAdapter.getUsageSummary();
     }
 
     return {

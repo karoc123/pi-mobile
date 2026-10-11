@@ -1,26 +1,26 @@
 // @vitest-environment node
 
-import os from "node:os";
-import path from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from 'vitest';
 
-import type { AppConfig } from "../config.js";
-import { PiAuthService } from "./pi-auth-service.js";
+import type { AppConfig } from '../config.js';
+import { PiAuthService } from './pi-auth-service.js';
 
-describe("PiAuthService", () => {
-  let tempDir = "";
+describe('PiAuthService', () => {
+  let tempDir = '';
 
   afterEach(async () => {
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
-      tempDir = "";
+      tempDir = '';
     }
   });
 
-  it("persists token auth and reports provider status", async () => {
-    tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-pi-auth-"));
+  it('persists token auth and reports provider status', async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-mobile-pi-auth-'));
     const config = createConfig(tempDir);
     const service = new PiAuthService(config);
 
@@ -35,7 +35,7 @@ describe("PiAuthService", () => {
       return;
     }
 
-    const loginResult = await service.loginToken(provider, "token-123");
+    const loginResult = await service.loginToken(provider, 'token-123');
     expect(loginResult).toEqual({ ok: true, provider, configured: true });
 
     const persistedService = new PiAuthService(config);
@@ -47,33 +47,34 @@ describe("PiAuthService", () => {
     expect(logoutResult).toEqual({ ok: true, provider, configured: false });
 
     const afterLogout = await new PiAuthService(config).getStatus();
-    expect(afterLogout.providers.find((entry) => entry.provider === provider)?.configured).toBe(false);
+    expect(afterLogout.providers.find((entry) => entry.provider === provider)?.configured).toBe(
+      false,
+    );
   });
 
-  it("rejects unknown providers", async () => {
-    tempDir = await mkdtemp(path.join(os.tmpdir(), "pi-mobile-pi-auth-"));
+  it('rejects unknown providers', async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-mobile-pi-auth-'));
     const service = new PiAuthService(createConfig(tempDir));
 
-    await expect(service.loginToken("unknown-provider", "token-123")).rejects.toMatchObject({
-      code: "unknown_provider",
+    await expect(service.loginToken('unknown-provider', 'token-123')).rejects.toMatchObject({
+      code: 'unknown_provider',
     });
   });
 });
 
 function createConfig(piAgentDir: string): AppConfig {
   return {
-    nodeEnv: "test",
-    host: "127.0.0.1",
+    nodeEnv: 'test',
+    host: '127.0.0.1',
     port: 3000,
-    appPassword: "secret-pass",
-    workspaceRoot: "/workspace",
-    modelUsagePath: "/tmp/model-usage.json",
-    logsDirPath: "/tmp/logs",
-    logLevel: "info",
-    sessionCookieName: "pi_mobile_session",
+    appPassword: 'secret-pass',
+    workspaceRoot: '/workspace',
+    modelUsagePath: '/tmp/model-usage.json',
+    logsDirPath: '/tmp/logs',
+    logLevel: 'info',
+    sessionCookieName: 'pi_mobile_session',
     sessionCookieSecure: false,
     piAgentDir,
-    piSessionDir: path.join(piAgentDir, "sessions"),
-    piMockMode: false,
+    piSessionDir: path.join(piAgentDir, 'sessions'),
   };
 }

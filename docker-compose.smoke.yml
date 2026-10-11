@@ -14,7 +14,7 @@ services:
       LOGS_DIR: /data/db/logs
       PI_AGENT_DIR: /data/pi/agent
       PI_SESSION_DIR: /data/pi/sessions
-      PI_MOCK_MODE: '1'
+      PI_TEST_PROVIDER: '1'
       SSH_PRIVATE_KEY_TARGET: /home/node/.ssh/id_ed25519
       SSH_PRIVATE_KEY_SECRET_PATH: /run/secrets/ssh_private_key
       SSH_KNOWN_HOSTS_PATH: /data/db/known_hosts

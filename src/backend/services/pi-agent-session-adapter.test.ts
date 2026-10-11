@@ -1,31 +1,30 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest';
 
-import { PiAgentSessionAdapter } from "./pi-agent-session-adapter.js";
+import { PiAgentSessionAdapter } from './pi-agent-session-adapter.js';
 
 function createAdapter() {
   return new PiAgentSessionAdapter(
     {
-      nodeEnv: "test",
-      host: "127.0.0.1",
+      nodeEnv: 'test',
+      host: '127.0.0.1',
       port: 3000,
-      appPassword: "secret-pass",
-      workspaceRoot: "/tmp",
+      appPassword: 'secret-pass',
+      workspaceRoot: '/tmp',
       defaultRepo: undefined,
       gitUserName: undefined,
       gitUserEmail: undefined,
-      modelUsagePath: "/tmp/.pi-mobile/model-usage.json",
-      logsDirPath: "/tmp/.pi-mobile/logs",
-      logLevel: "debug",
-      sessionCookieName: "pi_mobile_session",
+      modelUsagePath: '/tmp/.pi-mobile/model-usage.json',
+      logsDirPath: '/tmp/.pi-mobile/logs',
+      logLevel: 'debug',
+      sessionCookieName: 'pi_mobile_session',
       sessionCookieSecure: false,
       piAgentDir: undefined,
       piProvider: undefined,
       piModel: undefined,
       piSessionDir: undefined,
       piThinkingLevel: undefined,
-      piMockMode: false,
     },
     {
       debug: () => undefined,
@@ -37,15 +36,15 @@ function createAdapter() {
   );
 }
 
-describe("PiAgentSessionAdapter", () => {
-  it("exposes idle runtime state before a session is created", () => {
+describe('PiAgentSessionAdapter', () => {
+  it('exposes idle runtime state before a session is created', () => {
     const adapter = createAdapter();
 
     expect(adapter.getSession()).toBeNull();
     expect(adapter.getUsageSummary()).toBeNull();
     expect(adapter.getRuntimeState()).toEqual({
       isStreaming: false,
-      runtimePhase: "idle",
+      runtimePhase: 'idle',
       pendingMessageCount: 0,
       isCompacting: false,
       isRetrying: false,
@@ -53,7 +52,7 @@ describe("PiAgentSessionAdapter", () => {
     });
   });
 
-  it("falls back to assistant message usage cost when session stats report zero", () => {
+  it('falls back to assistant message usage cost when session stats report zero', () => {
     const adapter = createAdapter();
 
     (adapter as unknown as { session: unknown }).session = {
@@ -73,7 +72,7 @@ describe("PiAgentSessionAdapter", () => {
         percent: 0.1,
       }),
       model: {
-        id: "gpt-5.3-codex",
+        id: 'gpt-5.3-codex',
         contextWindow: 400000,
       },
       modelRuntime: {
@@ -83,10 +82,10 @@ describe("PiAgentSessionAdapter", () => {
       autoCompactionEnabled: true,
       messages: [
         {
-          role: "user",
+          role: 'user',
         },
         {
-          role: "assistant",
+          role: 'assistant',
           usage: {
             cost: {
               total: 0.00041,
@@ -94,7 +93,7 @@ describe("PiAgentSessionAdapter", () => {
           },
         },
         {
-          role: "assistant",
+          role: 'assistant',
           usage: {
             cost: {
               total: 0.00032,
@@ -114,13 +113,13 @@ describe("PiAgentSessionAdapter", () => {
       contextTokens: 364,
       contextWindow: 400000,
       contextPercent: 0.1,
-      modelId: "gpt-5.3-codex",
+      modelId: 'gpt-5.3-codex',
       usingSubscription: false,
       autoCompactEnabled: true,
     });
   });
 
-  it("keeps direct session stats cost when available", () => {
+  it('keeps direct session stats cost when available', () => {
     const adapter = createAdapter();
 
     (adapter as unknown as { session: unknown }).session = {
@@ -136,7 +135,7 @@ describe("PiAgentSessionAdapter", () => {
       }),
       getContextUsage: () => null,
       model: {
-        id: "gpt-5.4-nano",
+        id: 'gpt-5.4-nano',
         contextWindow: 200000,
       },
       modelRuntime: {
@@ -146,7 +145,7 @@ describe("PiAgentSessionAdapter", () => {
       autoCompactionEnabled: false,
       messages: [
         {
-          role: "assistant",
+          role: 'assistant',
           usage: {
             cost: {
               total: 0.001,
@@ -166,7 +165,7 @@ describe("PiAgentSessionAdapter", () => {
       contextTokens: null,
       contextWindow: 200000,
       contextPercent: null,
-      modelId: "gpt-5.4-nano",
+      modelId: 'gpt-5.4-nano',
       usingSubscription: true,
       autoCompactEnabled: false,
     });

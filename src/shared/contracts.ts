@@ -1,7 +1,7 @@
 export type WorkspaceEntry = {
   name: string;
   relativePath: string;
-  kind: "directory";
+  kind: 'directory';
   isGitRepo: boolean;
 };
 
@@ -55,13 +55,13 @@ export type PiAuthLogoutResponse = {
 export type FileEntry = {
   name: string;
   relativePath: string;
-  kind: "directory" | "file";
+  kind: 'directory' | 'file';
 };
 
 export type FileDocument = {
   path: string;
   content: string;
-  kind: "text" | "image" | "binary";
+  kind: 'text' | 'image' | 'binary';
   mimeType: string | null;
   imageDataUrl: string | null;
   /**
@@ -158,7 +158,7 @@ export type DiffFile = {
   path: string;
   oldPath: string;
   newPath: string;
-  status: "modified" | "added" | "deleted" | "renamed";
+  status: 'modified' | 'added' | 'deleted' | 'renamed';
   diff: string;
   hunks: DiffHunk[];
   addedLines: number;
@@ -198,20 +198,20 @@ export type GitHunkMutationRequest = {
   diff: string;
 };
 
-export type ChatRole = "user" | "assistant" | "system";
+export type ChatRole = 'user' | 'assistant' | 'system';
 
 export type ChatMessage = {
   id: string;
   role: ChatRole;
   text: string;
-  status: "streaming" | "complete";
+  status: 'streaming' | 'complete';
   timestamp: string;
 };
 
 export type ToolActivity = {
   id: string;
   toolName: string;
-  status: "running" | "complete" | "error";
+  status: 'running' | 'complete' | 'error';
   detail: string;
 };
 
@@ -230,7 +230,8 @@ export type AgentUsage = {
   autoCompactEnabled: boolean;
 };
 
-export type AgentRuntimePhase = "idle" | "streaming" | "queued" | "compacting" | "retrying" | "bash-running";
+export type AgentRuntimePhase =
+  'idle' | 'streaming' | 'queued' | 'compacting' | 'retrying' | 'bash-running';
 
 export type AgentMinimalState = {
   repoName: string | null;
@@ -262,10 +263,10 @@ export type AgentSnapshot = {
   interactivePrompt: InteractivePrompt | null;
 };
 
-export type BackendHealthStatus = "healthy" | "degraded";
+export type BackendHealthStatus = 'healthy' | 'degraded';
 
 export type BackendResourceCheck = {
-  key: "workspace_root" | "logs_dir" | "pi_agent_dir" | "pi_session_dir";
+  key: 'workspace_root' | 'logs_dir' | 'pi_agent_dir' | 'pi_session_dir';
   label: string;
   path: string;
   required: boolean;
@@ -285,7 +286,7 @@ export type BackendHealthResponse = {
   };
 };
 
-export type BackendLogLevel = "debug" | "info" | "warn" | "error";
+export type BackendLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export type BackendLogEntry = {
   seq: number;
@@ -313,7 +314,15 @@ export type BackendLogQueryResponse = {
   nextBeforeSeq: number | null;
 };
 
-export type ApiErrorCode = "bad_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "validation_error" | "runtime_error" | "internal_error";
+export type ApiErrorCode =
+  | 'bad_request'
+  | 'unauthorized'
+  | 'forbidden'
+  | 'not_found'
+  | 'conflict'
+  | 'validation_error'
+  | 'runtime_error'
+  | 'internal_error';
 
 export type ApiErrorResponse = {
   ok: false;
@@ -356,7 +365,7 @@ export type InteractiveAnswer = {
   value: string | string[];
 };
 
-export type AgentThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type AgentThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export type AgentModelOption = {
   provider: string;
@@ -373,12 +382,12 @@ export type AgentThinkingLevelOption = {
   isCurrent: boolean;
 };
 
-export type AgentQueueMode = "all" | "one-at-a-time";
+export type AgentQueueMode = 'all' | 'one-at-a-time';
 
 export type AgentSlashCommand = {
   name: string;
   description: string | null;
-  source: "extension" | "prompt" | "skill";
+  source: 'extension' | 'prompt' | 'skill';
 };
 
 export type AgentSessionSummary = {
@@ -404,7 +413,7 @@ export type AgentResumeSession = {
 
 export type AgentTreeEntry = {
   entryId: string;
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   depth: number;
   preview: string;
   isCurrent: boolean;
@@ -435,67 +444,67 @@ export type AgentCommandState = {
 
 export type AgentCommandRequest =
   | {
-      command: "set-model";
+      command: 'set-model';
       provider: string;
       modelId: string;
     }
   | {
-      command: "set-thinking";
+      command: 'set-thinking';
       level: AgentThinkingLevel;
     }
   | {
-      command: "set-auto-compact";
+      command: 'set-auto-compact';
       enabled: boolean;
     }
   | {
-      command: "set-steering-mode";
+      command: 'set-steering-mode';
       mode: AgentQueueMode;
     }
   | {
-      command: "set-follow-up-mode";
+      command: 'set-follow-up-mode';
       mode: AgentQueueMode;
     }
   | {
-      command: "set-auto-retry";
+      command: 'set-auto-retry';
       enabled: boolean;
     }
   | {
-      command: "abort-retry";
+      command: 'abort-retry';
     }
   | {
-      command: "compact";
+      command: 'compact';
       customInstructions?: string;
     }
   | {
-      command: "run-bash";
+      command: 'run-bash';
       commandText: string;
       excludeFromContext?: boolean;
     }
   | {
-      command: "abort-bash";
+      command: 'abort-bash';
     }
   | {
-      command: "set-session-name";
+      command: 'set-session-name';
       name: string;
     }
   | {
-      command: "export-session";
-      format: "html" | "jsonl";
+      command: 'export-session';
+      format: 'html' | 'jsonl';
       outputPath?: string;
     }
   | {
-      command: "new-session";
+      command: 'new-session';
     }
   | {
-      command: "resume-session";
+      command: 'resume-session';
       sessionPath: string;
     }
   | {
-      command: "navigate-tree";
+      command: 'navigate-tree';
       entryId: string;
     }
   | {
-      command: "fork-session";
+      command: 'fork-session';
       entryId: string;
     };
 
@@ -506,54 +515,66 @@ export type AgentCommandResponse = {
 
 export type WebsocketEnvelope =
   | {
-      type: "connected";
+      type: 'snapshot';
       payload: AgentSnapshot;
     }
   | {
-      type: "agent_status";
-      payload: Pick<AgentSnapshot, "isConfigured" | "isStreaming" | "runtimePhase" | "pendingMessageCount" | "isCompacting" | "isRetrying" | "isBashRunning" | "lastError" | "repo" | "usage">;
+      type: 'agent_status';
+      payload: Pick<
+        AgentSnapshot,
+        | 'isConfigured'
+        | 'isStreaming'
+        | 'runtimePhase'
+        | 'pendingMessageCount'
+        | 'isCompacting'
+        | 'isRetrying'
+        | 'isBashRunning'
+        | 'lastError'
+        | 'repo'
+        | 'usage'
+      >;
     }
   | {
-      type: "chat_message_added";
+      type: 'chat_message_added';
       payload: {
         message: ChatMessage;
       };
     }
   | {
-      type: "chat_message_updated";
+      type: 'chat_message_updated';
       payload: {
         messageId: string;
         text: string;
-        status: ChatMessage["status"];
+        status: ChatMessage['status'];
       };
     }
   | {
-      type: "tool_activity";
+      type: 'tool_activity';
       payload: {
         tool: ToolActivity;
       };
     }
   | {
-      type: "workspace_changed";
+      type: 'workspace_changed';
       payload: {
         path: string;
-        kind: "add" | "change" | "unlink";
+        kind: 'add' | 'change' | 'unlink';
       };
     }
   | {
-      type: "repo_selected";
+      type: 'repo_selected';
       payload: {
         repo: SelectedRepo;
       };
     }
   | {
-      type: "agent_error";
+      type: 'agent_error';
       payload: {
         message: string;
       };
     }
   | {
-      type: "interactive_prompt";
+      type: 'interactive_prompt';
       payload: InteractivePrompt;
     };
 

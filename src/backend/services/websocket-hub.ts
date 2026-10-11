@@ -1,12 +1,12 @@
-import type { IncomingMessage } from "node:http";
-import type { Duplex } from "node:stream";
+import type { IncomingMessage } from 'node:http';
+import type { Duplex } from 'node:stream';
 
-import { WebSocketServer } from "ws";
+import { WebSocketServer } from 'ws';
 
-import type { AgentSnapshot, WebsocketEnvelope } from "../../shared/contracts.js";
+import type { AgentSnapshot, WebsocketEnvelope } from '../../shared/contracts.js';
 
-import { AuthService } from "./auth-service.js";
-import { noopLogger, type LogChannel } from "./log-service.js";
+import { AuthService } from './auth-service.js';
+import { noopLogger, type LogChannel } from './log-service.js';
 
 export class WebsocketHub {
   private readonly server = new WebSocketServer({ noServer: true });
@@ -20,19 +20,24 @@ export class WebsocketHub {
   ) {
     this.logger = logger ?? noopLogger;
 
-    this.server.on("connection", (socket) => {
-      this.logger.info("WebSocket client connected.", {
-        event: "ws_connected",
+    this.server.on('connection', (socket) => {
+      this.logger.info('WebSocket client connected.', {
+        event: 'ws_connected',
         details: {
           clients: this.server.clients.size,
         },
       });
 
-      socket.send(JSON.stringify({ type: "connected", payload: this.snapshotProvider() } satisfies WebsocketEnvelope));
+      socket.send(
+        JSON.stringify({
+          type: 'snapshot',
+          payload: this.snapshotProvider(),
+        } satisfies WebsocketEnvelope),
+      );
 
-      socket.on("close", () => {
-        this.logger.info("WebSocket client disconnected.", {
-          event: "ws_disconnected",
+      socket.on('close', () => {
+        this.logger.info('WebSocket client disconnected.', {
+          event: 'ws_disconnected',
           details: {
             clients: this.server.clients.size,
           },
@@ -45,16 +50,16 @@ export class WebsocketHub {
     const token = extractCookie(request.headers.cookie, this.sessionCookieName);
 
     if (!this.authService.isValid(token)) {
-      this.logger.warn("Rejected unauthorized WebSocket upgrade.", {
-        event: "ws_upgrade_rejected",
+      this.logger.warn('Rejected unauthorized WebSocket upgrade.', {
+        event: 'ws_upgrade_rejected',
       });
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
 
     this.server.handleUpgrade(request, socket, head, (client) => {
-      this.server.emit("connection", client, request);
+      this.server.emit('connection', client, request);
     });
   }
 
@@ -66,8 +71,8 @@ export class WebsocketHub {
         try {
           client.send(payload);
         } catch (error) {
-          this.logger.warn("Failed to broadcast WebSocket event.", {
-            event: "ws_broadcast_failed",
+          this.logger.warn('Failed to broadcast WebSocket event.', {
+            event: 'ws_broadcast_failed',
             details: {
               message: error instanceof Error ? error.message : String(error),
             },
@@ -78,13 +83,12 @@ export class WebsocketHub {
   }
 }
 
-
 export function extractCookie(headerValue: string | undefined, cookieName: string) {
   if (!headerValue) {
     return null;
   }
 
-  const cookies = headerValue.split(";").map((entry) => entry.trim());
+  const cookies = headerValue.split(';').map((entry) => entry.trim());
   const matched = cookies.find((entry) => entry.startsWith(`${cookieName}=`));
   return matched ? decodeURIComponent(matched.slice(cookieName.length + 1)) : null;
 }

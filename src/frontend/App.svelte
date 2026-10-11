@@ -62,7 +62,6 @@
   const themeStorageKey = 'pimobile.theme';
   const backendHealthPollIntervalMs = 10_000;
   const agentStatePollIntervalMs = 7_000;
-  const socketStateResyncDelaysMs = [300, 1200, 3000, 7000, 12000] as const;
   const diffRefreshDebounceMs = 450;
   const logStreamRetryDelayMs = 1_500;
   const maxVisibleLogEntries = 600;
@@ -149,8 +148,6 @@
   let socketManualClose = false;
   let socketStatus: SocketStatus = 'offline';
   let socketReconnectAttempt = 0;
-  let socketStateResyncTimer: number | null = null;
-  let socketStateResyncDelayIndex = 0;
 
   let backendStatus: BackendStatus = 'unknown';
   let backendLastSeen: string | null = null;
@@ -235,17 +232,10 @@
   $: chatMessages = [...agentSnapshot.messages, ...localSystemMessages];
 
   $: {
-    const unresolvedUsageCost =
-      agentSnapshot.usage.totalCost === 0 &&
-      agentSnapshot.usage.totalTokens > 0 &&
-      !agentSnapshot.usage.usingSubscription;
-
     const shouldPollAgentState =
       authenticated &&
       !!currentRepo &&
-      (socketStatus !== 'connected' ||
-        agentSnapshot.runtimePhase !== 'idle' ||
-        unresolvedUsageCost);
+      (socketStatus !== 'connected' || agentSnapshot.runtimePhase !== 'idle');
 
     if (shouldPollAgentState) {
       startAgentStatePolling();
@@ -470,8 +460,6 @@
       reconnectTimer = null;
     }
 
-    clearSocketStateResyncTimer();
-
     socketManualClose = true;
     socket?.close();
     socketManualClose = false;
@@ -509,7 +497,6 @@
         return;
       }
 
-      clearSocketStateResyncTimer();
       socket = null;
 
       if (!authenticated || socketManualClose) {
@@ -528,8 +515,6 @@
   }
 
   function closeSocket() {
-    clearSocketStateResyncTimer();
-
     if (reconnectTimer !== null) {
       window.clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -543,41 +528,6 @@
     }
 
     socketStatus = 'offline';
-  }
-
-  function clearSocketStateResyncTimer() {
-    if (socketStateResyncTimer !== null) {
-      window.clearTimeout(socketStateResyncTimer);
-      socketStateResyncTimer = null;
-    }
-
-    socketStateResyncDelayIndex = 0;
-  }
-
-  function scheduleSocketStateResyncBurst() {
-    clearSocketStateResyncTimer();
-    scheduleNextSocketStateResync();
-  }
-
-  function scheduleNextSocketStateResync() {
-    if (socketStateResyncDelayIndex >= socketStateResyncDelaysMs.length) {
-      return;
-    }
-
-    const delayMs = socketStateResyncDelaysMs[socketStateResyncDelayIndex];
-    socketStateResyncDelayIndex += 1;
-
-    socketStateResyncTimer = window.setTimeout(() => {
-      socketStateResyncTimer = null;
-
-      if (!authenticated || !currentRepo) {
-        return;
-      }
-
-      void loadAgentState({ silent: true }).finally(() => {
-        scheduleNextSocketStateResync();
-      });
-    }, delayMs);
   }
 
   function navigateMainView(nextView: ViewName) {
@@ -658,43 +608,32 @@
   }
 
   function handleSocketMessage(event: WebsocketEnvelope) {
-    if (event.type === 'connected') {
-      const mergedUsage = coalesceUsageCost(event.payload.usage, agentSnapshot.usage);
-      // On reconnect, do not restore a prompt the user already dismissed.
+    if (event.type === 'snapshot') {
+      // On reconnect or reset, do not restore a prompt the user already dismissed.
       const serverPrompt = event.payload.interactivePrompt ?? null;
       const interactivePrompt =
         serverPrompt && serverPrompt.promptId === dismissedPromptId ? null : serverPrompt;
 
       agentSnapshot = {
         ...event.payload,
-        usage: mergedUsage,
         interactivePrompt,
       };
       currentRepo = event.payload.repo;
       syncToolTraceFromSnapshot(event.payload);
       socketStatus = 'connected';
-      scheduleSocketStateResyncBurst();
       return;
     }
 
     if (event.type === 'agent_status') {
-      const mergedUsage = coalesceUsageCost(event.payload.usage, agentSnapshot.usage);
-
       // agent_status intentionally excludes interactivePrompt.
       // Interactive prompts arrive exclusively via the dedicated
-      // interactive_prompt event (and the connected snapshot on reconnect).
+      // interactive_prompt event (and the snapshot on reconnect).
       agentSnapshot = {
         ...agentSnapshot,
         ...event.payload,
-        usage: mergedUsage,
         repo: event.payload.repo ?? agentSnapshot.repo,
       };
       currentRepo = event.payload.repo ?? currentRepo;
-
-      if (agentSnapshot.usage.totalCost === 0 && agentSnapshot.usage.totalTokens > 0) {
-        scheduleSocketStateResyncBurst();
-      }
-
       return;
     }
 
@@ -1748,17 +1687,6 @@
     return [
       ...new Set(entries.map((entry) => entry.source).filter((source) => source.length > 0)),
     ].sort((left, right) => left.localeCompare(right));
-  }
-
-  function coalesceUsageCost(nextUsage: AgentUsage, previousUsage: AgentUsage) {
-    if (nextUsage.totalCost === 0 && nextUsage.totalTokens > 0 && previousUsage.totalCost > 0) {
-      return {
-        ...nextUsage,
-        totalCost: previousUsage.totalCost,
-      };
-    }
-
-    return nextUsage;
   }
 
   function showBanner(message: string, tone: 'info' | 'success' | 'error') {
