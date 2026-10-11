@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 
-import type { WebsocketEnvelope } from '../shared/contracts.js';
+import type { SelectedRepo, WebsocketEnvelope } from '../shared/contracts.js';
 
 import { createApp } from './app.js';
 import { loadConfig } from './config.js';
@@ -12,11 +12,9 @@ import { ModelUsageStore } from './services/model-usage-store.js';
 import { PiAgentService } from './services/pi-agent-service.js';
 import { PiAuthService } from './services/pi-auth-service.js';
 import { ResourceHealthService } from './services/resource-health-service.js';
-import { RepositoryRuntimeService } from './services/repository-runtime-service.js';
 import { WatcherService } from './services/watcher-service.js';
 import { WorkspaceService } from './services/workspace-service.js';
 import { WebsocketHub } from './services/websocket-hub.js';
-import { createGitRuntimeEnv } from './utils/git-env.js';
 
 const serverStartedAt = new Date();
 const config = loadConfig();
@@ -27,33 +25,8 @@ const logService = new LogService({
 const bootstrapLog = logService.child({ source: 'bootstrap' });
 const authService = new AuthService(config.appPassword);
 const resourceHealthService = new ResourceHealthService(config);
-const gitIdentity =
-  config.gitUserName && config.gitUserEmail
-    ? { name: config.gitUserName, email: config.gitUserEmail }
-    : undefined;
-const gitRuntimeEnv = createGitRuntimeEnv({
-  identity: gitIdentity,
-  ssh: {
-    privateKeyPath: config.sshPrivateKeyTarget,
-    knownHostsPath: config.sshKnownHostsPath,
-  },
-});
-
-// Propagate git-specific env vars into process.env so that the pi agent's
-// bash tool (executeBash) and any other child process inherits them.
-// This is critical for SSH-authenticated git operations (push, pull, clone)
-// run from within pi agent bash subprocesses.
-for (const [key, value] of Object.entries(gitRuntimeEnv)) {
-  if (value !== undefined && key.startsWith('GIT_') && !(key in process.env)) {
-    process.env[key] = value;
-  }
-}
-const workspaceService = new WorkspaceService(
-  config.workspaceRoot,
-  config.defaultRepo,
-  gitRuntimeEnv,
-);
-const gitService = new GitService(gitIdentity, gitRuntimeEnv);
+const workspaceService = new WorkspaceService(config.workspaceRoot, config.defaultRepo);
+const gitService = new GitService();
 const piAuthService = new PiAuthService(config);
 
 const websocketHub = new WebsocketHub(
@@ -87,24 +60,21 @@ const watcherService = new WatcherService(
   },
 );
 
-const repositoryRuntimeService = new RepositoryRuntimeService(
-  workspaceService,
-  watcherService,
-  piAgentService,
-  (repo) => {
-    websocketHub.broadcast({
-      type: 'repo_selected',
-      payload: { repo },
-    });
-  },
-);
+const activateRepo = async (repo: SelectedRepo) => {
+  await watcherService.watch(repo.absolutePath);
+  await piAgentService.selectRepo(repo);
+  websocketHub.broadcast({
+    type: 'repo_selected',
+    payload: { repo },
+  });
+};
 
 const app = createApp({
   config,
   authService,
   logService,
   workspaceService,
-  repositoryRuntimeService,
+  activateRepo,
   fileService: new FileService(),
   gitService,
   resourceHealthService,
@@ -124,7 +94,10 @@ server.on('upgrade', (request, socket, head) => {
   websocketHub.handleUpgrade(request, socket, head);
 });
 
-await repositoryRuntimeService.initialize();
+const defaultRepo = await workspaceService.initializeDefaultRepo();
+if (defaultRepo) {
+  await activateRepo(defaultRepo);
+}
 
 server.listen(config.port, config.host, () => {
   bootstrapLog.info('PiMobile server listening.', {

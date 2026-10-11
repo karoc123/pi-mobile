@@ -1,7 +1,12 @@
-import { appendFile, mkdir, readdir, rename, stat, unlink } from "node:fs/promises";
-import path from "node:path";
+import { appendFile, mkdir, readdir, rename, stat, unlink } from 'node:fs/promises';
+import path from 'node:path';
 
-import type { BackendLogEntry, BackendLogLevel, BackendLogQuery, BackendLogQueryResponse } from "../../shared/contracts.js";
+import type {
+  BackendLogEntry,
+  BackendLogLevel,
+  BackendLogQuery,
+  BackendLogQueryResponse,
+} from '../../shared/contracts.js';
 
 type LogContext = {
   source?: string;
@@ -40,7 +45,7 @@ type LogServiceOptions = {
   minLevel?: BackendLogLevel;
 };
 
-const defaultSource = "backend";
+const defaultSource = 'backend';
 
 const levelPriority: Record<BackendLogLevel, number> = {
   debug: 10,
@@ -62,49 +67,53 @@ export class LogService {
   constructor(private readonly options: LogServiceOptions) {
     this.maxEntries = options.maxEntries ?? 2500;
     this.maxFileBytes = options.maxFileBytes ?? 5 * 1024 * 1024;
-    this.minLevel = options.minLevel ?? "info";
-    this.logFilePath = path.join(options.logDirPath, "backend.log");
+    this.minLevel = options.minLevel ?? 'info';
+    this.logFilePath = path.join(options.logDirPath, 'backend.log');
     void mkdir(options.logDirPath, { recursive: true });
   }
 
   child(context: LogContext): LogChannel {
     return {
       debug: (message: string, metadata: LogMetadata = {}) => {
-        this.log("debug", message, { ...context, ...metadata });
+        this.log('debug', message, { ...context, ...metadata });
       },
       info: (message: string, metadata: LogMetadata = {}) => {
-        this.log("info", message, { ...context, ...metadata });
+        this.log('info', message, { ...context, ...metadata });
       },
       warn: (message: string, metadata: LogMetadata = {}) => {
-        this.log("warn", message, { ...context, ...metadata });
+        this.log('warn', message, { ...context, ...metadata });
       },
       error: (message: string, metadata: LogMetadata = {}) => {
-        this.log("error", message, { ...context, ...metadata });
+        this.log('error', message, { ...context, ...metadata });
       },
     };
   }
 
   debug(message: string, metadata: LogMetadata = {}) {
-    this.log("debug", message, metadata);
+    this.log('debug', message, metadata);
   }
 
   info(message: string, metadata: LogMetadata = {}) {
-    this.log("info", message, metadata);
+    this.log('info', message, metadata);
   }
 
   warn(message: string, metadata: LogMetadata = {}) {
-    this.log("warn", message, metadata);
+    this.log('warn', message, metadata);
   }
 
   error(message: string, metadata: LogMetadata = {}) {
-    this.log("error", message, metadata);
+    this.log('error', message, metadata);
   }
 
   queryLogs(query: BackendLogQuery): BackendLogQueryResponse {
     const limit = normalizeLimit(query.limit);
-    const beforeSeq = typeof query.beforeSeq === "number" && Number.isFinite(query.beforeSeq) ? query.beforeSeq : undefined;
+    const beforeSeq =
+      typeof query.beforeSeq === 'number' && Number.isFinite(query.beforeSeq)
+        ? query.beforeSeq
+        : undefined;
     const filtered = this.entries.filter((entry) => this.matchesQuery(entry, query));
-    const scoped = beforeSeq === undefined ? filtered : filtered.filter((entry) => entry.seq < beforeSeq);
+    const scoped =
+      beforeSeq === undefined ? filtered : filtered.filter((entry) => entry.seq < beforeSeq);
     const entries = scoped.slice(-limit);
     const hasMore = scoped.length > entries.length;
 
@@ -154,7 +163,7 @@ export class LogService {
     await clearTask;
   }
 
-  private log(level: BackendLogLevel, message: string, metadata: LogMetadata) {
+  log(level: BackendLogLevel, message: string, metadata: LogMetadata = {}) {
     if (levelPriority[level] < levelPriority[this.minLevel]) {
       return;
     }
@@ -197,12 +206,12 @@ export class LogService {
   private emitToConsole(entry: BackendLogEntry) {
     const output = JSON.stringify(entry);
 
-    if (entry.level === "error") {
+    if (entry.level === 'error') {
       console.error(output);
       return;
     }
 
-    if (entry.level === "warn") {
+    if (entry.level === 'warn') {
       console.warn(output);
       return;
     }
@@ -214,10 +223,10 @@ export class LogService {
     const fallback: BackendLogEntry = {
       seq: ++this.sequence,
       timestamp: new Date().toISOString(),
-      level: "error",
-      source: "log-service",
-      event: "persist_failed",
-      message: "Failed to persist backend log entry.",
+      level: 'error',
+      source: 'log-service',
+      event: 'persist_failed',
+      message: 'Failed to persist backend log entry.',
       repo: null,
       requestId: null,
       details: {
@@ -252,7 +261,8 @@ export class LogService {
       return true;
     }
 
-    const haystack = `${entry.message} ${entry.source} ${entry.event ?? ""} ${entry.repo ?? ""} ${serializeDetails(entry.details)}`.toLowerCase();
+    const haystack =
+      `${entry.message} ${entry.source} ${entry.event ?? ''} ${entry.repo ?? ''} ${serializeDetails(entry.details)}`.toLowerCase();
     return haystack.includes(needle);
   }
 
@@ -272,14 +282,20 @@ export class LogService {
       }
     }
 
-    await appendFile(this.logFilePath, `${JSON.stringify(entry)}\n`, "utf8");
+    await appendFile(this.logFilePath, `${JSON.stringify(entry)}\n`, 'utf8');
   }
 
   private async listPersistedLogFiles() {
     try {
       const entries = await readdir(this.options.logDirPath, { withFileTypes: true });
 
-      return entries.filter((entry) => entry.isFile() && (entry.name === "backend.log" || /^backend-\d+\.log$/.test(entry.name))).map((entry) => entry.name);
+      return entries
+        .filter(
+          (entry) =>
+            entry.isFile() &&
+            (entry.name === 'backend.log' || /^backend-\d+\.log$/.test(entry.name)),
+        )
+        .map((entry) => entry.name);
     } catch (error) {
       if (isMissingFile(error)) {
         return [];
@@ -299,7 +315,12 @@ function normalizeLimit(limit: number | undefined) {
 }
 
 function isMissingFile(error: unknown) {
-  return !!error && typeof error === "object" && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT";
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as NodeJS.ErrnoException).code === 'ENOENT'
+  );
 }
 
 function redactSecrets(value: unknown): unknown {
@@ -307,7 +328,7 @@ function redactSecrets(value: unknown): unknown {
     return value.map((entry) => redactSecrets(entry));
   }
 
-  if (!value || typeof value !== "object") {
+  if (!value || typeof value !== 'object') {
     return value;
   }
 
@@ -315,7 +336,7 @@ function redactSecrets(value: unknown): unknown {
 
   for (const [key, candidate] of Object.entries(value)) {
     if (looksSensitive(key)) {
-      redacted[key] = "[REDACTED]";
+      redacted[key] = '[REDACTED]';
       continue;
     }
 
@@ -331,10 +352,10 @@ function looksSensitive(key: string) {
 
 function serializeDetails(details: unknown) {
   if (details === null || details === undefined) {
-    return "";
+    return '';
   }
 
-  if (typeof details === "string") {
+  if (typeof details === 'string') {
     return details;
   }
 

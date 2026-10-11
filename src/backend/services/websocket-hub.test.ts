@@ -14,7 +14,6 @@ describe('WebsocketHub', () => {
   const cookieName = 'pi_session';
   const dummySnapshot: AgentSnapshot = {
     repo: null,
-    isConfigured: false,
     isStreaming: false,
     runtimePhase: 'idle',
     pendingMessageCount: 0,

@@ -66,7 +66,6 @@ export class PiAgentService {
 
     return {
       repo: this.currentRepo,
-      isConfigured: this.currentRepo !== null,
       ...runtimeState,
       messages: this.messages,
       tools: this.tools,
@@ -674,7 +673,6 @@ export class PiAgentService {
     this.broadcast({
       type: 'agent_status',
       payload: {
-        isConfigured: this.currentRepo !== null,
         ...runtimeState,
         lastError: this.lastError,
         repo: this.currentRepo,

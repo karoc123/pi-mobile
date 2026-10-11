@@ -36,20 +36,8 @@ export type PiAuthLoginTokenRequest = {
   token: string;
 };
 
-export type PiAuthLoginTokenResponse = {
-  ok: true;
-  provider: string;
-  configured: true;
-};
-
 export type PiAuthLogoutRequest = {
   provider: string;
-};
-
-export type PiAuthLogoutResponse = {
-  ok: true;
-  provider: string;
-  configured: false;
 };
 
 export type FileEntry = {
@@ -71,17 +59,8 @@ export type FileDocument = {
   binaryContentBase64: string | null;
 };
 
-export type FileCreateRequest = {
-  path: string;
-  content?: string;
-};
-
 export type FileCreateResult = {
   ok: true;
-  path: string;
-};
-
-export type FileCreateDirectoryRequest = {
   path: string;
 };
 
@@ -90,20 +69,10 @@ export type FileCreateDirectoryResult = {
   path: string;
 };
 
-export type FileMoveRequest = {
-  fromPath: string;
-  toPath: string;
-};
-
 export type FileMoveResult = {
   ok: true;
   fromPath: string;
   toPath: string;
-};
-
-export type FileDuplicateRequest = {
-  sourcePath: string;
-  targetPath: string;
 };
 
 export type FileDuplicateResult = {
@@ -111,22 +80,9 @@ export type FileDuplicateResult = {
   path: string;
 };
 
-export type FileDeleteRequest = {
-  path: string;
-};
-
 export type FileDeleteResult = {
   ok: true;
   path: string;
-};
-
-export type FileUploadRequest = {
-  path: string;
-  /**
-   * The file content as a Base64-encoded string.
-   * The backend will decode and write the binary data.
-   */
-  contentBase64: string;
 };
 
 export type FileUploadResult = {
@@ -159,7 +115,6 @@ export type DiffFile = {
   oldPath: string;
   newPath: string;
   status: 'modified' | 'added' | 'deleted' | 'renamed';
-  diff: string;
   hunks: DiffHunk[];
   addedLines: number;
   removedLines: number;
@@ -192,10 +147,6 @@ export type GitBranchesResponse = {
 
 export type GitSyncResult = {
   summary: string;
-};
-
-export type GitHunkMutationRequest = {
-  diff: string;
 };
 
 export type ChatRole = 'user' | 'assistant' | 'system';
@@ -249,7 +200,6 @@ export type AgentMinimalState = {
 
 export type AgentSnapshot = {
   repo: SelectedRepo | null;
-  isConfigured: boolean;
   isStreaming: boolean;
   runtimePhase: AgentRuntimePhase;
   pendingMessageCount: number;
@@ -522,7 +472,6 @@ export type WebsocketEnvelope =
       type: 'agent_status';
       payload: Pick<
         AgentSnapshot,
-        | 'isConfigured'
         | 'isStreaming'
         | 'runtimePhase'
         | 'pendingMessageCount'

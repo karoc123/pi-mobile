@@ -63,9 +63,11 @@ fi
 # rather than rebasing which could rewrite history.
 git config --global pull.rebase false
 
-# Ensure safe.directory covers the workspace root to avoid
-# "dubious ownership" errors when the workspace is mounted from the host.
-git config --global --add safe.directory "${WORKSPACE_ROOT_PATH}" 2>/dev/null || true
+# Trust all repositories to avoid dubious ownership errors on mounted volumes.
+git config --global safe.directory '*'
+
+# Configure SSH command to use container known_hosts and auto-accept new keys.
+git config --global core.sshCommand "ssh -o UserKnownHostsFile=${SSH_KNOWN_HOSTS_PATH} -o StrictHostKeyChecking=accept-new"
 
 # Automatically set upstream when pushing a new branch (avoids the
 # "fatal: The current branch has no upstream branch" error).

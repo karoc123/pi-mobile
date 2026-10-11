@@ -25,6 +25,11 @@ COPY docker/entrypoint.sh ./docker/entrypoint.sh
 
 ENV HOME=/home/node
 ENV NODE_ENV=production
+ENV WORKSPACE_ROOT=/workspace
+ENV LOGS_DIR=/data/db/logs
+ENV MODEL_USAGE_PATH=/data/db/model-usage.json
+ENV PI_AGENT_DIR=/data/pi/agent
+ENV PI_SESSION_DIR=/data/pi/sessions
 EXPOSE 3000
 
 ENTRYPOINT ["sh", "/app/docker/entrypoint.sh"]

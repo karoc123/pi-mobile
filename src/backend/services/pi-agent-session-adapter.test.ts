@@ -13,8 +13,6 @@ function createAdapter() {
       appPassword: 'secret-pass',
       workspaceRoot: '/tmp',
       defaultRepo: undefined,
-      gitUserName: undefined,
-      gitUserEmail: undefined,
       modelUsagePath: '/tmp/.pi-mobile/model-usage.json',
       logsDirPath: '/tmp/.pi-mobile/logs',
       logLevel: 'debug',

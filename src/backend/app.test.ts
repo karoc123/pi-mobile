@@ -94,9 +94,9 @@ describe('createApp', () => {
     const gitUnstageHunk = vi.fn(async () => undefined);
     const gitStageAll = vi.fn(async () => undefined);
     const gitUnstageAll = vi.fn(async () => undefined);
-    const cloneRepo = vi.fn(async (_remoteUrl: string, _destinationPath?: string) =>
-      workspaceService.requireCurrentRepo(),
-    );
+    const cloneRepo = vi
+      .spyOn(workspaceService, 'cloneRepo')
+      .mockImplementation(async () => workspaceService.requireCurrentRepo());
     const getPiAuthStatus = vi.fn(() => ({
       providers: [{ provider: 'anthropic', label: 'Anthropic', configured: false }],
     }));
@@ -120,12 +120,7 @@ describe('createApp', () => {
       authService,
       logService,
       workspaceService,
-      repositoryRuntimeService: {
-        selectRepo: vi.fn(async (relativePath: string) =>
-          workspaceService.selectRepo(relativePath),
-        ),
-        cloneRepo,
-      } as never,
+      activateRepo: vi.fn(),
       fileService: {
         browse: vi.fn(async () => []),
         readFile: vi.fn(async () => ({ path: 'README.md', content: '# temp repo\n' })),
@@ -149,7 +144,6 @@ describe('createApp', () => {
       piAgentService: {
         getSnapshot: vi.fn(() => ({
           repo: workspaceService.getCurrentRepo(),
-          isConfigured: true,
           isStreaming: false,
           runtimePhase: 'idle',
           pendingMessageCount: 0,

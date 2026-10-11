@@ -23,14 +23,9 @@ export type AppConfig = {
   piProvider?: string;
   piModel?: string;
   piThinkingLevel?: (typeof thinkingLevels)[number];
-  gitUserName?: string;
-  gitUserEmail?: string;
-  sshPrivateKeyTarget?: string;
-  sshKnownHostsPath?: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  hydrateProcessEnvFromDotEnvIfNeeded(env);
   const read = (name: string) => {
     const value = env[name];
     return value === undefined || value.trim() === '' ? undefined : value;
@@ -42,8 +37,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const port = Number(read('PORT') ?? 3000);
   const piProvider = read('PI_PROVIDER');
   const piModel = read('PI_MODEL');
-  const gitUserName = read('GIT_USER_NAME');
-  const gitUserEmail = read('GIT_USER_EMAIL');
   const resolveOr = <T extends string | undefined>(name: string, fallback: T): string | T => {
     const value = read(name);
     return value ? path.resolve(value) : fallback;
@@ -61,10 +54,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new Error('PI_PROVIDER and PI_MODEL must be configured together.');
   }
 
-  if (Boolean(gitUserName) !== Boolean(gitUserEmail)) {
-    throw new Error('GIT_USER_NAME and GIT_USER_EMAIL must be configured together.');
-  }
-
   const sessionCookieSecure = read('SESSION_COOKIE_SECURE');
 
   return {
@@ -73,26 +62,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     host: read('HOST') ?? '0.0.0.0',
     port,
     appPassword,
-    modelUsagePath: resolveDefaultModelUsagePath(workspaceRoot, nodeEnv),
-    logsDirPath: resolveOr('LOGS_DIR', resolveDefaultLogsDirPath(workspaceRoot, nodeEnv)),
+    modelUsagePath: resolveOr(
+      'MODEL_USAGE_PATH',
+      path.resolve(workspaceRoot, '.pi-mobile', 'model-usage.json'),
+    ),
+    logsDirPath: resolveOr('LOGS_DIR', path.resolve(workspaceRoot, '.pi-mobile', 'logs')),
     logLevel: readEnum('LOG_LEVEL', read('LOG_LEVEL'), logLevels) ?? 'info',
     defaultRepo: read('DEFAULT_REPO'),
     sessionCookieName: read('SESSION_COOKIE_NAME') ?? 'pi_mobile_session',
     sessionCookieSecure: sessionCookieSecure
       ? asBoolean(sessionCookieSecure)
       : nodeEnv === 'production',
-    piAgentDir: resolveOr('PI_AGENT_DIR', resolveDefaultPiAgentDir(nodeEnv)),
-    piSessionDir: resolveOr('PI_SESSION_DIR', resolveDefaultPiSessionDir(nodeEnv)),
+    piAgentDir: resolveOr('PI_AGENT_DIR', undefined),
+    piSessionDir: resolveOr('PI_SESSION_DIR', undefined),
     piProvider,
     piModel,
     piThinkingLevel: readEnum('PI_THINKING_LEVEL', read('PI_THINKING_LEVEL'), thinkingLevels),
-    gitUserName,
-    gitUserEmail,
-    sshPrivateKeyTarget: resolveOr(
-      'SSH_PRIVATE_KEY_TARGET',
-      resolveDefaultSshPrivateKeyTarget(nodeEnv),
-    ),
-    sshKnownHostsPath: resolveOr('SSH_KNOWN_HOSTS_PATH', resolveDefaultSshKnownHostsPath(nodeEnv)),
   };
 }
 
@@ -112,72 +97,6 @@ function readEnum<T extends string>(
   return value as T;
 }
 
-function hydrateProcessEnvFromDotEnvIfNeeded(env: NodeJS.ProcessEnv) {
-  if (env !== process.env) {
-    return;
-  }
-
-  if (typeof process.loadEnvFile !== 'function') {
-    return;
-  }
-
-  try {
-    process.loadEnvFile('.env');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
-  }
-}
-
 function asBoolean(value: string | undefined) {
   return value === '1' || value === 'true' || value === 'yes';
-}
-
-function resolveDefaultModelUsagePath(workspaceRoot: string, nodeEnv: AppConfig['nodeEnv']) {
-  if (nodeEnv === 'production') {
-    return path.resolve('/data/db/model-usage.json');
-  }
-
-  return path.resolve(workspaceRoot, '.pi-mobile', 'model-usage.json');
-}
-
-function resolveDefaultLogsDirPath(workspaceRoot: string, nodeEnv: AppConfig['nodeEnv']) {
-  if (nodeEnv === 'production') {
-    return path.resolve('/data/db/logs');
-  }
-
-  return path.resolve(workspaceRoot, '.pi-mobile', 'logs');
-}
-
-function resolveDefaultPiAgentDir(nodeEnv: AppConfig['nodeEnv']) {
-  if (nodeEnv === 'production') {
-    return path.resolve('/data/pi/agent');
-  }
-
-  return undefined;
-}
-
-function resolveDefaultPiSessionDir(nodeEnv: AppConfig['nodeEnv']) {
-  if (nodeEnv === 'production') {
-    return path.resolve('/data/pi/sessions');
-  }
-
-  return undefined;
-}
-
-function resolveDefaultSshPrivateKeyTarget(nodeEnv: AppConfig['nodeEnv']) {
-  if (nodeEnv === 'production') {
-    return path.resolve('/home/node/.ssh/id_ed25519');
-  }
-
-  return undefined;
-}
-
-function resolveDefaultSshKnownHostsPath(nodeEnv: AppConfig['nodeEnv']) {
-  if (nodeEnv === 'production') {
-    return path.resolve('/data/db/known_hosts');
-  }
-
-  return undefined;
 }

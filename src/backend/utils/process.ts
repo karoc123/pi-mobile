@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn } from 'node:child_process';
 
 export type CommandResult = {
   stdout: string;
@@ -8,31 +8,31 @@ export type CommandResult = {
 export async function runCommand(
   command: string,
   args: string[],
-  options: { cwd?: string; input?: string; env?: NodeJS.ProcessEnv; allowedExitCodes?: number[] } = {},
+  options: { cwd?: string; input?: string; allowedExitCodes?: number[] } = {},
 ): Promise<CommandResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: options.env ?? process.env,
-      stdio: "pipe",
+      env: process.env,
+      stdio: 'pipe',
     });
 
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
 
-    child.stdout.on("data", (chunk) => {
+    child.stdout.on('data', (chunk) => {
       stdout += chunk.toString();
     });
 
-    child.stderr.on("data", (chunk) => {
+    child.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
     });
 
-    child.on("error", (error) => {
+    child.on('error', (error) => {
       reject(error);
     });
 
-    child.on("close", (code) => {
+    child.on('close', (code) => {
       const allowedExitCodes = options.allowedExitCodes ?? [0];
       const exitCode = code ?? 1;
 

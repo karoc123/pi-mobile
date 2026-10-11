@@ -85,7 +85,6 @@
 
   const emptyAgentSnapshot: AgentSnapshot = {
     repo: null,
-    isConfigured: false,
     isStreaming: false,
     runtimePhase: 'idle',
     pendingMessageCount: 0,
@@ -703,7 +702,6 @@
       agentSnapshot = {
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
-        isConfigured: true,
       };
       selectedDocument = null;
       draftContent = '';

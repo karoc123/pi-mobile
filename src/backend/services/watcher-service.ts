@@ -1,16 +1,15 @@
-import path from "node:path";
+import path from 'node:path';
 
-import chokidar, { type FSWatcher } from "chokidar";
+import chokidar, { type FSWatcher } from 'chokidar';
 
-import { toPosixPath } from "../utils/path-utils.js";
-import type { LogChannel } from "./log-service.js";
+import { toPosixPath } from '../utils/path-utils.js';
+import type { LogChannel } from './log-service.js';
 
 type WatcherServiceOptions = {
   ignoredAbsolutePaths?: string[];
-  ignoredRelativeRoots?: string[];
 };
 
-const defaultIgnoredRoots = [".git", "node_modules", "dist", "coverage", ".pi-mobile", ".pi"];
+const defaultIgnoredRoots = ['.git', 'node_modules', 'dist', 'coverage', '.pi-mobile', '.pi'];
 
 export class WatcherService {
   private watcher: FSWatcher | null = null;
@@ -18,12 +17,21 @@ export class WatcherService {
   private readonly ignoredRelativeRoots: string[];
 
   constructor(
-    private readonly onChange: (payload: { path: string; kind: "add" | "change" | "unlink" }) => void,
+    private readonly onChange: (payload: {
+      path: string;
+      kind: 'add' | 'change' | 'unlink';
+    }) => void,
     private readonly logger?: LogChannel,
     options: WatcherServiceOptions = {},
   ) {
-    this.ignoredAbsolutePaths = [...new Set((options.ignoredAbsolutePaths ?? []).map((entry) => normalizeAbsolutePath(entry)).filter((entry) => entry.length > 0))];
-    this.ignoredRelativeRoots = [...new Set([...defaultIgnoredRoots, ...(options.ignoredRelativeRoots ?? [])].map((entry) => normalizeRelativeRoot(entry)).filter((entry) => entry.length > 0))];
+    this.ignoredAbsolutePaths = [
+      ...new Set(
+        (options.ignoredAbsolutePaths ?? [])
+          .map((entry) => normalizeAbsolutePath(entry))
+          .filter((entry) => entry.length > 0),
+      ),
+    ];
+    this.ignoredRelativeRoots = defaultIgnoredRoots.map((entry) => normalizeRelativeRoot(entry));
   }
 
   async watch(repoPath: string | null) {
@@ -38,23 +46,23 @@ export class WatcherService {
       ignored: (candidatePath) => this.isIgnoredPath(repoPath, candidatePath),
     });
 
-    this.logger?.info("Started repository watcher.", {
-      event: "watcher_started",
+    this.logger?.info('Started repository watcher.', {
+      event: 'watcher_started',
       repo: repoPath,
     });
 
-    this.watcher.on("add", (filePath) => {
-      this.emitIfVisible(repoPath, filePath, "add");
+    this.watcher.on('add', (filePath) => {
+      this.emitIfVisible(repoPath, filePath, 'add');
     });
-    this.watcher.on("change", (filePath) => {
-      this.emitIfVisible(repoPath, filePath, "change");
+    this.watcher.on('change', (filePath) => {
+      this.emitIfVisible(repoPath, filePath, 'change');
     });
-    this.watcher.on("unlink", (filePath) => {
-      this.emitIfVisible(repoPath, filePath, "unlink");
+    this.watcher.on('unlink', (filePath) => {
+      this.emitIfVisible(repoPath, filePath, 'unlink');
     });
-    this.watcher.on("error", (error) => {
-      this.logger?.error("Repository watcher failed.", {
-        event: "watcher_error",
+    this.watcher.on('error', (error) => {
+      this.logger?.error('Repository watcher failed.', {
+        event: 'watcher_error',
         repo: repoPath,
         details: {
           message: error instanceof Error ? error.message : String(error),
@@ -65,8 +73,8 @@ export class WatcherService {
 
   async dispose() {
     if (this.watcher) {
-      this.logger?.info("Stopping repository watcher.", {
-        event: "watcher_stopped",
+      this.logger?.info('Stopping repository watcher.', {
+        event: 'watcher_stopped',
       });
     }
 
@@ -74,14 +82,14 @@ export class WatcherService {
     this.watcher = null;
   }
 
-  private emitIfVisible(repoPath: string, filePath: string, kind: "add" | "change" | "unlink") {
+  private emitIfVisible(repoPath: string, filePath: string, kind: 'add' | 'change' | 'unlink') {
     if (this.isIgnoredPath(repoPath, filePath)) {
       return;
     }
 
     const relativePath = toPosixPath(path.relative(repoPath, filePath));
 
-    if (relativePath.length === 0 || relativePath === "." || relativePath.startsWith("../")) {
+    if (relativePath.length === 0 || relativePath === '.' || relativePath.startsWith('../')) {
       return;
     }
 
@@ -92,25 +100,30 @@ export class WatcherService {
     const absolutePath = normalizeAbsolutePath(candidatePath);
 
     for (const ignoredAbsolutePath of this.ignoredAbsolutePaths) {
-      if (absolutePath === ignoredAbsolutePath || absolutePath.startsWith(`${ignoredAbsolutePath}/`)) {
+      if (
+        absolutePath === ignoredAbsolutePath ||
+        absolutePath.startsWith(`${ignoredAbsolutePath}/`)
+      ) {
         return true;
       }
     }
 
     const relativePath = toPosixPath(path.relative(repoPath, absolutePath));
 
-    if (relativePath === "" || relativePath === "." || relativePath.startsWith("../")) {
+    if (relativePath === '' || relativePath === '.' || relativePath.startsWith('../')) {
       return false;
     }
 
-    return this.ignoredRelativeRoots.some((root) => relativePath === root || relativePath.startsWith(`${root}/`));
+    return this.ignoredRelativeRoots.some(
+      (root) => relativePath === root || relativePath.startsWith(`${root}/`),
+    );
   }
 }
 
 function normalizeAbsolutePath(input: string) {
-  return toPosixPath(path.resolve(input)).replace(/\/+$/, "");
+  return toPosixPath(path.resolve(input)).replace(/\/+$/, '');
 }
 
 function normalizeRelativeRoot(input: string) {
-  return toPosixPath(input).replace(/^\/+/, "").replace(/\/+$/, "");
+  return toPosixPath(input).replace(/^\/+/, '').replace(/\/+$/, '');
 }
