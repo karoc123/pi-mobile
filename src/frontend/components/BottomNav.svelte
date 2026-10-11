@@ -3,12 +3,13 @@
 </script>
 
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  interface Props {
+    currentView?: ViewName;
+    disabled?: boolean;
+    onnavigate?: (view: ViewName) => void;
+  }
 
-  export let currentView: ViewName = 'chat';
-  export let disabled = false;
-
-  const dispatch = createEventDispatcher<{ navigate: { view: ViewName } }>();
+  const { currentView = 'chat', disabled = false, onnavigate }: Props = $props();
 
   const items: Array<{ label: string; value: ViewName }> = [
     { label: 'Chat', value: 'chat' },
@@ -23,7 +24,7 @@
       type="button"
       class:selected={item.value === currentView}
       {disabled}
-      on:click={() => dispatch('navigate', { view: item.value })}
+      onclick={() => onnavigate?.(item.value)}
     >
       {item.label}
     </button>

@@ -11,6 +11,7 @@ import { noopLogger, type LogChannel } from './log-service.js';
 export class WebsocketHub {
   private readonly server = new WebSocketServer({ noServer: true });
   private readonly logger: LogChannel;
+  private readonly pingInterval: NodeJS.Timeout;
 
   constructor(
     private readonly authService: AuthService,
@@ -21,6 +22,13 @@ export class WebsocketHub {
     this.logger = logger ?? noopLogger;
 
     this.server.on('connection', (socket) => {
+      const aliveSocket = socket as typeof socket & { isAlive?: boolean };
+      aliveSocket.isAlive = true;
+
+      socket.on('pong', () => {
+        aliveSocket.isAlive = true;
+      });
+
       this.logger.info('WebSocket client connected.', {
         event: 'ws_connected',
         details: {
@@ -44,6 +52,24 @@ export class WebsocketHub {
         });
       });
     });
+
+    this.pingInterval = setInterval(() => {
+      for (const client of this.server.clients) {
+        const aliveClient = client as typeof client & { isAlive?: boolean };
+        if (aliveClient.isAlive === false) {
+          client.terminate();
+          continue;
+        }
+        aliveClient.isAlive = false;
+        client.ping();
+      }
+    }, 30_000);
+    this.pingInterval.unref();
+  }
+
+  close() {
+    clearInterval(this.pingInterval);
+    this.server.close();
   }
 
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer) {
