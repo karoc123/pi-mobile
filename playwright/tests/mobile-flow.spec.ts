@@ -199,15 +199,14 @@ test('mobile browser flow handles command palette session operations', async ({ 
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('faux/faux-1')).toBeVisible();
 
-  await dialog.locator('.command-tab').filter({ hasText: '/name' }).click();
+  await dialog.locator('.command-tab').filter({ hasText: '/session' }).click();
   const sessionNameInput = page.locator('#session-name-input');
   await expect(sessionNameInput).toBeVisible();
   await sessionNameInput.fill('e2e-session-name');
   await dialog.getByRole('button', { name: 'Save session name' }).click();
   await expect(page.locator('.notice.success')).toContainText('Session renamed to');
 
-  await dialog.locator('.command-tab').filter({ hasText: '/new' }).click();
-  await page.getByRole('button', { name: 'Start new session' }).click();
+  await dialog.getByRole('button', { name: 'Start new session' }).click();
   await expect(page.locator('.notice.success')).toContainText('Started a new session.');
 });
 

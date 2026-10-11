@@ -1,4 +1,4 @@
-import type { AgentSlashCommand } from "../../shared/contracts.js";
+import type { AgentSlashCommand } from '../../shared/contracts.js';
 
 export type SlashCommandSuggestion = {
   command: string;
@@ -6,22 +6,25 @@ export type SlashCommandSuggestion = {
 };
 
 export const SLASH_COMMANDS: SlashCommandSuggestion[] = [
-  { command: "/model", description: "Switch models" },
-  { command: "/session", description: "Show session info and stats" },
-  { command: "/settings", description: "Adjust theme and thinking" },
-  { command: "/queue", description: "Control steer/follow-up queue" },
-  { command: "/retry", description: "Manage automatic retries" },
-  { command: "/compact", description: "Compact the current context" },
-  { command: "/bash", description: "Run direct bash commands" },
-  { command: "/name", description: "Rename the active session" },
-  { command: "/export", description: "Export current session" },
-  { command: "/resume", description: "Open a previous session" },
-  { command: "/new", description: "Start a fresh session" },
-  { command: "/copy", description: "Copy the last assistant reply" },
-  { command: "/tree", description: "Jump within the session tree" },
-  { command: "/fork", description: "Continue from an earlier prompt" },
-  { command: "/commands", description: "List runtime slash commands" },
+  { command: '/model', description: 'Switch models' },
+  { command: '/session', description: 'Session metrics, rename, export, restart' },
+  { command: '/resume', description: 'Open a previous session' },
+  { command: '/tree', description: 'Jump within the session tree' },
+  { command: '/fork', description: 'Continue from an earlier prompt' },
+  { command: '/bash', description: 'Run direct bash commands' },
+  { command: '/settings', description: 'Thinking, compact, queue, and retry settings' },
+  { command: '/commands', description: 'List runtime slash commands' },
 ];
+
+export const SLASH_COMMAND_ALIASES: Record<string, string> = {
+  '/name': '/session',
+  '/export': '/session',
+  '/new': '/session',
+  '/compact': '/settings',
+  '/queue': '/settings',
+  '/retry': '/settings',
+  '/thinking': '/settings',
+};
 
 export type SlashCommandQuery = {
   value: string;
@@ -34,7 +37,9 @@ export type SubmittedSlashCommand = {
   args: string;
 };
 
-export function toRuntimeSlashCommandSuggestions(commands: AgentSlashCommand[]): SlashCommandSuggestion[] {
+export function toRuntimeSlashCommandSuggestions(
+  commands: AgentSlashCommand[],
+): SlashCommandSuggestion[] {
   const deduped = new Map<string, SlashCommandSuggestion>();
 
   for (const command of commands) {
@@ -44,7 +49,7 @@ export function toRuntimeSlashCommandSuggestions(commands: AgentSlashCommand[]):
       continue;
     }
 
-    const slashCommand = normalizedName.startsWith("/") ? normalizedName : `/${normalizedName}`;
+    const slashCommand = normalizedName.startsWith('/') ? normalizedName : `/${normalizedName}`;
     const normalizedKey = slashCommand.toLowerCase();
 
     if (deduped.has(normalizedKey)) {
@@ -60,7 +65,10 @@ export function toRuntimeSlashCommandSuggestions(commands: AgentSlashCommand[]):
   return [...deduped.values()].sort((left, right) => left.command.localeCompare(right.command));
 }
 
-export function findSlashCommandQuery(prompt: string, cursorIndex: number): SlashCommandQuery | null {
+export function findSlashCommandQuery(
+  prompt: string,
+  cursorIndex: number,
+): SlashCommandQuery | null {
   const safeCursorIndex = Math.max(0, Math.min(cursorIndex, prompt.length));
   const beforeCursor = prompt.slice(0, safeCursorIndex);
   const afterCursor = prompt.slice(safeCursorIndex);
@@ -72,7 +80,7 @@ export function findSlashCommandQuery(prompt: string, cursorIndex: number): Slas
 
   const value = match[2];
   const start = beforeCursor.length - value.length;
-  const afterMatch = /^[a-z0-9:_-]*/i.exec(afterCursor)?.[0] ?? "";
+  const afterMatch = /^[a-z0-9:_-]*/i.exec(afterCursor)?.[0] ?? '';
 
   return {
     value,
@@ -81,7 +89,11 @@ export function findSlashCommandQuery(prompt: string, cursorIndex: number): Slas
   };
 }
 
-export function getSlashCommandSuggestions(prompt: string, cursorIndex: number, suggestions: SlashCommandSuggestion[] = SLASH_COMMANDS) {
+export function getSlashCommandSuggestions(
+  prompt: string,
+  cursorIndex: number,
+  suggestions: SlashCommandSuggestion[] = SLASH_COMMANDS,
+) {
   const query = findSlashCommandQuery(prompt, cursorIndex);
 
   if (!query) {
@@ -90,10 +102,16 @@ export function getSlashCommandSuggestions(prompt: string, cursorIndex: number, 
 
   const normalizedQuery = query.value.toLowerCase();
 
-  return suggestions.filter((entry) => entry.command.toLowerCase().startsWith(normalizedQuery)).slice(0, 6);
+  return suggestions
+    .filter((entry) => entry.command.toLowerCase().startsWith(normalizedQuery))
+    .slice(0, 6);
 }
 
-export function applySlashCommandSuggestion(prompt: string, cursorIndex: number, suggestion: SlashCommandSuggestion) {
+export function applySlashCommandSuggestion(
+  prompt: string,
+  cursorIndex: number,
+  suggestion: SlashCommandSuggestion,
+) {
   const query = findSlashCommandQuery(prompt, cursorIndex);
 
   if (!query) {
@@ -112,7 +130,10 @@ export function applySlashCommandSuggestion(prompt: string, cursorIndex: number,
   };
 }
 
-export function getSubmittedSlashCommand(prompt: string, suggestions: SlashCommandSuggestion[] = SLASH_COMMANDS): SubmittedSlashCommand | null {
+export function getSubmittedSlashCommand(
+  prompt: string,
+  suggestions: SlashCommandSuggestion[] = SLASH_COMMANDS,
+): SubmittedSlashCommand | null {
   const trimmedPrompt = prompt.trim();
   const match = /^(\/[a-z0-9:_-]+)(?:\s+(.*))?$/i.exec(trimmedPrompt);
 
@@ -129,6 +150,6 @@ export function getSubmittedSlashCommand(prompt: string, suggestions: SlashComma
 
   return {
     suggestion,
-    args: (match[2] ?? "").trim(),
+    args: (match[2] ?? '').trim(),
   };
 }

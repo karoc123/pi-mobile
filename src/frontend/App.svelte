@@ -3,9 +3,8 @@
   import { onMount, type Component } from 'svelte';
 
   import type {
-    AgentCommandRequest,
     AgentCommandResponse,
-    AgentCommandState,
+    AgentSlashCommand,
     AgentSnapshot,
     AgentUsage,
     ChatMessage,
@@ -32,7 +31,6 @@
     setUnauthorizedHandler,
     toErrorMessage,
   } from './lib/api.js';
-  import { copyText } from './lib/clipboard.js';
   import { editorState } from './lib/editor-state.svelte.js';
   import { toast } from './lib/toast.svelte.js';
 
@@ -130,11 +128,8 @@
   let editorViewPromise: Promise<void> | null = null;
   let theme: ThemeName = 'vscode-dark';
   let commandPaletteOpen = false;
-  let commandStateLoading = false;
-  let commandBusy = false;
-  let commandState: AgentCommandState | null = null;
   let commandPaletteInitialCommand: string | null = null;
-  let commandPaletteSelectionToken = 0;
+  let availableCommands: AgentSlashCommand[] = [];
   let composerPrefill = '';
   let composerPrefillToken = 0;
 
@@ -499,7 +494,6 @@
     if (event.type === 'repo_selected') {
       currentRepo = event.payload.repo;
       commandPaletteOpen = false;
-      commandState = null;
       resetToolTraceBatches();
       localSystemMessages = [];
       agentSnapshot = {
@@ -522,7 +516,7 @@
 
   async function refreshCurrentRepoData() {
     handleWorkspaceChange();
-    await Promise.all([loadAgentState(), loadCommandState()]);
+    await loadAgentState();
   }
 
   function openLogView() {
@@ -543,36 +537,17 @@
     }
   }
 
-  async function loadCommandState() {
-    if (!currentRepo) {
-      commandState = null;
-      return;
-    }
-
-    commandStateLoading = true;
-
-    try {
-      commandState = await apiFetch<AgentCommandState>('/api/agent/command-state');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      commandStateLoading = false;
-    }
-  }
-
-  async function openCommandPalette(initialCommand: string | null = null) {
+  function openCommandPalette(initialCommand: string | null = null) {
     if (!currentRepo) {
       return;
     }
 
     commandPaletteInitialCommand = initialCommand;
-    commandPaletteSelectionToken += 1;
     commandPaletteOpen = true;
-    await loadCommandState();
   }
 
   async function startNewChatFromComposer() {
-    if (!currentRepo || commandBusy) {
+    if (!currentRepo) {
       return;
     }
 
@@ -581,7 +556,14 @@
     }
 
     localSystemMessages = [];
-    await executePaletteCommand({ command: 'new-session' });
+    resetToolTraceBatches();
+    const result = await run(
+      () => api.post<AgentCommandResponse>('/api/agent/command', { command: 'new-session' }),
+      'Started a new session.',
+    );
+    if (result) {
+      await loadAgentState();
+    }
   }
 
   /** Sendet eine User-Nachricht und räumt dabei offene InteractivePrompts weg. */
@@ -616,86 +598,6 @@
 
   async function abortRun() {
     await run(() => api.post('/api/agent/abort'));
-  }
-
-  async function executePaletteCommand(request: AgentCommandRequest) {
-    commandBusy = true;
-
-    try {
-      const response = await apiFetch<AgentCommandResponse>('/api/agent/command', {
-        method: 'POST',
-        body: JSON.stringify(request),
-      });
-
-      await loadAgentState();
-
-      if (response.prompt) {
-        seedComposer(response.prompt);
-      }
-
-      if (response.message) {
-        showBanner(response.message, 'success');
-      }
-
-      const refreshStateCommands: AgentCommandRequest['command'][] = [
-        'set-model',
-        'set-thinking',
-        'set-auto-compact',
-        'set-steering-mode',
-        'set-follow-up-mode',
-        'set-auto-retry',
-        'abort-retry',
-        'run-bash',
-        'abort-bash',
-        'set-session-name',
-      ];
-      const closePaletteCommands: AgentCommandRequest['command'][] = [
-        'new-session',
-        'resume-session',
-        'navigate-tree',
-        'fork-session',
-        'export-session',
-      ];
-
-      if (refreshStateCommands.includes(request.command)) {
-        await loadCommandState();
-      }
-
-      if (closePaletteCommands.includes(request.command)) {
-        commandPaletteOpen = false;
-        commandState = null;
-
-        if (request.command === 'new-session' || request.command === 'resume-session') {
-          resetToolTraceBatches();
-          localSystemMessages = [];
-        }
-
-        await loadCommandState();
-      }
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      commandBusy = false;
-    }
-  }
-
-  async function copyLastAssistantReply() {
-    const lastAssistantReply = [...agentSnapshot.messages]
-      .reverse()
-      .find((message) => message.role === 'assistant' && message.text.trim().length > 0);
-
-    if (!lastAssistantReply) {
-      showBanner('No assistant reply to copy yet.', 'info');
-      return;
-    }
-
-    const copied = await copyText(lastAssistantReply.text);
-    commandPaletteOpen = false;
-    if (copied) {
-      showBanner('Last assistant reply copied.', 'success');
-    } else {
-      showBanner('Failed to copy to clipboard.', 'error');
-    }
   }
 
   function startAgentStatePolling() {
@@ -749,7 +651,6 @@
     view = 'chat';
     menuOpen = false;
     commandPaletteOpen = false;
-    commandState = null;
     workspaceOpen = false;
     piLoginOpen = false;
     workspaceChange = { path: '', version: 0 };
@@ -847,7 +748,7 @@
           usage={agentSnapshot.usage}
           prefillPrompt={composerPrefill}
           prefillToken={composerPrefillToken}
-          availableCommands={commandState?.availableCommands ?? []}
+          {availableCommands}
           draftStorageScope={currentRepo.relativePath || currentRepo.absolutePath}
           interactivePrompt={agentSnapshot.interactivePrompt}
           on:submit={(event) => handleChatSubmit(event.detail.prompt)}
@@ -940,20 +841,18 @@
     />
     <CommandPalette
       open={commandPaletteOpen}
-      loading={commandStateLoading}
-      busy={commandBusy}
-      state={commandState}
-      {theme}
       initialCommand={commandPaletteInitialCommand}
-      selectionToken={commandPaletteSelectionToken}
-      on:close={() => (commandPaletteOpen = false)}
-      on:copy={copyLastAssistantReply}
-      on:execute={(event) => executePaletteCommand(event.detail.request)}
-      on:prefillPrompt={(event) => {
-        seedComposer(event.detail.value);
+      onclose={() => (commandPaletteOpen = false)}
+      onprefill={(value) => {
+        seedComposer(value);
         commandPaletteOpen = false;
       }}
-      on:setTheme={(event) => setTheme(event.detail.value)}
+      onaction={() => {
+        void loadAgentState();
+      }}
+      onstatechange={(state) => {
+        availableCommands = state.availableCommands;
+      }}
     />
   </main>
 {/if}

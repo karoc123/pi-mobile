@@ -7,11 +7,21 @@
     title?: string;
     eyebrow?: string;
     ariaLabel?: string;
+    wide?: boolean;
     children?: Snippet;
     header?: Snippet;
   }
 
-  const { open = false, onclose, title, eyebrow, ariaLabel, children, header }: Props = $props();
+  const {
+    open = false,
+    onclose,
+    title,
+    eyebrow,
+    ariaLabel,
+    wide = false,
+    children,
+    header,
+  }: Props = $props();
 
   let dialogElement: HTMLDialogElement | null = $state(null);
 
@@ -52,6 +62,7 @@
 <dialog
   bind:this={dialogElement}
   class="sheet-dialog"
+  class:wide
   aria-label={ariaLabel ?? title}
   oncancel={handleCancel}
   onclick={handleClick}
@@ -91,6 +102,10 @@
     color: var(--ink);
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
     overflow: hidden;
+  }
+
+  .sheet-dialog.wide {
+    width: min(56rem, calc(100vw - 1rem));
   }
 
   .sheet-dialog::backdrop {
