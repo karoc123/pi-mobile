@@ -1337,64 +1337,6 @@ code {
   grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
 }
 
-.menu-section {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.menu-insight-actions {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.menu-copy {
-  margin: 0;
-  color: var(--muted);
-}
-
-.theme-toggle-group {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.theme-toggle {
-  padding: 0.85rem 0.9rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--line);
-  background: var(--surface-strong);
-  color: var(--ink);
-}
-
-.theme-toggle.selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 15%, var(--surface-strong));
-}
-
-.picker-entry {
-  display: flex;
-  gap: 0.8rem;
-  align-items: center;
-}
-
-.workspace-clone-form {
-  display: grid;
-  gap: 0.55rem;
-  margin-bottom: 0.9rem;
-}
-
-.workspace-clone-form .field-label {
-  margin: 0;
-}
-
-.workspace-clone-form .primary-button {
-  justify-self: start;
-}
-
-.entry-main {
-  flex: 1;
-}
-
 .bottom-nav {
   position: fixed;
   left: 50%;

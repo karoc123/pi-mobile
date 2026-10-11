@@ -22,13 +22,9 @@
     GitDiffResponse,
     GitRemoteSyncStatus,
     GitSyncResult,
-    PiAuthProviderState,
-    PiAuthStatusResponse,
     SelectedRepo,
     SessionResponse,
     WebsocketEnvelope,
-    WorkspaceCloneResult,
-    WorkspaceEntry,
   } from '../shared/contracts.js';
   import AppMenu from './components/AppMenu.svelte';
   import BottomNav from './components/BottomNav.svelte';
@@ -36,7 +32,7 @@
   import CommandPalette from './components/CommandPalette.svelte';
   import LogView from './components/LogView.svelte';
   import LoginScreen from './components/LoginScreen.svelte';
-  import PiLoginModal from './components/PiLoginModal.svelte';
+  import PiLoginSheet from './components/PiLoginSheet.svelte';
   import SystemStatus from './components/SystemStatus.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
   import {
@@ -99,13 +95,7 @@
 
   let authChecked = false;
   let authenticated = false;
-  let loginPending = false;
-  let loginError = '';
   let workspaceOpen = false;
-  let workspaceLoading = false;
-  let workspaceCloning = false;
-  let workspacePath = '.';
-  let workspaceEntries: WorkspaceEntry[] = [];
   let currentRepo: SelectedRepo | null = null;
   let view: AppViewName = 'chat';
 
@@ -162,10 +152,6 @@
   });
   let menuOpen = false;
   let piLoginOpen = false;
-  let piAuthProviders: PiAuthProviderState[] = [];
-  let piAuthLoading = false;
-  let piAuthSubmitting = false;
-  let piAuthError = '';
   let lazyViewLoading: AsyncViewName | null = null;
   let lazyViewError = '';
   let diffViewComponent: ComponentType | null = null;
@@ -243,7 +229,7 @@
       }
     } catch (error) {
       authChecked = true;
-      loginError = toErrorMessage(error);
+      resetAuthenticatedState(toErrorMessage(error));
     }
   }
 
@@ -282,7 +268,6 @@
     try {
       agentSnapshot = await apiFetch<AgentSnapshot>('/api/agent/state');
       currentRepo = agentSnapshot.repo ?? currentRepo;
-      await loadWorkspaces('.');
 
       if (currentRepo) {
         await refreshCurrentRepoData();
@@ -342,92 +327,6 @@
 
     return editorViewPromise;
   }
-
-  async function login(password: string) {
-    loginPending = true;
-
-    try {
-      const session = await apiFetch<SessionResponse>('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ password }),
-      });
-
-      authenticated = session.authenticated;
-      currentRepo = session.repo;
-      loginError = '';
-
-      try {
-        await bootstrapWorkspace();
-      } catch (error) {
-        resetAuthenticatedState(toErrorMessage(error));
-      }
-    } catch (error) {
-      loginError = toErrorMessage(error);
-    } finally {
-      loginPending = false;
-    }
-  }
-
-  async function logout() {
-    try {
-      await apiFetch('/api/auth/logout', { method: 'POST' });
-    } catch (error) {
-      if (!(error instanceof ApiRequestError && error.status === 401)) {
-        showBanner(toErrorMessage(error), 'error');
-      }
-    } finally {
-      resetAuthenticatedState('');
-    }
-  }
-
-  async function openPiLogin() {
-    piLoginOpen = true;
-    await loadPiAuthStatus();
-  }
-
-  async function loadPiAuthStatus() {
-    piAuthLoading = true;
-    piAuthError = '';
-
-    try {
-      const response = await apiFetch<PiAuthStatusResponse>('/api/pi/auth/status');
-      piAuthProviders = response.providers;
-    } catch (error) {
-      piAuthError = toErrorMessage(error);
-    } finally {
-      piAuthLoading = false;
-    }
-  }
-
-  async function submitPiAuth(
-    endpoint: 'login-token' | 'logout',
-    body: Record<string, string>,
-    successMessage: string,
-  ) {
-    piAuthSubmitting = true;
-    piAuthError = '';
-
-    try {
-      await apiFetch(`/api/pi/auth/${endpoint}`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-
-      showBanner(successMessage, 'success');
-      await loadPiAuthStatus();
-    } catch (error) {
-      const message = toErrorMessage(error);
-      piAuthError = message;
-      showBanner(message, 'error');
-    } finally {
-      piAuthSubmitting = false;
-    }
-  }
-
-  const loginPiToken = (provider: string, token: string) =>
-    submitPiAuth('login-token', { provider, token }, `Pi token for ${provider} saved.`);
-  const logoutPiProvider = (provider: string) =>
-    submitPiAuth('logout', { provider }, `Pi auth for ${provider} removed.`);
 
   function connectSocket() {
     if (reconnectTimer !== null) {
@@ -670,7 +569,6 @@
 
     if (event.type === 'repo_selected') {
       currentRepo = event.payload.repo;
-      workspaceCloning = false;
       commandPaletteOpen = false;
       commandState = null;
       resetToolTraceBatches();
@@ -700,55 +598,6 @@
         lastError: event.payload.message,
       };
     }
-  }
-
-  async function loadWorkspaces(path: string) {
-    workspaceLoading = true;
-
-    try {
-      const response = await apiFetch<{
-        currentPath: string;
-        entries: WorkspaceEntry[];
-        currentRepo: SelectedRepo | null;
-      }>(`/api/workspaces/browse?path=${encodeURIComponent(path)}`);
-
-      workspacePath = response.currentPath;
-      workspaceEntries = response.entries;
-      currentRepo = response.currentRepo ?? currentRepo;
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      workspaceLoading = false;
-    }
-  }
-
-  async function selectRepo(path: string) {
-    await run(async () => {
-      await api.post('/api/workspaces/select', { path });
-      menuOpen = false;
-      workspaceOpen = false;
-    }, 'Repository activated.');
-  }
-
-  async function cloneRepo(remoteUrl: string, destinationPath?: string) {
-    await run(
-      async () => {
-        const response = await api.post<WorkspaceCloneResult>('/api/workspaces/clone', {
-          remoteUrl,
-          destinationPath,
-        });
-
-        currentRepo = response.repo;
-        menuOpen = false;
-        workspaceOpen = false;
-        await loadWorkspaces(workspacePath);
-        return response;
-      },
-      (res) => `Repository cloned and activated (${res.repo.name}).`,
-      (busy) => {
-        workspaceCloning = busy;
-      },
-    );
   }
 
   async function refreshCurrentRepoData() {
@@ -1298,7 +1147,6 @@
 
   function resetAuthenticatedState(message: string) {
     authChecked = true;
-    loginPending = false;
     authenticated = false;
     currentRepo = null;
     view = 'chat';
@@ -1306,9 +1154,7 @@
     commandPaletteOpen = false;
     commandState = null;
     workspaceOpen = false;
-    workspaceCloning = false;
-    workspaceEntries = [];
-    workspacePath = '.';
+    piLoginOpen = false;
     diffFiles = [];
     diffSyncStatus = null;
     diffRefreshPending = false;
@@ -1336,7 +1182,9 @@
     closeSocket();
     stopAgentStatePolling();
     socketReconnectAttempt = 0;
-    loginError = message;
+    if (message) {
+      showBanner(message, 'error');
+    }
   }
 
   function saveBase64File(contentBase64: string, mimeType: string | null, fileName: string) {
@@ -1375,9 +1223,15 @@
   </main>
 {:else if !authenticated}
   <LoginScreen
-    pending={loginPending}
-    error={loginError}
-    on:submit={(event) => login(event.detail.password)}
+    onLogin={async (session) => {
+      authenticated = session.authenticated;
+      currentRepo = session.repo;
+      try {
+        await bootstrapWorkspace();
+      } catch (error) {
+        resetAuthenticatedState(toErrorMessage(error));
+      }
+    }}
   />
 {:else}
   <main class="app-shell">
@@ -1578,44 +1432,29 @@
       open={menuOpen}
       {currentRepo}
       {theme}
-      on:close={() => (menuOpen = false)}
-      on:chooseRepo={() => {
+      onclose={() => (menuOpen = false)}
+      onchooseRepo={() => {
         menuOpen = false;
         workspaceOpen = true;
       }}
-      on:openLogs={() => void openLogView()}
-      on:openPiLogin={() => {
+      onopenLogs={() => openLogView()}
+      onopenPiLogin={() => {
         menuOpen = false;
-        void openPiLogin();
+        piLoginOpen = true;
       }}
-      on:setTheme={(event) => setTheme(event.detail.value)}
-      on:logout={logout}
+      onsetTheme={(nextTheme) => setTheme(nextTheme)}
+      onlogout={() => resetAuthenticatedState('')}
     />
-    <PiLoginModal
-      open={piLoginOpen}
-      loading={piAuthLoading}
-      submitting={piAuthSubmitting}
-      providers={piAuthProviders}
-      errorMessage={piAuthError}
-      on:close={() => {
-        piLoginOpen = false;
-        piAuthError = '';
-      }}
-      on:refresh={() => void loadPiAuthStatus()}
-      on:submit={(event) => loginPiToken(event.detail.provider, event.detail.token)}
-      on:logout={(event) => logoutPiProvider(event.detail.provider)}
-    />
+    <PiLoginSheet open={piLoginOpen} onclose={() => (piLoginOpen = false)} />
     <WorkspacePicker
       open={workspaceOpen}
-      loading={workspaceLoading}
-      cloning={workspaceCloning}
-      currentPath={workspacePath}
       {currentRepo}
-      entries={workspaceEntries}
-      on:close={() => (workspaceOpen = false)}
-      on:browse={(event) => loadWorkspaces(event.detail.path)}
-      on:select={(event) => selectRepo(event.detail.path)}
-      on:clone={(event) => cloneRepo(event.detail.remoteUrl, event.detail.destinationPath)}
+      onclose={() => (workspaceOpen = false)}
+      onselect={(repo) => {
+        currentRepo = repo;
+        workspaceOpen = false;
+        void refreshCurrentRepoData();
+      }}
     />
     <CommandPalette
       open={commandPaletteOpen}

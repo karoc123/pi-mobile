@@ -20,11 +20,19 @@
 
     if (open) {
       if (!dialogElement.open) {
-        dialogElement.showModal();
+        if (typeof dialogElement.showModal === 'function') {
+          dialogElement.showModal();
+        } else {
+          dialogElement.open = true;
+        }
       }
     } else {
       if (dialogElement.open) {
-        dialogElement.close();
+        if (typeof dialogElement.close === 'function') {
+          dialogElement.close();
+        } else {
+          dialogElement.open = false;
+        }
       }
     }
   });
