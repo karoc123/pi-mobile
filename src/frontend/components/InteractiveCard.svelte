@@ -176,12 +176,12 @@
 
 <style>
   .interactive-card {
-    background: var(--terminal-panel);
-    border: 1px solid var(--terminal-panel-border);
+    background: var(--surface);
+    border: 1px solid var(--line);
     border-radius: 8px;
     margin: 12px 0;
     overflow: hidden;
-    box-shadow: 0 2px 8px var(--terminal-shadow-inset);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .interactive-header {
@@ -189,8 +189,8 @@
     align-items: center;
     gap: 8px;
     padding: 12px 14px;
-    background: var(--terminal-panel-strong);
-    border-bottom: 1px solid var(--terminal-panel-border);
+    background: var(--surface-strong);
+    border-bottom: 1px solid var(--line);
   }
 
   .interactive-icon {
@@ -200,7 +200,7 @@
 
   .interactive-title {
     font-size: 14px;
-    color: var(--terminal-shell-heading);
+    color: var(--ink);
   }
 
   .interactive-questions {
@@ -211,7 +211,7 @@
 
   .interactive-question {
     padding: 10px 0;
-    border-bottom: 1px solid var(--terminal-panel-subtle);
+    border-bottom: 1px solid var(--line);
   }
 
   .interactive-question:last-of-type {
@@ -222,13 +222,13 @@
     margin: 0 0 8px 0;
     font-size: 13px;
     font-weight: 500;
-    color: var(--terminal-ink);
+    color: var(--ink);
   }
 
   .interactive-hint {
     font-size: 11px;
     font-weight: 400;
-    color: var(--terminal-muted);
+    color: var(--muted);
     font-style: italic;
   }
 
@@ -247,10 +247,10 @@
     padding: 6px 14px;
     font-size: 13px;
     font-weight: 500;
-    border: 2px solid var(--terminal-panel-border);
+    border: 2px solid var(--line);
     border-radius: 22px;
-    background: var(--terminal-shell);
-    color: var(--terminal-ink);
+    background: var(--surface-raised);
+    color: var(--ink);
     cursor: pointer;
     transition:
       background 0.15s,
@@ -262,14 +262,14 @@
   }
 
   .option-chip:hover:not(:disabled) {
-    background: var(--terminal-panel-strong);
-    border-color: var(--terminal-accent);
+    background: var(--surface-strong);
+    border-color: var(--accent);
   }
 
   .option-chip.selected {
     background: var(--accent) !important;
     border-color: var(--accent-strong) !important;
-    color: #ffffff !important;
+    color: var(--text-on-accent) !important;
   }
 
   .option-chip:disabled {
@@ -299,9 +299,9 @@
     padding: 10px 12px;
     font-size: 13px;
     font-family: inherit;
-    color: var(--terminal-ink);
-    background: var(--terminal-shell);
-    border: 1px solid var(--terminal-panel-border);
+    color: var(--ink);
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
     border-radius: 6px;
     outline: none;
     transition: border-color 0.15s;
@@ -323,8 +323,8 @@
     justify-content: flex-end;
     gap: 10px;
     padding: 10px 14px;
-    background: var(--terminal-panel-strong);
-    border-top: 1px solid var(--terminal-panel-border);
+    background: var(--surface-strong);
+    border-top: 1px solid var(--line);
     position: sticky;
     bottom: 0;
   }
@@ -339,6 +339,6 @@
 
   .dismiss-button {
     font-size: 12px;
-    color: var(--terminal-muted);
+    color: var(--muted);
   }
 </style>

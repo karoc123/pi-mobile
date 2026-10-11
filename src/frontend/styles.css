@@ -1,7 +1,9 @@
 :root {
   color-scheme: dark;
-  font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --bg: #1e1e1e;
   --ink: #cccccc;
+  --text: var(--ink);
   --muted: #9d9d9d;
   --surface: #252526;
   --surface-strong: #2d2d30;
@@ -9,51 +11,36 @@
   --line: #3c3c3c;
   --accent: #0e639c;
   --accent-strong: #1177bb;
+  --accent-dim: color-mix(in srgb, var(--accent) 22%, transparent);
+  --text-on-accent: #ffffff;
   --danger: #f14c4c;
   --success: #89d185;
   --warning: #cca700;
   --overlay: rgba(0, 0, 0, 0.45);
   --user-surface: #094771;
   --assistant-surface: #252526;
-  --terminal-shell: #1e1e1e;
-  --terminal-shell-line: #3c3c3c;
-  --terminal-shell-text: #d4d4d4;
-  --terminal-shell-heading: #ffffff;
-  --terminal-shell-muted: #9d9d9d;
-  --terminal-panel: #252526;
-  --terminal-panel-strong: #2d2d30;
-  --terminal-panel-subtle: #333337;
-  --terminal-panel-border: #3c3c3c;
-  --terminal-shadow-highlight: rgba(255, 255, 255, 0.02);
-  --terminal-shadow-inset: rgba(0, 0, 0, 0.24);
-  --terminal-ink: #d4d4d4;
-  --terminal-muted: #9d9d9d;
-  --terminal-accent: #9d9d9d;
-  --terminal-accent-strong: #d4d4d4;
-  --terminal-user-panel: #252526;
-  --terminal-system-panel: #2d2d30;
-  --terminal-warning-border: #b89500;
-  --terminal-error-border: #c74e39;
-  --terminal-diff-added-bg: rgba(46, 160, 67, 0.16);
-  --terminal-diff-added-border: rgba(46, 160, 67, 0.4);
-  --terminal-diff-added-highlight: rgba(46, 160, 67, 0.3);
-  --terminal-diff-added-text: #b7d9b6;
-  --terminal-diff-removed-bg: rgba(248, 81, 73, 0.14);
-  --terminal-diff-removed-border: rgba(248, 81, 73, 0.38);
-  --terminal-diff-removed-highlight: rgba(248, 81, 73, 0.28);
-  --terminal-diff-removed-text: #efb8b5;
-  --terminal-diff-change-bg: rgba(210, 153, 34, 0.18);
-  --terminal-diff-info-bg: rgba(86, 156, 214, 0.12);
-  --terminal-diff-info-border: rgba(86, 156, 214, 0.28);
-  --terminal-diff-gutter: #1f1f1f;
-  --terminal-diff-dim: #858585;
-  background: #1e1e1e;
+  --diff-added-bg: rgba(46, 160, 67, 0.16);
+  --diff-added-border: rgba(46, 160, 67, 0.4);
+  --diff-added-highlight: rgba(46, 160, 67, 0.3);
+  --diff-added-text: #b7d9b6;
+  --diff-removed-bg: rgba(248, 81, 73, 0.14);
+  --diff-removed-border: rgba(248, 81, 73, 0.38);
+  --diff-removed-highlight: rgba(248, 81, 73, 0.28);
+  --diff-removed-text: #efb8b5;
+  --diff-change-bg: rgba(210, 153, 34, 0.18);
+  --diff-info-bg: rgba(86, 156, 214, 0.12);
+  --diff-info-border: rgba(86, 156, 214, 0.28);
+  --diff-gutter: #1f1f1f;
+  --diff-dim: #858585;
+  background: var(--bg);
   color: var(--ink);
 }
 
-:root[data-theme="vscode-light"] {
+:root[data-theme='vscode-light'] {
   color-scheme: light;
+  --bg: #ffffff;
   --ink: #3b3b3b;
+  --text: var(--ink);
   --muted: #616161;
   --surface: #f3f3f3;
   --surface-strong: #ffffff;
@@ -61,45 +48,29 @@
   --line: #d4d4d4;
   --accent: #0e639c;
   --accent-strong: #1177bb;
+  --accent-dim: color-mix(in srgb, var(--accent) 15%, transparent);
+  --text-on-accent: #ffffff;
   --danger: #c72e0f;
   --success: #388a34;
   --warning: #b89500;
   --overlay: rgba(0, 0, 0, 0.18);
   --user-surface: #cce6ff;
   --assistant-surface: #ffffff;
-  --terminal-shell: #d8ddd1;
-  --terminal-shell-line: #b1b9ab;
-  --terminal-shell-text: #202620;
-  --terminal-shell-heading: #111511;
-  --terminal-shell-muted: #556052;
-  --terminal-panel: #f1f5ea;
-  --terminal-panel-strong: #fafcf6;
-  --terminal-panel-subtle: #e6ebde;
-  --terminal-panel-border: rgba(58, 66, 52, 0.28);
-  --terminal-shadow-highlight: rgba(255, 255, 255, 0.7);
-  --terminal-shadow-inset: rgba(32, 38, 30, 0.08);
-  --terminal-ink: #1f261e;
-  --terminal-muted: #5f675d;
-  --terminal-accent: #6a785c;
-  --terminal-accent-strong: #34412f;
-  --terminal-user-panel: #e8eee1;
-  --terminal-system-panel: #ecefe4;
-  --terminal-warning-border: #9c8445;
-  --terminal-error-border: #a06059;
-  --terminal-diff-added-bg: #e4f0df;
-  --terminal-diff-added-border: #afcca6;
-  --terminal-diff-added-highlight: #d3e8cb;
-  --terminal-diff-added-text: #215225;
-  --terminal-diff-removed-bg: #f4e1de;
-  --terminal-diff-removed-border: #d6aaa3;
-  --terminal-diff-removed-highlight: #ecc8c2;
-  --terminal-diff-removed-text: #7a3029;
-  --terminal-diff-change-bg: #ede3bb;
-  --terminal-diff-info-bg: #edf2ea;
-  --terminal-diff-info-border: #c8d3c0;
-  --terminal-diff-gutter: #f7f9f3;
-  --terminal-diff-dim: #5c6759;
-  background: #ffffff;
+  --diff-added-bg: #e4f0df;
+  --diff-added-border: #afcca6;
+  --diff-added-highlight: #d3e8cb;
+  --diff-added-text: #215225;
+  --diff-removed-bg: #f4e1de;
+  --diff-removed-border: #d6aaa3;
+  --diff-removed-highlight: #ecc8c2;
+  --diff-removed-text: #7a3029;
+  --diff-change-bg: #ede3bb;
+  --diff-info-bg: #edf2ea;
+  --diff-info-border: #c8d3c0;
+  --diff-gutter: #f7f9f3;
+  --diff-dim: #5c6759;
+  background: var(--bg);
+  color: var(--ink);
 }
 
 * {
@@ -131,7 +102,7 @@ button {
 }
 
 code {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: 'IBM Plex Mono', monospace;
 }
 
 .app-shell {
@@ -358,17 +329,6 @@ code {
 }
 
 .chat-view {
-  --cli-shell: var(--terminal-shell);
-  --cli-shell-line: var(--terminal-shell-line);
-  --cli-panel: var(--terminal-panel);
-  --cli-panel-strong: var(--terminal-panel-strong);
-  --cli-panel-muted: var(--terminal-panel-subtle);
-  --cli-ink: var(--terminal-ink);
-  --cli-muted: var(--terminal-muted);
-  --cli-accent: var(--terminal-accent);
-  --cli-accent-strong: var(--terminal-accent-strong);
-  --cli-user-panel: var(--terminal-user-panel);
-  --cli-system-panel: var(--terminal-system-panel);
   min-width: 0;
 }
 
@@ -377,14 +337,14 @@ code {
 .chat-view textarea,
 .chat-view input,
 .chat-view code {
-  font-family: "IBM Plex Mono", "Consolas", "Liberation Mono", monospace;
+  font-family: 'IBM Plex Mono', 'Consolas', 'Liberation Mono', monospace;
 }
 
 .chat-view .activity-panel,
 .chat-view .chat-log,
 .chat-view .composer {
-  background: var(--cli-shell);
-  border-color: var(--cli-shell-line);
+  background: var(--surface);
+  border-color: var(--line);
   border-radius: 0.4rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
   min-width: 0;
@@ -407,28 +367,28 @@ code {
 }
 
 .chat-view .chat-log::before {
-  content: "transcript";
+  content: 'transcript';
   position: absolute;
   top: 0;
   left: 0.9rem;
   transform: translateY(-50%);
   padding: 0.1rem 0.45rem;
-  background: var(--cli-shell);
-  color: color-mix(in srgb, var(--terminal-shell-text) 55%, transparent);
+  background: var(--surface);
+  color: var(--muted);
   font-size: 0.68rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .chat-view .ghost-button {
-  color: var(--terminal-shell-text);
+  color: var(--ink);
 }
 
 .chat-view .empty-state-card h3,
 .diff-view .section-header h2,
 .diff-view .diff-card h3,
 .menu-panel .sheet-header h2 {
-  color: var(--terminal-shell-heading, var(--terminal-shell-text));
+  color: var(--ink);
 }
 
 .chat-view .live-dot {
@@ -445,9 +405,9 @@ code {
 
 .chat-view .secondary-button,
 .chat-view .primary-button {
-  background: var(--cli-panel);
-  border-color: var(--terminal-panel-border);
-  color: var(--cli-ink);
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
 }
 
 .chat-view .primary-button {
@@ -457,43 +417,43 @@ code {
 
 .chat-view .primary-button:hover,
 .chat-view .secondary-button:hover {
-  background: var(--cli-panel-strong);
+  background: var(--surface-strong);
 }
 
 .chat-view .ghost-button {
-  border-color: color-mix(in srgb, var(--terminal-shell-text) 24%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 24%, transparent);
 }
 
 .chat-view .message-card,
 .chat-view .empty-state-card {
-  background: var(--cli-panel);
-  border-color: var(--terminal-panel-border);
+  background: var(--surface);
+  border-color: var(--line);
   border-radius: 0.22rem;
-  color: var(--cli-ink);
+  color: var(--ink);
   min-width: 0;
   overflow-x: hidden;
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .chat-view .message-card.user {
-  background: var(--cli-user-panel);
+  background: var(--user-surface);
 }
 
 .chat-view .message-card.assistant,
 .chat-view .empty-state-card {
-  background: var(--cli-panel-strong);
+  background: var(--surface-strong);
 }
 
 .chat-view .message-card.system {
-  background: var(--cli-system-panel);
+  background: var(--surface-strong);
 }
 
 .chat-view .message-card header {
   padding-bottom: 0.65rem;
   margin-bottom: 0.7rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--terminal-panel-border) 30%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 30%, transparent);
   align-items: flex-start;
   flex-wrap: wrap;
 }
@@ -506,7 +466,7 @@ code {
 }
 
 .chat-view .message-prompt {
-  color: var(--cli-accent-strong);
+  color: var(--accent-strong);
   font-weight: 700;
   flex: 0 0 auto;
 }
@@ -525,7 +485,7 @@ code {
 .chat-view .message-status,
 .chat-view .empty-state-card p,
 .chat-view .markdown-body blockquote {
-  color: var(--cli-muted);
+  color: var(--muted);
 }
 
 .chat-view .message-meta-actions {
@@ -552,13 +512,13 @@ code {
 .chat-view .message-card-hidden p {
   margin: 0;
   font-size: 0.84rem;
-  color: var(--cli-muted);
+  color: var(--muted);
 }
 
 .chat-view .markdown-body {
   font-size: 0.96rem;
   line-height: 1.65;
-  color: var(--cli-ink);
+  color: var(--ink);
   max-width: 100%;
   min-width: 0;
   overflow-x: hidden;
@@ -580,9 +540,9 @@ code {
 .chat-view .markdown-body pre {
   padding: 0.9rem;
   border-radius: 0.2rem;
-  border: 1px solid color-mix(in srgb, var(--terminal-panel-border) 38%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 38%, transparent);
   background: rgba(255, 255, 255, 0.34);
-  color: var(--cli-ink);
+  color: var(--ink);
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -591,7 +551,7 @@ code {
 .chat-view .markdown-body code {
   display: inline-block;
   max-width: 100%;
-  background: color-mix(in srgb, var(--terminal-panel-border) 12%, transparent);
+  background: color-mix(in srgb, var(--line) 12%, transparent);
   color: inherit;
   padding: 0.08rem 0.28rem;
   border-radius: 0.18rem;
@@ -626,7 +586,7 @@ code {
 .chat-view .markdown-body blockquote {
   margin: 0;
   padding-left: 0.85rem;
-  border-left: 2px solid color-mix(in srgb, var(--terminal-panel-border) 32%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--line) 32%, transparent);
 }
 
 .chat-view .empty-state-card h3 {
@@ -643,14 +603,14 @@ code {
 .chat-view .composer-session-meta {
   display: grid;
   gap: 0.75rem;
-  border: 1px solid var(--terminal-panel-border);
+  border: 1px solid var(--line);
   border-radius: 0.22rem;
-  background: var(--cli-panel);
-  color: var(--cli-ink);
+  background: var(--surface);
+  color: var(--ink);
   padding: 0.9rem;
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .chat-view .composer-terminal-input {
@@ -658,18 +618,18 @@ code {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.7rem;
   align-items: start;
-  border: 1px solid var(--terminal-panel-border);
+  border: 1px solid var(--line);
   border-radius: 0.22rem;
-  background: var(--cli-panel);
-  color: var(--cli-ink);
+  background: var(--surface);
+  color: var(--ink);
   padding: 0.9rem;
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .chat-view .composer-prefix {
-  color: var(--cli-accent-strong);
+  color: var(--accent-strong);
   font-weight: 700;
   padding-top: 0.05rem;
 }
@@ -679,7 +639,7 @@ code {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: var(--cli-ink);
+  color: var(--ink);
   padding: 0;
   resize: vertical;
   line-height: 1.65;
@@ -690,7 +650,7 @@ code {
 }
 
 .chat-view .composer textarea::placeholder {
-  color: var(--cli-muted);
+  color: var(--muted);
 }
 
 .chat-view .composer-session-meta {
@@ -711,7 +671,7 @@ code {
   font-size: 0.8rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--cli-ink);
+  color: var(--ink);
 }
 
 .chat-view .composer-status-spacer {
@@ -726,10 +686,10 @@ code {
 }
 
 .chat-view .usage-chip {
-  border: 1px solid color-mix(in srgb, var(--terminal-panel-border) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   border-radius: 0.2rem;
-  background: var(--cli-panel-strong);
-  color: var(--cli-muted);
+  background: var(--surface-strong);
+  color: var(--muted);
   padding: 0.2rem 0.4rem;
   font-size: 0.7rem;
   letter-spacing: 0.04em;
@@ -737,12 +697,12 @@ code {
 }
 
 .chat-view .usage-chip.usage-context {
-  color: var(--cli-ink);
+  color: var(--ink);
 }
 
 .chat-view .usage-chip.usage-cost {
   font-weight: 800;
-  color: var(--cli-ink);
+  color: var(--ink);
 }
 
 .chat-view .tool-trace-toggle {
@@ -775,8 +735,8 @@ code {
   gap: 0.45rem;
   padding: 0.55rem;
   border-radius: 0.22rem;
-  border: 1px solid var(--terminal-panel-border);
-  background: var(--cli-panel);
+  border: 1px solid var(--line);
+  background: var(--surface);
   min-width: 0;
 }
 
@@ -800,20 +760,20 @@ code {
   justify-content: space-between;
   gap: 0.7rem;
   text-align: left;
-  border: 1px solid var(--terminal-panel-border);
+  border: 1px solid var(--line);
   border-radius: 0.2rem;
-  background: var(--cli-panel-strong);
-  color: var(--cli-ink);
+  background: var(--surface-strong);
+  color: var(--ink);
   padding: 0.35rem 0.5rem;
   min-width: 0;
 }
 
 .chat-view .tool-inline-item.running {
-  border-color: var(--terminal-warning-border);
+  border-color: var(--warning);
 }
 
 .chat-view .tool-inline-item.error {
-  border-color: var(--terminal-error-border);
+  border-color: var(--danger);
 }
 
 .chat-view .tool-inline-main {
@@ -828,11 +788,11 @@ code {
   width: 1rem;
   height: 1rem;
   border-radius: 0.18rem;
-  border: 1px solid color-mix(in srgb, var(--terminal-panel-border) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--cli-accent-strong);
+  color: var(--accent-strong);
   flex: 0 0 auto;
 }
 
@@ -879,7 +839,7 @@ code {
   font-size: 0.64rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--cli-muted);
+  color: var(--muted);
   flex: 0 0 auto;
   white-space: nowrap;
   padding-top: 0.15rem;
@@ -889,9 +849,9 @@ code {
 .chat-view .tool-summary-detail {
   margin: 0;
   border-radius: 0.2rem;
-  border: 1px solid var(--terminal-panel-border);
-  background: var(--cli-panel);
-  color: var(--cli-ink);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
   padding: 0.55rem;
   font-size: 0.78rem;
   white-space: pre-wrap;
@@ -921,9 +881,9 @@ code {
   width: 1.7rem;
   height: 1.7rem;
   border-radius: 0.22rem;
-  border: 1px solid var(--terminal-panel-border);
-  background: var(--cli-panel);
-  color: var(--cli-accent-strong);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--accent-strong);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -931,8 +891,8 @@ code {
 }
 
 .chat-view .tool-summary-icon[aria-expanded='true'] {
-  background: var(--cli-panel-muted);
-  border-color: color-mix(in srgb, var(--terminal-accent-strong) 75%, var(--terminal-panel-border));
+  background: var(--surface-raised);
+  border-color: color-mix(in srgb, var(--accent-strong) 75%, var(--line));
 }
 
 .chat-view .composer-footer {
@@ -950,13 +910,13 @@ code {
 }
 
 .chat-view .composer-actions .new-button {
-  background: color-mix(in srgb, #2e88ff 22%, var(--cli-panel));
-  border-color: color-mix(in srgb, #2e88ff 60%, var(--terminal-panel-border));
-  color: var(--cli-ink);
+  background: color-mix(in srgb, #2e88ff 22%, var(--surface));
+  border-color: color-mix(in srgb, #2e88ff 60%, var(--line));
+  color: var(--ink);
 }
 
 .chat-view .composer-actions .new-button:hover {
-  background: color-mix(in srgb, #2e88ff 34%, var(--cli-panel));
+  background: color-mix(in srgb, #2e88ff 34%, var(--surface));
 }
 
 .chat-view .composer-actions .cmd-split {
@@ -966,9 +926,9 @@ code {
 
 .chat-view .composer-actions .cmd-button,
 .chat-view .composer-actions .cmd-button-shortcut {
-  background: color-mix(in srgb, #7ac57a 22%, var(--cli-panel));
-  border-color: color-mix(in srgb, #7ac57a 58%, var(--terminal-panel-border));
-  color: var(--cli-ink);
+  background: color-mix(in srgb, #7ac57a 22%, var(--surface));
+  border-color: color-mix(in srgb, #7ac57a 58%, var(--line));
+  color: var(--ink);
 }
 
 .chat-view .composer-actions .cmd-button {
@@ -987,16 +947,16 @@ code {
 
 .chat-view .composer-actions .cmd-button:hover,
 .chat-view .composer-actions .cmd-button-shortcut:hover {
-  background: color-mix(in srgb, #7ac57a 34%, var(--cli-panel));
+  background: color-mix(in srgb, #7ac57a 34%, var(--surface));
 }
 
 .chat-view .composer-footer .send-button {
   display: inline-flex;
   align-items: baseline;
   gap: 0.35rem;
-  background: color-mix(in srgb, #fd6755 26%, var(--cli-panel));
-  border-color: color-mix(in srgb, #fd6755 60%, var(--terminal-panel-border));
-  color: var(--cli-ink);
+  background: color-mix(in srgb, #fd6755 26%, var(--surface));
+  border-color: color-mix(in srgb, #fd6755 60%, var(--line));
+  color: var(--ink);
 }
 
 .chat-view .composer-footer .send-button .send-button-model {
@@ -1005,7 +965,7 @@ code {
 }
 
 .chat-view .composer-footer .send-button:hover {
-  background: color-mix(in srgb, #fd6755 38%, var(--cli-panel));
+  background: color-mix(in srgb, #fd6755 38%, var(--surface));
 }
 
 @keyframes terminal-blink {
@@ -1391,13 +1351,13 @@ code {
   display: grid;
   gap: 0.75rem;
   border-radius: 0.4rem;
-  background: var(--terminal-shell);
-  border-color: var(--terminal-shell-line);
+  background: var(--surface);
+  border-color: var(--line);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
 .system-status .eyebrow {
-  color: var(--terminal-shell-muted);
+  color: var(--muted);
 }
 
 .system-status-grid {
@@ -1413,30 +1373,30 @@ code {
 .system-status-failures p {
   margin: 0;
   font-size: 0.8rem;
-  color: var(--terminal-shell-muted);
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 
 .status-chip {
-  border: 1px solid var(--terminal-panel-border);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--terminal-panel);
-  color: var(--terminal-ink);
+  background: var(--surface);
+  color: var(--ink);
   padding: 0.45rem 0.75rem;
   font-size: 0.82rem;
   overflow-wrap: anywhere;
 }
 
 .status-chip.ok {
-  border-color: color-mix(in srgb, var(--success) 55%, var(--terminal-panel-border));
+  border-color: color-mix(in srgb, var(--success) 55%, var(--line));
 }
 
 .status-chip.warn {
-  border-color: color-mix(in srgb, var(--warning) 55%, var(--terminal-panel-border));
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--line));
 }
 
 .status-chip.error {
-  border-color: color-mix(in srgb, var(--danger) 55%, var(--terminal-panel-border));
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
 }
 
 .log-view,
@@ -1479,9 +1439,9 @@ code {
   border-radius: 0.4rem;
   display: grid;
   gap: 0.75rem;
-  background: var(--terminal-shell);
-  border-color: var(--terminal-shell-line);
-  color: var(--terminal-shell-text);
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
@@ -1503,7 +1463,7 @@ code {
 }
 
 .log-entry-time {
-  color: var(--terminal-shell-muted);
+  color: var(--muted);
   font-size: 0.84rem;
   white-space: nowrap;
 }
@@ -1515,7 +1475,7 @@ code {
 }
 
 .log-entry-meta span {
-  color: var(--terminal-shell-muted);
+  color: var(--muted);
   font-size: 0.84rem;
   overflow-wrap: anywhere;
 }
@@ -1523,9 +1483,9 @@ code {
 .log-entry pre {
   margin: 0;
   border-radius: 0.22rem;
-  border: 1px solid var(--terminal-panel-border);
-  background: var(--terminal-panel);
-  color: var(--terminal-ink);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
   padding: 0.75rem;
   overflow: auto;
   max-height: 16rem;
@@ -1631,81 +1591,81 @@ code {
 .diff-view,
 .diff-view button,
 .diff-view code {
-  font-family: "IBM Plex Mono", "Consolas", "Liberation Mono", monospace;
+  font-family: 'IBM Plex Mono', 'Consolas', 'Liberation Mono', monospace;
 }
 
 .menu-trigger {
-  background: var(--terminal-panel);
-  border-color: var(--terminal-panel-border);
-  color: var(--terminal-ink);
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .status-trigger {
-  background: var(--terminal-panel);
-  border-color: var(--terminal-panel-border);
-  color: var(--terminal-ink);
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .menu-panel {
-  background: var(--terminal-shell);
-  border-color: var(--terminal-shell-line);
-  color: var(--terminal-shell-text);
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
   border-radius: 0.4rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
 .menu-panel .sheet-header {
   padding: 0 0 0.85rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--terminal-shell-text) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
 }
 
 .menu-panel .sheet-header h2 {
-  color: var(--terminal-shell-text);
+  color: var(--ink);
 }
 
 .menu-panel .sheet-header .eyebrow {
-  color: var(--terminal-shell-muted);
+  color: var(--muted);
 }
 
 .menu-panel .menu-section {
   padding: 0.85rem;
-  border: 1px solid var(--terminal-panel-border);
+  border: 1px solid var(--line);
   border-radius: 0.22rem;
-  background: var(--terminal-panel);
-  color: var(--terminal-ink);
+  background: var(--surface);
+  color: var(--ink);
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .menu-panel .menu-section .eyebrow,
 .menu-panel .menu-copy {
-  color: var(--terminal-muted);
+  color: var(--muted);
 }
 
 .menu-panel .secondary-button,
 .menu-panel .ghost-button,
 .menu-panel .theme-toggle {
-  background: var(--terminal-panel-strong);
-  border-color: var(--terminal-panel-border);
-  color: var(--terminal-ink);
+  background: var(--surface-strong);
+  border-color: var(--line);
+  color: var(--ink);
 }
 
 .menu-panel .theme-toggle.selected {
-  background: var(--terminal-panel-subtle);
-  border-color: var(--terminal-accent-strong);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--terminal-shell-text) 18%, transparent);
+  background: var(--surface-raised);
+  border-color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 18%, transparent);
 }
 
 .menu-panel .danger-button {
-  color: var(--terminal-error-border);
-  border-color: color-mix(in srgb, var(--terminal-error-border) 55%, var(--terminal-panel-border));
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
 }
 
 .menu-panel .secondary-button:hover,
@@ -1713,43 +1673,43 @@ code {
 .menu-panel .theme-toggle:hover,
 .menu-trigger:hover,
 .status-trigger:hover {
-  background: var(--terminal-panel-subtle);
+  background: var(--surface-raised);
 }
 
 .bottom-nav {
-  background: var(--terminal-shell);
-  border-color: var(--terminal-shell-line);
+  background: var(--surface);
+  border-color: var(--line);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
 .bottom-nav button {
-  background: var(--terminal-panel);
-  border: 1px solid var(--terminal-panel-border);
-  color: var(--terminal-ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .bottom-nav button:hover {
-  background: var(--terminal-panel-subtle);
+  background: var(--surface-raised);
 }
 
 .bottom-nav button.selected {
-  background: var(--terminal-panel-strong);
-  border-color: var(--terminal-accent-strong);
+  background: var(--surface-strong);
+  border-color: var(--accent-strong);
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px color-mix(in srgb, var(--terminal-shell-text) 20%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px color-mix(in srgb, var(--ink) 20%, transparent);
 }
 
 .diff-view {
-  color: var(--terminal-shell-text);
+  color: var(--ink);
 }
 
 .diff-view .eyebrow,
 .diff-view .subdued {
-  color: var(--terminal-shell-muted);
+  color: var(--muted);
 }
 
 .diff-view .section-header {
@@ -1769,12 +1729,12 @@ code {
   display: grid;
   gap: 0.4rem;
   padding: 0.45rem;
-  border: 1px solid var(--terminal-panel-border);
+  border: 1px solid var(--line);
   border-radius: 0.35rem;
-  background: var(--terminal-shell);
+  background: var(--surface);
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .diff-view .diff-actions-menu .primary-button,
@@ -1786,28 +1746,28 @@ code {
 .diff-view .status-pill,
 .diff-view .primary-button,
 .diff-view .secondary-button {
-  background: var(--terminal-panel);
-  border-color: var(--terminal-panel-border);
-  color: var(--terminal-ink);
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
 }
 
 .diff-view .primary-button:hover,
 .diff-view .secondary-button:hover {
-  background: var(--terminal-panel-strong);
+  background: var(--surface-strong);
 }
 
 .diff-view .diff-card,
 .diff-view .empty-state-card {
-  background: var(--terminal-shell);
-  border-color: var(--terminal-shell-line);
-  color: var(--terminal-shell-text);
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
   border-radius: 0.4rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 
 .diff-view .empty-state-card p,
 .diff-view .diff-card-header p {
-  color: var(--terminal-shell-muted);
+  color: var(--muted);
 }
 
 .diff-view .diff-card h3,
@@ -1816,13 +1776,13 @@ code {
 }
 
 .diff-view .hunk-card {
-  background: var(--terminal-panel-strong);
-  border-color: var(--terminal-panel-border);
-  color: var(--terminal-ink);
+  background: var(--surface-strong);
+  border-color: var(--line);
+  color: var(--ink);
   border-radius: 0.22rem;
   box-shadow:
-    inset 0 1px 0 var(--terminal-shadow-highlight),
-    inset 0 0 0 1px var(--terminal-shadow-inset);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .diff-view .hunk-toolbar {
@@ -1833,7 +1793,7 @@ code {
   gap: 0.55rem;
   padding-bottom: 0.7rem;
   margin-bottom: 0.8rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--terminal-panel-border) 30%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 30%, transparent);
 }
 
 .diff-view .hunk-toolbar-main {
@@ -1853,17 +1813,17 @@ code {
 }
 
 .diff-view .hunk-toolbar code {
-  color: var(--terminal-accent-strong);
-  background: color-mix(in srgb, var(--terminal-panel-border) 10%, transparent);
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--line) 10%, transparent);
   padding: 0.2rem 0.45rem;
   border-radius: 0.2rem;
 }
 
 .diff-view .hunk-stage-badge {
   border-radius: 999px;
-  border: 1px solid var(--terminal-panel-border);
-  background: var(--terminal-panel);
-  color: var(--terminal-muted);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
   padding: 0.16rem 0.5rem;
   font-size: 0.67rem;
   letter-spacing: 0.06em;
@@ -1872,41 +1832,41 @@ code {
 }
 
 .diff-view .hunk-stage-badge.staged {
-  border-color: var(--terminal-diff-added-border);
-  background: color-mix(in srgb, var(--terminal-diff-added-bg) 70%, var(--terminal-panel));
-  color: var(--terminal-diff-added-text);
+  border-color: var(--diff-added-border);
+  background: color-mix(in srgb, var(--diff-added-bg) 70%, var(--surface));
+  color: var(--diff-added-text);
 }
 
 .diff-view .hunk-stage-badge.unstaged {
-  border-color: color-mix(in srgb, var(--terminal-warning-border) 80%, var(--terminal-panel-border));
-  background: color-mix(in srgb, var(--terminal-diff-change-bg) 68%, var(--terminal-panel));
-  color: var(--terminal-ink);
+  border-color: color-mix(in srgb, var(--warning) 80%, var(--line));
+  background: color-mix(in srgb, var(--diff-change-bg) 68%, var(--surface));
+  color: var(--ink);
 }
 
 .diff-view .diff-html {
-  --d2h-bg-color: var(--terminal-panel-strong);
-  --d2h-border-color: var(--terminal-panel-border);
-  --d2h-dim-color: var(--terminal-diff-dim);
-  --d2h-line-border-color: color-mix(in srgb, var(--terminal-panel-border) 50%, transparent);
-  --d2h-file-header-bg-color: var(--terminal-panel-subtle);
-  --d2h-file-header-border-color: var(--terminal-panel-border);
-  --d2h-empty-placeholder-bg-color: var(--terminal-diff-gutter);
-  --d2h-empty-placeholder-border-color: var(--terminal-panel-border);
-  --d2h-ins-bg-color: var(--terminal-diff-added-bg);
-  --d2h-ins-border-color: var(--terminal-diff-added-border);
-  --d2h-ins-highlight-bg-color: var(--terminal-diff-added-highlight);
-  --d2h-ins-label-color: var(--terminal-diff-added-text);
-  --d2h-del-bg-color: var(--terminal-diff-removed-bg);
-  --d2h-del-border-color: var(--terminal-diff-removed-border);
-  --d2h-del-highlight-bg-color: var(--terminal-diff-removed-highlight);
-  --d2h-del-label-color: var(--terminal-diff-removed-text);
-  --d2h-change-del-color: var(--terminal-diff-change-bg);
-  --d2h-change-ins-color: var(--terminal-diff-added-highlight);
-  --d2h-info-bg-color: var(--terminal-diff-info-bg);
-  --d2h-info-border-color: var(--terminal-diff-info-border);
-  --d2h-change-label-color: var(--terminal-accent-strong);
-  --d2h-moved-label-color: var(--terminal-accent-strong);
-  font-family: "IBM Plex Mono", "Consolas", "Liberation Mono", monospace;
+  --d2h-bg-color: var(--surface-strong);
+  --d2h-border-color: var(--line);
+  --d2h-dim-color: var(--diff-dim);
+  --d2h-line-border-color: color-mix(in srgb, var(--line) 50%, transparent);
+  --d2h-file-header-bg-color: var(--surface-raised);
+  --d2h-file-header-border-color: var(--line);
+  --d2h-empty-placeholder-bg-color: var(--diff-gutter);
+  --d2h-empty-placeholder-border-color: var(--line);
+  --d2h-ins-bg-color: var(--diff-added-bg);
+  --d2h-ins-border-color: var(--diff-added-border);
+  --d2h-ins-highlight-bg-color: var(--diff-added-highlight);
+  --d2h-ins-label-color: var(--diff-added-text);
+  --d2h-del-bg-color: var(--diff-removed-bg);
+  --d2h-del-border-color: var(--diff-removed-border);
+  --d2h-del-highlight-bg-color: var(--diff-removed-highlight);
+  --d2h-del-label-color: var(--diff-removed-text);
+  --d2h-change-del-color: var(--diff-change-bg);
+  --d2h-change-ins-color: var(--diff-added-highlight);
+  --d2h-info-bg-color: var(--diff-info-bg);
+  --d2h-info-border-color: var(--diff-info-border);
+  --d2h-change-label-color: var(--accent-strong);
+  --d2h-moved-label-color: var(--accent-strong);
+  font-family: 'IBM Plex Mono', 'Consolas', 'Liberation Mono', monospace;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
@@ -1921,7 +1881,7 @@ code {
 }
 
 .diff-view .diff-html .d2h-file-wrapper {
-  box-shadow: inset 0 0 0 1px var(--terminal-shadow-inset);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 .diff-view .diff-html .d2h-code-line,
@@ -1936,8 +1896,8 @@ code {
 
 .diff-view .diff-html .d2h-code-linenumber,
 .diff-view .diff-html .d2h-code-side-linenumber {
-  background: var(--terminal-diff-gutter);
-  color: var(--terminal-diff-dim);
+  background: var(--diff-gutter);
+  color: var(--diff-dim);
 }
 
 .diff-view .diff-html .d2h-ins,
@@ -1945,7 +1905,7 @@ code {
 .diff-view .diff-html .d2h-ins .d2h-code-side-line-ctn,
 .diff-view .diff-html .d2h-added,
 .diff-view .diff-html .d2h-lines-added {
-  color: var(--terminal-diff-added-text);
+  color: var(--diff-added-text);
 }
 
 .diff-view .diff-html .d2h-del,
@@ -1953,13 +1913,13 @@ code {
 .diff-view .diff-html .d2h-del .d2h-code-side-line-ctn,
 .diff-view .diff-html .d2h-deleted,
 .diff-view .diff-html .d2h-lines-deleted {
-  color: var(--terminal-diff-removed-text);
+  color: var(--diff-removed-text);
 }
 
 .diff-view .diff-html .d2h-info,
 .diff-view .diff-html .d2h-emptyplaceholder,
 .diff-view .diff-html .d2h-code-side-emptyplaceholder {
-  color: var(--terminal-diff-dim);
+  color: var(--diff-dim);
 }
 
 .diff-html .d2h-wrapper {

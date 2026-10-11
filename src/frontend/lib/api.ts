@@ -1,4 +1,5 @@
-import type { ApiErrorResponse } from "../../shared/contracts.js";
+import type { ApiErrorResponse } from '../../shared/contracts.js';
+import { toast } from './toast.svelte.js';
 
 export class ApiRequestError extends Error {
   readonly status: number;
@@ -18,7 +19,7 @@ export class ApiRequestError extends Error {
     },
   ) {
     super(message);
-    this.name = "ApiRequestError";
+    this.name = 'ApiRequestError';
     this.status = options.status;
     this.code = options.code ?? null;
     this.requestId = options.requestId ?? null;
@@ -27,21 +28,30 @@ export class ApiRequestError extends Error {
   }
 }
 
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
 export async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers ?? {});
 
-  if (init.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+  if (init.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
   }
 
   const response = await fetch(url, {
-    credentials: "same-origin",
-    cache: init.cache ?? "no-store",
+    credentials: 'same-origin',
+    cache: init.cache ?? 'no-store',
     ...init,
     headers,
   });
 
   if (!response.ok) {
+    if (response.status === 401 && unauthorizedHandler) {
+      unauthorizedHandler();
+    }
     throw await toApiRequestError(response);
   }
 
@@ -52,22 +62,111 @@ export async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<
   return response.json() as Promise<T>;
 }
 
-async function toApiRequestError(response: Response) {
+export const api = {
+  get<T>(url: string, init?: RequestInit): Promise<T> {
+    return apiFetch<T>(url, { ...init, method: 'GET' });
+  },
+  post<T>(url: string, body?: unknown, init?: RequestInit): Promise<T> {
+    return apiFetch<T>(url, {
+      ...init,
+      method: 'POST',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  },
+  put<T>(url: string, body?: unknown, init?: RequestInit): Promise<T> {
+    return apiFetch<T>(url, {
+      ...init,
+      method: 'PUT',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  },
+  del<T>(url: string, init?: RequestInit): Promise<T> {
+    return apiFetch<T>(url, { ...init, method: 'DELETE' });
+  },
+};
+
+export function toErrorMessage(error: unknown): string {
+  if (error instanceof ApiRequestError) {
+    const requestHint = error.requestId ? ` (request ${error.requestId})` : '';
+    return `${error.message}${requestHint}`;
+  }
+
+  return error instanceof Error ? error.message : 'Unexpected error.';
+}
+
+export interface RunOptions<T = unknown> {
+  okText?: string | ((result: T) => string);
+  busy?: (isBusy: boolean) => void;
+  rethrow?: boolean;
+}
+
+export async function run<T>(
+  action: () => Promise<T>,
+  optionsOrOkText?: string | ((result: T) => string) | RunOptions<T>,
+  busySetter?: (isBusy: boolean) => void,
+): Promise<T | null> {
+  let okText: string | ((result: T) => string) | undefined;
+  let setBusy: ((isBusy: boolean) => void) | undefined = busySetter;
+  let rethrow = false;
+
+  if (typeof optionsOrOkText === 'string' || typeof optionsOrOkText === 'function') {
+    okText = optionsOrOkText;
+  } else if (optionsOrOkText && typeof optionsOrOkText === 'object') {
+    okText = optionsOrOkText.okText;
+    if (typeof optionsOrOkText.busy === 'function') {
+      setBusy = optionsOrOkText.busy;
+    }
+    rethrow = Boolean(optionsOrOkText.rethrow);
+  }
+
+  setBusy?.(true);
+
+  try {
+    const result = await action();
+    if (okText) {
+      const message = typeof okText === 'function' ? okText(result) : okText;
+      if (message) {
+        toast.show(message, 'success');
+      }
+    }
+    return result;
+  } catch (error) {
+    if (!(error instanceof ApiRequestError && error.status === 401)) {
+      toast.show(toErrorMessage(error), 'error');
+    }
+    if (rethrow) {
+      throw error;
+    }
+    return null;
+  } finally {
+    setBusy?.(false);
+  }
+}
+
+async function toApiRequestError(response: Response): Promise<ApiRequestError> {
   try {
     const payload = (await response.json()) as Partial<ApiErrorResponse> & { message?: string };
 
-    if (payload && typeof payload === "object" && payload.error && typeof payload.error === "object") {
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      payload.error &&
+      typeof payload.error === 'object'
+    ) {
       const error = payload.error;
-      return new ApiRequestError(error.message ?? `Request failed with status ${response.status}.`, {
-        status: response.status,
-        code: error.code,
-        requestId: error.requestId,
-        retriable: error.retriable,
-        details: error.details,
-      });
+      return new ApiRequestError(
+        error.message ?? `Request failed with status ${response.status}.`,
+        {
+          status: response.status,
+          code: error.code,
+          requestId: error.requestId,
+          retriable: error.retriable,
+          details: error.details,
+        },
+      );
     }
 
-    if (typeof payload.message === "string" && payload.message.length > 0) {
+    if (typeof payload.message === 'string' && payload.message.length > 0) {
       return new ApiRequestError(payload.message, {
         status: response.status,
       });

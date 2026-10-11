@@ -45,7 +45,16 @@
   import PiLoginModal from './components/PiLoginModal.svelte';
   import SystemStatusBar from './components/SystemStatusBar.svelte';
   import WorkspacePicker from './components/WorkspacePicker.svelte';
-  import { ApiRequestError, apiFetch } from './lib/api.js';
+  import {
+    api,
+    apiFetch,
+    ApiRequestError,
+    run,
+    setUnauthorizedHandler,
+    toErrorMessage,
+  } from './lib/api.js';
+  import { copyText } from './lib/clipboard.js';
+  import { toast } from './lib/toast.svelte.js';
 
   type ThemeName = 'vscode-dark' | 'vscode-light';
   type ViewName = 'chat' | 'diff' | 'editor';
@@ -158,6 +167,15 @@
 
   let bannerMessage = '';
   let bannerTone: 'info' | 'success' | 'error' = 'info';
+
+  toast.subscribe((state) => {
+    bannerMessage = state.message;
+    bannerTone = state.tone;
+  });
+
+  setUnauthorizedHandler(() => {
+    expireSession('Session expired. Please sign in again.');
+  });
   let menuOpen = false;
   let piLoginOpen = false;
   let piAuthProviders: PiAuthProviderState[] = [];
@@ -747,38 +765,32 @@
   }
 
   async function selectRepo(path: string) {
-    try {
-      await apiFetch('/api/workspaces/select', {
-        method: 'POST',
-        body: JSON.stringify({ path }),
-      });
+    await run(async () => {
+      await api.post('/api/workspaces/select', { path });
       menuOpen = false;
       workspaceOpen = false;
-      showBanner('Repository activated.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    }
+    }, 'Repository activated.');
   }
 
   async function cloneRepo(remoteUrl: string, destinationPath?: string) {
-    workspaceCloning = true;
+    await run(
+      async () => {
+        const response = await api.post<WorkspaceCloneResult>('/api/workspaces/clone', {
+          remoteUrl,
+          destinationPath,
+        });
 
-    try {
-      const response = await apiFetch<WorkspaceCloneResult>('/api/workspaces/clone', {
-        method: 'POST',
-        body: JSON.stringify({ remoteUrl, destinationPath }),
-      });
-
-      currentRepo = response.repo;
-      menuOpen = false;
-      workspaceOpen = false;
-      await loadWorkspaces(workspacePath);
-      showBanner(`Repository cloned and activated (${response.repo.name}).`, 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      workspaceCloning = false;
-    }
+        currentRepo = response.repo;
+        menuOpen = false;
+        workspaceOpen = false;
+        await loadWorkspaces(workspacePath);
+        return response;
+      },
+      (res) => `Repository cloned and activated (${res.repo.name}).`,
+      (busy) => {
+        workspaceCloning = busy;
+      },
+    );
   }
 
   async function refreshCurrentRepoData() {
@@ -940,23 +952,19 @@
       return;
     }
 
-    savingFile = true;
-
-    try {
-      await apiFetch('/api/files/write', {
-        method: 'POST',
-        body: JSON.stringify({ path: selectedDocument.path, content }),
-      });
-      selectedDocument = { ...selectedDocument, content };
-      draftContent = content;
-      editorDirty = false;
-      await loadDiff();
-      showBanner('File saved.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      savingFile = false;
-    }
+    await run(
+      async () => {
+        await api.post('/api/files/write', { path: selectedDocument!.path, content });
+        selectedDocument = { ...selectedDocument!, content };
+        draftContent = content;
+        editorDirty = false;
+        await loadDiff();
+      },
+      'File saved.',
+      (busy) => {
+        savingFile = busy;
+      },
+    );
   }
 
   async function runFileAction(
@@ -965,28 +973,26 @@
     successMessage: string,
     openResult: boolean,
   ) {
-    creatingFile = true;
+    return await run(
+      async () => {
+        const response = await api.post<FileCreateResult | FileMoveResult>(
+          `/api/files/${action}`,
+          body,
+        );
+        const resultPath = 'toPath' in response ? response.toPath : response.path;
+        await loadFiles(parentDirectoryFor(resultPath));
 
-    try {
-      const response = await apiFetch<FileCreateResult | FileMoveResult>(`/api/files/${action}`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-      const resultPath = 'toPath' in response ? response.toPath : response.path;
-      await loadFiles(parentDirectoryFor(resultPath));
+        if (openResult) {
+          await openFile(resultPath);
+        }
 
-      if (openResult) {
-        await openFile(resultPath);
-      }
-
-      showBanner(successMessage, 'success');
-      return resultPath;
-    } catch (error) {
-      handleApiFailure(error);
-      return null;
-    } finally {
-      creatingFile = false;
-    }
+        return resultPath;
+      },
+      successMessage,
+      (busy) => {
+        creatingFile = busy;
+      },
+    );
   }
 
   const createFile = (path: string, content: string) =>
@@ -1061,11 +1067,7 @@
   }
 
   async function abortRun() {
-    try {
-      await apiFetch('/api/agent/abort', { method: 'POST' });
-    } catch (error) {
-      handleApiFailure(error);
-    }
+    await run(() => api.post('/api/agent/abort'));
   }
 
   async function executePaletteCommand(request: AgentCommandRequest) {
@@ -1139,16 +1141,12 @@
       return;
     }
 
-    try {
-      if (!navigator.clipboard) {
-        throw new Error('Clipboard is not available in this browser.');
-      }
-
-      await navigator.clipboard.writeText(lastAssistantReply.text);
-      commandPaletteOpen = false;
+    const copied = await copyText(lastAssistantReply.text);
+    commandPaletteOpen = false;
+    if (copied) {
       showBanner('Last assistant reply copied.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
+    } else {
+      showBanner('Failed to copy to clipboard.', 'error');
     }
   }
 
@@ -1184,22 +1182,16 @@
       return false;
     }
 
-    setBusy(true);
-
-    try {
-      const response = await apiFetch<T>(`/api/git/${endpoint}`, {
-        method: 'POST',
-        ...(body ? { body: JSON.stringify(body) } : {}),
-      });
-      await loadDiff();
-      showBanner(successMessage(response), 'success');
-      return true;
-    } catch (error) {
-      handleApiFailure(error);
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    const result = await run(
+      async () => {
+        const response = await api.post<T>(`/api/git/${endpoint}`, body ?? undefined);
+        await loadDiff();
+        return response;
+      },
+      (res) => successMessage(res),
+      setBusy,
+    );
+    return Boolean(result);
   }
 
   const commitChanges = (message: string) =>
@@ -1365,23 +1357,20 @@
       return;
     }
 
-    clearingLogs = true;
-
-    try {
-      await apiFetch('/api/logs', {
-        method: 'DELETE',
-      });
-      logEntries = [];
-      logKnownSources = [];
-      logHasMore = false;
-      logViewError = '';
-      await loadLogs(true);
-      showBanner('Backend log deleted.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      clearingLogs = false;
-    }
+    await run(
+      async () => {
+        await api.del('/api/logs');
+        logEntries = [];
+        logKnownSources = [];
+        logHasMore = false;
+        logViewError = '';
+        await loadLogs(true);
+      },
+      'Backend log deleted.',
+      (busy) => {
+        clearingLogs = busy;
+      },
+    );
   }
 
   function setLogLevel(value: BackendLogLevel | '') {
@@ -1688,23 +1677,7 @@
   }
 
   function showBanner(message: string, tone: 'info' | 'success' | 'error') {
-    bannerMessage = message;
-    bannerTone = tone;
-    window.clearTimeout(showBanner.timeoutId);
-    showBanner.timeoutId = window.setTimeout(() => {
-      bannerMessage = '';
-    }, 3500);
-  }
-
-  showBanner.timeoutId = 0;
-
-  function toErrorMessage(error: unknown) {
-    if (error instanceof ApiRequestError) {
-      const requestHint = error.requestId ? ` (request ${error.requestId})` : '';
-      return `${error.message}${requestHint}`;
-    }
-
-    return error instanceof Error ? error.message : 'Unexpected error.';
+    toast.show(message, tone);
   }
 </script>
 
