@@ -1,78 +1,111 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 
-import type { ChatMessage, ToolActivity } from "../../shared/contracts.js";
+import type { ChatMessage, ChatToolCall } from '../../shared/contracts.js';
 
-export function hydrateMessagesFromSession(sessionMessages: readonly unknown[]) {
-  return sessionMessages.map((entry) => toChatMessage(entry)).filter((entry): entry is ChatMessage => entry !== null);
+export function hydrateMessagesFromSession(sessionMessages: readonly unknown[]): ChatMessage[] {
+  const result: ChatMessage[] = [];
+
+  for (const entry of sessionMessages) {
+    if (!entry || typeof entry !== 'object' || !('role' in entry)) {
+      continue;
+    }
+
+    const candidate = entry as {
+      role?: string;
+      createdAt?: unknown;
+      timestamp?: unknown;
+      content?: unknown;
+      toolCallId?: string;
+      toolName?: string;
+      result?: unknown;
+      isError?: boolean;
+    };
+
+    if (candidate.role === 'toolResult' || candidate.role === 'tool-result') {
+      const lastAssistant = [...result].reverse().find((message) => message.role === 'assistant');
+      if (lastAssistant && lastAssistant.tools) {
+        const matchingTool = lastAssistant.tools.find(
+          (tool) =>
+            tool.id === candidate.toolCallId ||
+            (candidate.toolName && tool.name === candidate.toolName),
+        );
+        if (matchingTool) {
+          matchingTool.status = candidate.isError ? 'error' : 'complete';
+          const resultDetail = extractToolResultDetail(candidate);
+          if (resultDetail) {
+            matchingTool.detail = resultDetail;
+          }
+        }
+      }
+      continue;
+    }
+
+    if (candidate.role !== 'user' && candidate.role !== 'assistant') {
+      continue;
+    }
+
+    const tools = candidate.role === 'assistant' ? extractToolCalls(candidate) : undefined;
+    const text = flattenMessageText(candidate);
+
+    if (candidate.role === 'assistant' && text.length === 0 && (!tools || tools.length === 0)) {
+      continue;
+    }
+
+    result.push({
+      id: randomUUID(),
+      role: candidate.role,
+      text,
+      status: 'complete',
+      timestamp: resolveMessageTimestamp(candidate),
+      ...(tools && tools.length > 0 ? { tools } : {}),
+    });
+  }
+
+  return result;
 }
 
-export function flattenMessageText(message: { content?: string | unknown[] }) {
-  if (typeof message.content === "string") {
+export function flattenMessageText(message: { content?: unknown }) {
+  if (typeof message.content === 'string') {
     return message.content.trim();
   }
 
   if (!Array.isArray(message.content)) {
-    return "";
+    return '';
   }
 
   return message.content
     .map((chunk) => {
-      if (typeof chunk === "string") {
+      if (typeof chunk === 'string') {
         return chunk;
       }
 
-      if (!chunk || typeof chunk !== "object") {
-        return "";
+      if (!chunk || typeof chunk !== 'object') {
+        return '';
       }
 
       const typedChunk = chunk as {
         type?: string;
         text?: string;
-        toolName?: string;
-        name?: string;
-        result?: unknown;
-        arguments?: unknown;
-        args?: unknown;
       };
-      const type = typedChunk.type ?? "";
+      const type = typedChunk.type ?? '';
 
-      if (type === "text") {
-        return typedChunk.text ?? "";
+      if (type === 'text') {
+        return typedChunk.text ?? '';
       }
 
-      if (type === "thinking" || type === "hidden" || type === "reasoning") {
-        return "";
-      }
-
-      if (type === "tool-call" || type === "toolCall" || type === "tool_call") {
-        const toolName = typedChunk.toolName ?? typedChunk.name ?? "unknown";
-        const toolArgs = typedChunk.arguments ?? typedChunk.args;
-        const argsSummary = toolArgs ? summarizePayload(toolArgs) : "";
-        return `\n[tool:${toolName}]${argsSummary ? ` ${argsSummary}` : ""}`;
-      }
-
-      if (type === "tool-result" || type === "toolResult" || type === "tool_result") {
-        return `\n${summarizePayload(typedChunk.result)}`;
-      }
-
-      return typedChunk.text ?? "";
+      return '';
     })
-    .join("")
+    .join('')
     .trim();
-}
-
-export function upsertTool(tools: ToolActivity[], tool: ToolActivity) {
-  const remainder = tools.filter((entry) => entry.id !== tool.id);
-  return [tool, ...remainder].slice(0, 12);
 }
 
 export function summarizePayload(payload: unknown, maxLength: number | null = 240) {
   if (payload === null || payload === undefined) {
-    return "";
+    return '';
   }
 
   const text = (() => {
-    if (typeof payload === "string") {
+    if (typeof payload === 'string') {
       return payload;
     }
 
@@ -91,46 +124,91 @@ export function summarizePayload(payload: unknown, maxLength: number | null = 24
 }
 
 export function summarizeText(text: string) {
-  const normalized = text.replace(/\s+/g, " ").trim();
+  const normalized = text.replace(/\s+/g, ' ').trim();
 
   if (normalized.length === 0) {
-    return "No text";
+    return 'No text';
   }
 
   return normalized.slice(0, 120);
 }
 
-function toChatMessage(entry: unknown): ChatMessage | null {
-  if (!entry || typeof entry !== "object" || !("role" in entry)) {
-    return null;
+function extractToolCalls(candidate: { content?: unknown }): ChatToolCall[] {
+  if (!Array.isArray(candidate.content)) {
+    return [];
   }
 
-  const candidate = entry as {
-    role?: string;
-    createdAt?: unknown;
-    timestamp?: unknown;
-    content?: unknown[];
-  };
+  const tools: ChatToolCall[] = [];
 
-  if (candidate.role !== "user" && candidate.role !== "assistant") {
-    return null;
+  for (const chunk of candidate.content) {
+    if (!chunk || typeof chunk !== 'object') {
+      continue;
+    }
+
+    const typedChunk = chunk as {
+      type?: string;
+      id?: string;
+      toolCallId?: string;
+      name?: string;
+      toolName?: string;
+      arguments?: unknown;
+      args?: unknown;
+    };
+
+    const type = typedChunk.type ?? '';
+
+    if (type === 'tool-call' || type === 'toolCall' || type === 'tool_call') {
+      const toolId = String(typedChunk.id || typedChunk.toolCallId || randomUUID());
+      const toolName = String(typedChunk.name || typedChunk.toolName || 'unknown');
+      const toolArgs = typedChunk.arguments ?? typedChunk.args;
+      const detail = toolArgs ? summarizePayload(toolArgs, null) : '';
+
+      tools.push({
+        id: toolId,
+        name: toolName,
+        status: 'complete',
+        detail,
+      });
+    }
   }
 
-  return {
-    id: randomUUID(),
-    role: candidate.role,
-    text: flattenMessageText(candidate),
-    status: "complete",
-    timestamp: resolveMessageTimestamp(candidate),
-  };
+  return tools;
+}
+
+function extractToolResultDetail(entry: { content?: unknown; result?: unknown }): string {
+  if (typeof entry.content === 'string') {
+    return entry.content.trim();
+  }
+
+  if (Array.isArray(entry.content)) {
+    const text = entry.content
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object' && 'text' in item) {
+          return String((item as { text: unknown }).text ?? '');
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+    if (text.length > 0) {
+      return text;
+    }
+  }
+
+  return summarizePayload(entry.result ?? entry.content, null);
 }
 
 function resolveMessageTimestamp(candidate: { createdAt?: unknown; timestamp?: unknown }) {
-  return normalizeTimestampValue(candidate.createdAt) ?? normalizeTimestampValue(candidate.timestamp) ?? new Date().toISOString();
+  return (
+    normalizeTimestampValue(candidate.createdAt) ??
+    normalizeTimestampValue(candidate.timestamp) ??
+    new Date().toISOString()
+  );
 }
 
 function normalizeTimestampValue(value: unknown) {
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     const trimmed = value.trim();
 
     if (trimmed.length === 0) {
@@ -146,7 +224,7 @@ function normalizeTimestampValue(value: unknown) {
     return new Date(parsed).toISOString();
   }
 
-  if (typeof value === "number" && Number.isFinite(value)) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
     const milliseconds = Math.abs(value) < 1_000_000_000_000 ? value * 1000 : value;
 
     if (!Number.isFinite(milliseconds)) {

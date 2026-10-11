@@ -151,7 +151,6 @@ describe('createApp', () => {
           isRetrying: false,
           isBashRunning: false,
           messages: [],
-          tools: [],
           lastError: null,
           usage: {
             inputTokens: 0,

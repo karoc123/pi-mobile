@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount, tick } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   import type {
     AgentRuntimePhase,
@@ -7,9 +7,9 @@
     AgentUsage,
     ChatMessage,
     InteractivePrompt,
-    ToolActivity,
-  } from '../../../src/shared/contracts.js';
+  } from '../../shared/contracts.js';
   import { formatCompactTokenCount, formatUsageCost } from '../lib/agent-usage.js';
+  import { copyText } from '../lib/clipboard.js';
   import {
     applySlashCommandSuggestion,
     getSlashCommandSuggestions,
@@ -18,847 +18,288 @@
   } from '../lib/command-suggestions.js';
   import { renderMarkdown } from '../lib/markdown.js';
   import InteractiveCard from './InteractiveCard.svelte';
+  import ToolCalls from './ToolCalls.svelte';
 
-  type ToolTraceBatch = {
-    id: string;
-    tools: ToolActivity[];
-  };
-
-  type ParsedToolCall = {
-    id: string;
-    toolName: string;
-    detail: string;
-  };
-
-  type DisplayEntry =
-    | {
-        kind: 'chat';
-        message: ChatMessage;
-      }
-    | {
-        kind: 'tool-group';
-        id: string;
-        toolCalls: ParsedToolCall[];
-        statusLabel: string;
-      };
-
-  export let messages: ChatMessage[] = [];
-  export let toolBatches: ToolTraceBatch[] = [];
-  export let runtimePhase: AgentRuntimePhase = 'idle';
-  export let pendingMessageCount = 0;
-  export let canAbort = false;
-  export let lastError: string | null = null;
-  export let usage: AgentUsage;
-  export let prefillPrompt = '';
-  export let prefillToken = 0;
-  export let availableCommands: AgentSlashCommand[] = [];
-  export let interactivePrompt: InteractivePrompt | null = null;
-  export let draftStorageScope = 'default';
-
-  const dispatch = createEventDispatcher<{
-    submit: { prompt: string };
-    abort: void;
-    openCommands: void;
-    openModelCommands: void;
-    newSession: void;
-    interactiveDismiss: void;
-  }>();
-
-  function onSubmit(formattedText: string) {
-    dispatch('submit', { prompt: formattedText });
+  interface Props {
+    messages?: ChatMessage[];
+    runtimePhase?: AgentRuntimePhase;
+    pendingMessageCount?: number;
+    canAbort?: boolean;
+    lastError?: string | null;
+    usage?: AgentUsage;
+    prefillPrompt?: string;
+    prefillToken?: number;
+    availableCommands?: AgentSlashCommand[];
+    interactivePrompt?: InteractivePrompt | null;
+    draftStorageScope?: string;
+    onsubmit?: (prompt: string) => void;
+    onabort?: () => void;
+    onopencommands?: () => void;
+    onopenmodelcommands?: () => void;
+    onnewsession?: () => void;
+    oninteractivedismiss?: () => void;
   }
 
-  function onDismiss() {
-    dispatch('interactiveDismiss');
-  }
+  const {
+    messages = [],
+    runtimePhase = 'idle',
+    pendingMessageCount = 0,
+    canAbort = false,
+    lastError = null,
+    usage,
+    prefillPrompt = '',
+    prefillToken = 0,
+    availableCommands = [],
+    interactivePrompt = null,
+    draftStorageScope = 'default',
+    onsubmit,
+    onabort,
+    onopencommands,
+    onopenmodelcommands,
+    onnewsession,
+    oninteractivedismiss,
+  }: Props = $props();
 
-  let prompt = '';
-  let composerPanel: HTMLDivElement | null = null;
-  let logEndAnchor: HTMLDivElement | null = null;
-  let promptField: HTMLTextAreaElement | null = null;
-  let handledPrefillToken = 0;
-  let toolTraceExpanded = false;
-  let expandedTraceToolMap: Record<string, boolean> = {};
-  let expandedMessageToolMap: Record<string, boolean> = {};
-  let shouldAutoScroll = true;
+  let prompt = $state('');
+  let promptField = $state<HTMLTextAreaElement | null>(null);
+  let logContainer = $state<HTMLDivElement | null>(null);
+  let handledPrefillToken = $state(0);
+  let copiedMessageId = $state<string | null>(null);
+  let promptCursorIndex = $state(0);
+  let selectedSlashSuggestionIndex = $state(0);
+  let slashSuggestionsDismissed = $state(false);
   let isNearBottom = true;
-  let keyboardOpen = false;
-  let baseViewportHeight = 0;
-  let transcriptSignature = '';
-  let showComposerMeta = true;
-  let previousTranscriptSignature = '';
-  let displayEntries: DisplayEntry[] = [];
-  let hiddenEntryMap: Record<string, boolean> = {};
-  let copiedEntryId: string | null = null;
-  let copiedEntryResetTimer: number | null = null;
-  let activePromptDraftStorageKey = '';
-  let hydratedPromptDraftStorageKey = '';
-  let promptCursorIndex = 0;
-  let runtimeSlashCommandSuggestions: SlashCommandSuggestion[] = [];
-  let slashCommandSuggestions: SlashCommandSuggestion[] = [];
-  let selectedSlashSuggestionIndex = 0;
-  let slashSuggestionsDismissed = false;
 
-  $: statusTitle = lastError
-    ? 'Agent needs attention'
-    : runtimePhase === 'streaming'
-      ? 'Pi is working'
-      : runtimePhase === 'queued'
-        ? `Pending queue: ${pendingMessageCount}`
-        : runtimePhase === 'compacting'
-          ? 'Pi is compacting context'
-          : runtimePhase === 'retrying'
-            ? 'Pi is retrying'
-            : runtimePhase === 'bash-running'
-              ? 'Pi is running bash'
-              : messages.length > 0
-                ? 'Agent finished'
-                : 'Ready';
-  $: statusTone = lastError ? 'error' : runtimePhase === 'idle' ? 'ready' : 'running';
-  $: totalToolCount = toolBatches.reduce((sum, batch) => sum + batch.tools.length, 0);
-  $: displayEntries = buildDisplayEntries(messages);
-  $: transcriptSignature = buildTranscriptSignature(messages, displayEntries.length);
-  $: showComposerMeta =
-    !keyboardOpen && (isNearBottom || runtimePhase !== 'idle' || canAbort || Boolean(lastError));
-  $: normalizedDraftStorageScope =
-    draftStorageScope.trim().length > 0 ? draftStorageScope.trim() : 'default';
-  $: nextPromptDraftStorageKey = buildPromptDraftStorageKey(normalizedDraftStorageScope);
-  $: runtimeSlashCommandSuggestions = toRuntimeSlashCommandSuggestions(availableCommands);
-  $: slashCommandSuggestions = slashSuggestionsDismissed
-    ? []
-    : getSlashCommandSuggestions(prompt, promptCursorIndex, runtimeSlashCommandSuggestions);
-  $: if (slashCommandSuggestions.length === 0) {
-    selectedSlashSuggestionIndex = 0;
-  } else if (selectedSlashSuggestionIndex >= slashCommandSuggestions.length) {
-    selectedSlashSuggestionIndex = slashCommandSuggestions.length - 1;
+  const statusTitle = $derived(
+    lastError
+      ? 'Agent needs attention'
+      : runtimePhase === 'streaming'
+        ? 'Pi is working'
+        : runtimePhase === 'queued'
+          ? `Pending queue: ${pendingMessageCount}`
+          : runtimePhase === 'compacting'
+            ? 'Pi is compacting context'
+            : runtimePhase === 'retrying'
+              ? 'Pi is retrying'
+              : runtimePhase === 'bash-running'
+                ? 'Pi is running bash'
+                : messages.length > 0
+                  ? 'Agent finished'
+                  : 'Ready',
+  );
+
+  const statusTone = $derived(lastError ? 'error' : runtimePhase === 'idle' ? 'ready' : 'running');
+
+  function modelLabelForSendButton(modelId?: string | null): string {
+    if (!modelId) return 'no-model';
+    const compact = modelId.split('/').filter(Boolean).pop() ?? modelId;
+    return compact.length > 20 ? `${compact.slice(0, 20)}...` : compact;
   }
 
-  $: if (nextPromptDraftStorageKey !== activePromptDraftStorageKey) {
-    activePromptDraftStorageKey = nextPromptDraftStorageKey;
-    hydratePromptDraft(activePromptDraftStorageKey);
-  }
+  const sendButtonModel = $derived(`(${modelLabelForSendButton(usage?.modelId)})`);
 
-  $: if (
-    hydratedPromptDraftStorageKey === activePromptDraftStorageKey &&
-    activePromptDraftStorageKey.length > 0
-  ) {
-    persistPromptDraft(activePromptDraftStorageKey, prompt);
-  }
+  const runtimeSlashSuggestions = $derived(toRuntimeSlashCommandSuggestions(availableCommands));
 
-  $: if (prefillToken !== handledPrefillToken) {
-    handledPrefillToken = prefillToken;
-    void applyPrefill(prefillPrompt);
-  }
+  const slashSuggestions = $derived(
+    slashSuggestionsDismissed
+      ? []
+      : getSlashCommandSuggestions(prompt, promptCursorIndex, runtimeSlashSuggestions),
+  );
 
-  $: if (transcriptSignature !== previousTranscriptSignature) {
-    previousTranscriptSignature = transcriptSignature;
-
-    if (shouldAutoScroll) {
-      requestAnimationFrame(() => {
-        scrollWindowToBottom();
-      });
-    }
-  }
-
-  onMount(() => {
-    const handleWindowScroll = () => {
-      refreshScrollPositionState();
-    };
-
-    const handleViewportChange = () => {
-      updateViewportMetrics();
-      refreshScrollPositionState();
-    };
-
-    const handlePointerRelease = () => {
-      refreshScrollPositionState();
-    };
-
-    const viewport = window.visualViewport;
-    baseViewportHeight = viewport?.height ?? window.innerHeight;
-    viewport?.addEventListener('resize', handleViewportChange);
-    viewport?.addEventListener('scroll', handleViewportChange);
-    window.addEventListener('scroll', handleWindowScroll, { passive: true });
-    window.addEventListener('resize', handleViewportChange, { passive: true });
-    window.addEventListener('touchend', handlePointerRelease, { passive: true });
-    window.addEventListener('pointerup', handlePointerRelease, { passive: true });
-
-    handleViewportChange();
-
-    if (shouldAutoScroll) {
-      requestAnimationFrame(() => {
-        scrollWindowToBottom();
-      });
-    }
-
-    return () => {
-      viewport?.removeEventListener('resize', handleViewportChange);
-      viewport?.removeEventListener('scroll', handleViewportChange);
-      window.removeEventListener('scroll', handleWindowScroll);
-      window.removeEventListener('resize', handleViewportChange);
-      window.removeEventListener('touchend', handlePointerRelease);
-      window.removeEventListener('pointerup', handlePointerRelease);
-      document.documentElement.removeAttribute('data-chat-keyboard');
-
-      if (copiedEntryResetTimer !== null) {
-        window.clearTimeout(copiedEntryResetTimer);
-        copiedEntryResetTimer = null;
-      }
-    };
+  const contextChipLabel = $derived.by(() => {
+    if (!usage) return '?/?';
+    const used = usage.contextTokens === null ? '?' : formatCompactTokenCount(usage.contextTokens);
+    const win = usage.contextWindow === null ? '?' : formatCompactTokenCount(usage.contextWindow);
+    return `${used}/${win}`;
   });
 
-  function buildPromptDraftStorageKey(scope: string) {
-    return `pimobile.chat.prompt-draft.${encodeURIComponent(scope)}`;
-  }
+  const contextChipTitle = $derived.by(() => {
+    if (!usage) return 'Context usage';
+    const used = usage.contextTokens === null ? '?' : formatCompactTokenCount(usage.contextTokens);
+    const win = usage.contextWindow === null ? '?' : formatCompactTokenCount(usage.contextWindow);
+    const mode = usage.autoCompactEnabled ? 'auto compact on' : 'auto compact off';
+    return `Context usage ${used}/${win} (${mode})`;
+  });
 
-  function hydratePromptDraft(storageKey: string) {
-    if (typeof window === 'undefined') {
-      hydratedPromptDraftStorageKey = storageKey;
-      return;
-    }
+  const draftStorageKey = $derived(`pi-mobile:prompt-draft:${draftStorageScope}`);
 
-    try {
-      prompt = window.localStorage.getItem(storageKey) ?? '';
-    } catch {
-      prompt = '';
-    }
-
-    hydratedPromptDraftStorageKey = storageKey;
-  }
-
-  function persistPromptDraft(storageKey: string, value: string) {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    try {
-      if (value.length > 0) {
-        window.localStorage.setItem(storageKey, value);
+  function saveDraft(value: string) {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      if (value.trim().length === 0) {
+        window.sessionStorage.removeItem(draftStorageKey);
       } else {
-        window.localStorage.removeItem(storageKey);
+        window.sessionStorage.setItem(draftStorageKey, value);
       }
-    } catch {
-      // Ignore storage access failures (private mode, quota, blocked storage).
     }
   }
 
-  function submit() {
-    if (prompt.trim().length === 0) {
-      return;
-    }
+  function handleScroll() {
+    if (!logContainer) return;
+    const distanceToBottom =
+      logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight;
+    isNearBottom = distanceToBottom < 48;
+  }
 
-    dispatch('submit', { prompt: prompt.trim() });
+  function scrollToBottom() {
+    if (!logContainer) return;
+    logContainer.scrollTop = logContainer.scrollHeight;
+  }
+
+  $effect(() => {
+    // When messages change, stick to bottom if user is near bottom
+    const _len = messages.length;
+    const _phase = runtimePhase;
+    if (isNearBottom) {
+      tick().then(scrollToBottom);
+    }
+  });
+
+  let activeDraftScope = $state('');
+
+  $effect(() => {
+    // Load draft on scope change
+    const key = draftStorageKey;
+    if (key !== activeDraftScope) {
+      activeDraftScope = key;
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        prompt = window.sessionStorage.getItem(key) ?? '';
+      }
+    }
+  });
+
+  $effect(() => {
+    // Prefill prompt if requested
+    if (prefillToken && prefillToken !== handledPrefillToken && prefillPrompt) {
+      handledPrefillToken = prefillToken;
+      prompt = prefillPrompt;
+      saveDraft(prompt);
+      tick().then(() => {
+        if (promptField) {
+          promptField.focus();
+          promptField.setSelectionRange(prompt.length, prompt.length);
+        }
+      });
+    }
+  });
+
+  onMount(() => {
+    scrollToBottom();
+
+    const handleViewportResize = () => {
+      if (typeof document !== 'undefined' && document.activeElement === promptField) {
+        tick().then(scrollToBottom);
+      }
+    };
+
+    if (typeof window !== 'undefined' && window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportResize);
+      return () => {
+        window.visualViewport?.removeEventListener('resize', handleViewportResize);
+      };
+    }
+  });
+
+  function handleSubmit() {
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
+    saveDraft('');
     prompt = '';
-    promptCursorIndex = 0;
-  }
-
-  async function applyPrefill(nextPrompt: string) {
-    prompt = nextPrompt;
-    await tick();
-    promptField?.focus();
-    promptField?.setSelectionRange(nextPrompt.length, nextPrompt.length);
-    promptCursorIndex = nextPrompt.length;
-  }
-
-  function updatePromptCursorPosition() {
-    if (promptField) {
-      promptCursorIndex = promptField.selectionStart ?? prompt.length;
-      return;
-    }
-
-    promptCursorIndex = prompt.length;
-  }
-
-  function handleComposerInput() {
     slashSuggestionsDismissed = false;
-    updatePromptCursorPosition();
-  }
-
-  function handleComposerCursorActivity() {
-    slashSuggestionsDismissed = false;
-    updatePromptCursorPosition();
-  }
-
-  function handleComposerFocus() {
-    slashSuggestionsDismissed = false;
-    updatePromptCursorPosition();
-    refreshScrollPositionState();
-  }
-
-  function handleComposerBlur() {
-    slashSuggestionsDismissed = false;
-    updatePromptCursorPosition();
-    refreshScrollPositionState();
-  }
-
-  function refreshScrollPositionState() {
-    const nearBottom = isNearViewportBottom();
-    isNearBottom = nearBottom;
-    shouldAutoScroll = nearBottom;
+    onsubmit?.(trimmed);
   }
 
   function handleSendPointerDown(event: PointerEvent) {
-    if (event.pointerType !== 'touch') {
-      return;
-    }
-
     event.preventDefault();
-    submit();
+    handleSubmit();
   }
 
-  async function selectSlashCommandSuggestion(suggestion: SlashCommandSuggestion) {
-    const cursorIndex = promptField?.selectionStart ?? promptCursorIndex;
-    const nextValue = applySlashCommandSuggestion(prompt, cursorIndex, suggestion);
-    prompt = nextValue.prompt;
-    await tick();
-    promptField?.focus();
-    promptField?.setSelectionRange(nextValue.cursorIndex, nextValue.cursorIndex);
-    promptCursorIndex = nextValue.cursorIndex;
-    selectedSlashSuggestionIndex = 0;
+  function handleInput() {
+    if (promptField) {
+      promptCursorIndex = promptField.selectionStart ?? prompt.length;
+    }
     slashSuggestionsDismissed = false;
+    saveDraft(prompt);
   }
 
-  function handleComposerKeydown(event: KeyboardEvent) {
-    if (slashCommandSuggestions.length > 0) {
+  function handleCursorActivity() {
+    if (promptField) {
+      promptCursorIndex = promptField.selectionStart ?? prompt.length;
+    }
+  }
+
+  function selectSlashSuggestion(suggestion?: SlashCommandSuggestion) {
+    if (!suggestion) return;
+    const result = applySlashCommandSuggestion(prompt, promptCursorIndex, suggestion);
+    prompt = result.prompt;
+    saveDraft(prompt);
+    slashSuggestionsDismissed = false;
+    tick().then(() => {
+      if (promptField) {
+        promptField.focus();
+        promptField.setSelectionRange(result.cursorIndex, result.cursorIndex);
+      }
+    });
+  }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (slashSuggestions.length > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        selectedSlashSuggestionIndex =
-          (selectedSlashSuggestionIndex + 1) % slashCommandSuggestions.length;
+        selectedSlashSuggestionIndex = (selectedSlashSuggestionIndex + 1) % slashSuggestions.length;
         return;
       }
-
       if (event.key === 'ArrowUp') {
         event.preventDefault();
         selectedSlashSuggestionIndex =
-          (selectedSlashSuggestionIndex - 1 + slashCommandSuggestions.length) %
-          slashCommandSuggestions.length;
+          (selectedSlashSuggestionIndex - 1 + slashSuggestions.length) % slashSuggestions.length;
         return;
       }
-
-      if (
-        (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) ||
-        event.key === 'Tab'
-      ) {
-        event.preventDefault();
-        void selectSlashCommandSuggestion(slashCommandSuggestions[selectedSlashSuggestionIndex]);
-        return;
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        if (!event.shiftKey) {
+          event.preventDefault();
+          selectSlashSuggestion(slashSuggestions[selectedSlashSuggestionIndex]);
+          return;
+        }
       }
-
       if (event.key === 'Escape') {
-        event.preventDefault();
         slashSuggestionsDismissed = true;
         return;
       }
     }
 
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      submit();
+      handleSubmit();
     }
   }
 
-  function isNearViewportBottom() {
-    if (!logEndAnchor) {
-      return true;
-    }
-
-    const anchorRect = logEndAnchor.getBoundingClientRect();
-    const visibleBottom = getVisibleViewportBottom();
-    return anchorRect.top <= visibleBottom + 140;
-  }
-
-  function scrollWindowToBottom() {
-    if (!logEndAnchor) {
-      window.scrollTo(0, document.documentElement.scrollHeight);
-      return;
-    }
-
-    const visibleBottom = getVisibleViewportBottom();
-    const anchorTop = logEndAnchor.getBoundingClientRect().top;
-    const targetTop = window.scrollY + anchorTop - (visibleBottom - 24);
-    window.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
-  }
-
-  function getVisibleViewportBottom() {
-    const viewport = window.visualViewport;
-    let visibleBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
-
-    if (composerPanel) {
-      const composerStyle = window.getComputedStyle(composerPanel);
-
-      if (composerStyle.display !== 'none') {
-        const composerRect = composerPanel.getBoundingClientRect();
-        visibleBottom = Math.min(visibleBottom, composerRect.top);
-      }
-    }
-
-    const bottomNav = document.querySelector<HTMLElement>('.bottom-nav');
-
-    if (bottomNav) {
-      const navStyle = window.getComputedStyle(bottomNav);
-
-      if (navStyle.display !== 'none') {
-        const navRect = bottomNav.getBoundingClientRect();
-        visibleBottom = Math.min(visibleBottom, navRect.top);
-      }
-    }
-
-    return Math.max(0, visibleBottom);
-  }
-
-  function updateViewportMetrics() {
-    const viewport = window.visualViewport;
-    const viewportHeight = viewport?.height ?? window.innerHeight;
-
-    if (viewportHeight > baseViewportHeight) {
-      baseViewportHeight = viewportHeight;
-    }
-
-    const keyboardDelta = Math.max(0, baseViewportHeight - viewportHeight);
-    const activeElement = document.activeElement;
-    const inputFocused = activeElement === promptField;
-    keyboardOpen = inputFocused && keyboardDelta > 90;
-
-    if (keyboardOpen) {
-      document.documentElement.setAttribute('data-chat-keyboard', 'open');
-    } else {
-      document.documentElement.removeAttribute('data-chat-keyboard');
-    }
-  }
-
-  function describeMessageStatus(message: ChatMessage) {
-    if (message.role === 'assistant') {
-      return message.status === 'streaming' ? 'working...' : 'ready';
-    }
-
-    return new Date(message.timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
-  function buildTranscriptSignature(messageList: ChatMessage[], entryCount: number) {
-    const lastMessage = messageList[messageList.length - 1];
-
-    if (!lastMessage) {
-      return `${entryCount}:empty`;
-    }
-
-    return `${entryCount}:${messageList.length}:${lastMessage.id}:${lastMessage.status}:${lastMessage.text.length}`;
-  }
-
-  function describeMessageRole(message: ChatMessage) {
-    if (message.role === 'assistant') {
-      return 'pi';
-    }
-
-    if (message.role === 'system') {
-      return 'system';
-    }
-
-    return 'you';
-  }
-
-  function describeMessagePrompt(message: ChatMessage) {
-    if (message.role === 'assistant') {
-      return 'pi>';
-    }
-
-    if (message.role === 'system') {
-      return '!!';
-    }
-
-    return '$';
-  }
-
-  function displayEntryId(entry: DisplayEntry) {
-    return entry.kind === 'chat' ? `chat:${entry.message.id}` : `tool:${entry.id}`;
-  }
-
-  function describeDisplayEntryPrompt(entry: DisplayEntry) {
-    if (entry.kind === 'chat') {
-      return describeMessagePrompt(entry.message);
-    }
-
-    return 'pi>';
-  }
-
-  function describeDisplayEntryRole(entry: DisplayEntry) {
-    if (entry.kind === 'chat') {
-      return describeMessageRole(entry.message);
-    }
-
-    return 'tools';
-  }
-
-  function toggleDisplayEntryHidden(entry: DisplayEntry) {
-    const entryId = displayEntryId(entry);
-
-    hiddenEntryMap = {
-      ...hiddenEntryMap,
-      [entryId]: !hiddenEntryMap[entryId],
-    };
-  }
-
-  function textForDisplayEntry(entry: DisplayEntry) {
-    if (entry.kind === 'chat') {
-      return entry.message.text;
-    }
-
-    return entry.toolCalls.map((toolCall) => formatToolCallLine(toolCall)).join('\n');
-  }
-
-  async function copyDisplayEntryText(entry: DisplayEntry) {
-    const copied = await writeToClipboard(textForDisplayEntry(entry));
-
-    if (!copied) {
-      return;
-    }
-
-    copiedEntryId = displayEntryId(entry);
-
-    if (copiedEntryResetTimer !== null) {
-      window.clearTimeout(copiedEntryResetTimer);
-    }
-
-    copiedEntryResetTimer = window.setTimeout(() => {
-      copiedEntryId = null;
-      copiedEntryResetTimer = null;
-    }, 1500);
-  }
-
-  async function writeToClipboard(value: string) {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(value);
-        return true;
-      } catch {
-        // Fall through to legacy copy mechanism.
-      }
-    }
-
-    if (typeof document === 'undefined') {
-      return false;
-    }
-
-    const helper = document.createElement('textarea');
-    helper.value = value;
-    helper.setAttribute('readonly', 'true');
-    helper.style.position = 'fixed';
-    helper.style.opacity = '0';
-    helper.style.pointerEvents = 'none';
-    document.body.appendChild(helper);
-    helper.select();
-
-    let copied = false;
-
-    try {
-      copied = document.execCommand('copy');
-    } catch {
-      copied = false;
-    }
-
-    document.body.removeChild(helper);
-    return copied;
-  }
-
-  function normalizeToolName(toolName: string) {
-    return toolName.trim().toLowerCase().replace(/\s+/g, '-');
-  }
-
-  function resolveToolIcon(toolName: string) {
-    const normalized = normalizeToolName(toolName);
-
-    if (normalized.includes('read')) {
-      return 'read';
-    }
-
-    if (
-      normalized.includes('write') ||
-      normalized.includes('edit') ||
-      normalized.includes('patch')
-    ) {
-      return 'write';
-    }
-
-    if (
-      normalized.includes('search') ||
-      normalized.includes('grep') ||
-      normalized.includes('find')
-    ) {
-      return 'search';
-    }
-
-    if (
-      normalized.includes('bash') ||
-      normalized.includes('run') ||
-      normalized.includes('test') ||
-      normalized.includes('build')
-    ) {
-      return 'terminal';
-    }
-
-    return 'generic';
-  }
-
-  function iconPath(icon: string) {
-    if (icon === 'read') {
-      return 'M4 5a2 2 0 0 1 2-2h11a3 3 0 0 1 3 3v13a1 1 0 0 1-1.447.894A5 5 0 0 0 16 19H6a2 2 0 0 1-2-2V5zm2 0v12h10a7.1 7.1 0 0 1 2 .29V6a1 1 0 0 0-1-1H6z';
-    }
-
-    if (icon === 'write') {
-      return 'M3 17.25V21h3.75L18.81 8.94l-3.75-3.75L3 17.25zm17.71-10.04a1 1 0 0 0 0-1.41l-2.5-2.5a1 1 0 0 0-1.41 0l-1.84 1.84l3.75 3.75l1.99-1.68z';
-    }
-
-    if (icon === 'search') {
-      return 'M15.5 14h-.79l-.28-.27a6 6 0 1 0-.71.71l.27.28v.79L20 21.5L21.5 20l-6-6zM10 15a5 5 0 1 1 0-10a5 5 0 0 1 0 10z';
-    }
-
-    if (icon === 'terminal') {
-      return 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm3.2 2.7L8.5 10L6.2 12.3l1.1 1.1l3.4-3.4l-3.4-3.4L6.2 7.7zM11 13h6v-1.5h-6V13z';
-    }
-
-    return 'M11.3 1.05a1 1 0 0 1 1.4 0l1.11 1.12a2.5 2.5 0 0 0 2.13.67l1.57-.3a1 1 0 0 1 1.17.78l.3 1.57a2.5 2.5 0 0 0 1.36 1.8l1.42.7a1 1 0 0 1 .46 1.34l-.7 1.42a2.5 2.5 0 0 0 0 2.24l.7 1.42a1 1 0 0 1-.46 1.34l-1.42.7a2.5 2.5 0 0 0-1.36 1.8l-.3 1.57a1 1 0 0 1-1.17.78l-1.57-.3a2.5 2.5 0 0 0-2.13.67l-1.11 1.12a1 1 0 0 1-1.4 0L10.2 21.8a2.5 2.5 0 0 0-2.13-.67l-1.57.3a1 1 0 0 1-1.17-.78l-.3-1.57a2.5 2.5 0 0 0-1.36-1.8l-1.42-.7a1 1 0 0 1-.46-1.34l.7-1.42a2.5 2.5 0 0 0 0-2.24l-.7-1.42a1 1 0 0 1 .46-1.34l1.42-.7a2.5 2.5 0 0 0 1.36-1.8l.3-1.57a1 1 0 0 1 1.17-.78l1.57.3a2.5 2.5 0 0 0 2.13-.67l1.1-1.12zM12 15.5a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7z';
-  }
-
-  function formatContextChip(usageValue: AgentUsage) {
-    const usedLabel =
-      usageValue.contextTokens === null ? '?' : formatCompactTokenCount(usageValue.contextTokens);
-    const windowLabel =
-      usageValue.contextWindow === null ? '?' : formatCompactTokenCount(usageValue.contextWindow);
-
-    return `${usedLabel}/${windowLabel}`;
-  }
-
-  function formatContextChipTitle(usageValue: AgentUsage) {
-    const usedLabel =
-      usageValue.contextTokens === null ? '?' : formatCompactTokenCount(usageValue.contextTokens);
-    const windowLabel =
-      usageValue.contextWindow === null ? '?' : formatCompactTokenCount(usageValue.contextWindow);
-    const modeLabel = usageValue.autoCompactEnabled ? 'auto compact on' : 'auto compact off';
-
-    return `Context usage ${usedLabel}/${windowLabel} (${modeLabel})`;
-  }
-
-  function parseToolCalls(message: ChatMessage) {
-    const lines = message.text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-
-    if (lines.length === 0) {
-      return [] as ParsedToolCall[];
-    }
-
-    const parsed: ParsedToolCall[] = [];
-
-    for (let index = 0; index < lines.length; index += 1) {
-      if (isIgnorableToolWrapperLine(lines[index])) {
-        continue;
-      }
-
-      const match = lines[index].match(/^[-*]?\s*\[tool:([^\]]+)\]\s*(.*)$/i);
-
-      if (!match) {
-        return [];
-      }
-
-      parsed.push({
-        id: `${message.id}-${index}`,
-        toolName: match[1],
-        detail: match[2] ?? '',
-      });
-    }
-
-    return parsed;
-  }
-
-  function isIgnorableToolWrapperLine(line: string) {
-    return line === '```' || /^```[a-z0-9_-]*$/i.test(line);
-  }
-
-  function buildDisplayEntries(messageList: ChatMessage[]) {
-    const entries: DisplayEntry[] = [];
-    let activeToolGroup: Extract<DisplayEntry, { kind: 'tool-group' }> | null = null;
-
-    for (const message of messageList) {
-      if (isSkippableAssistantPlaceholder(message)) {
-        continue;
-      }
-
-      const parsedToolCalls = message.role === 'assistant' ? parseToolCalls(message) : [];
-
-      if (parsedToolCalls.length > 0) {
-        if (!activeToolGroup) {
-          activeToolGroup = {
-            kind: 'tool-group',
-            id: `tool-group-${message.id}`,
-            toolCalls: parsedToolCalls,
-            statusLabel: describeMessageStatus(message),
-          };
-          entries.push(activeToolGroup);
-        } else {
-          activeToolGroup.toolCalls = [...activeToolGroup.toolCalls, ...parsedToolCalls];
-          activeToolGroup.statusLabel = describeMessageStatus(message);
+  async function handleCopy(messageId: string, text: string) {
+    const success = await copyText(text);
+    if (success) {
+      copiedMessageId = messageId;
+      setTimeout(() => {
+        if (copiedMessageId === messageId) {
+          copiedMessageId = null;
         }
-
-        continue;
-      }
-
-      activeToolGroup = null;
-      entries.push({ kind: 'chat', message });
+      }, 2000);
     }
-
-    return entries;
   }
 
-  function isSkippableAssistantPlaceholder(message: ChatMessage) {
-    return message.role === 'assistant' && message.text.trim().length === 0;
+  function isSkippablePlaceholder(message: ChatMessage): boolean {
+    return (
+      message.role === 'assistant' &&
+      message.text.trim().length === 0 &&
+      (!message.tools || message.tools.length === 0)
+    );
   }
-
-  function compactInline(value: string, maxLength: number) {
-    const oneLine = value.replace(/\s+/g, ' ').trim();
-
-    if (oneLine.length <= maxLength) {
-      return oneLine;
-    }
-
-    return `${oneLine.slice(0, maxLength)}...`;
-  }
-
-  function summarizeToolLine(tool: ToolActivity) {
-    const compactDetail = compactInline(tool.detail, 160);
-    const normalizedName = normalizeToolName(tool.toolName);
-    return compactDetail.length > 0
-      ? `[tool:${normalizedName}] ${compactDetail}`
-      : `[tool:${normalizedName}]`;
-  }
-
-  function formatToolCallLine(toolCall: ParsedToolCall) {
-    const normalizedName = normalizeToolName(toolCall.toolName);
-    return toolCall.detail.length > 0
-      ? `[tool:${normalizedName}] ${toolCall.detail}`
-      : `[tool:${normalizedName}]`;
-  }
-
-  function describeToolState(status: ToolActivity['status']) {
-    if (status === 'running') {
-      return 'running';
-    }
-
-    if (status === 'error') {
-      return 'error';
-    }
-
-    return 'done';
-  }
-
-  function toggleTraceToolDetail(toolId: string) {
-    expandedTraceToolMap = {
-      ...expandedTraceToolMap,
-      [toolId]: !expandedTraceToolMap[toolId],
-    };
-  }
-
-  function messageToolKey(groupId: string, toolCallId: string) {
-    return `${groupId}::${toolCallId}`;
-  }
-
-  function toggleMessageToolDetail(groupId: string, toolCallId: string) {
-    const key = messageToolKey(groupId, toolCallId);
-
-    expandedMessageToolMap = {
-      ...expandedMessageToolMap,
-      [key]: !expandedMessageToolMap[key],
-    };
-  }
-
-  function modelLabelForSendButton(modelId: string | null) {
-    if (!modelId) {
-      return 'no-model';
-    }
-
-    const compact = modelId.split('/').filter(Boolean).pop() ?? modelId;
-    return compact.length > 20 ? `${compact.slice(0, 20)}...` : compact;
-  }
-
-  $: sendButtonModel = `(${modelLabelForSendButton(usage?.modelId ?? null)})`;
 </script>
 
-<section class:keyboard-open={keyboardOpen} class="view-shell chat-view">
+<section class="view-shell chat-view">
   {#if lastError}
     <div class="notice error">{lastError}</div>
   {/if}
 
-  <section class="activity-panel card-panel">
-    <button
-      class="tool-trace-toggle ghost-button compact"
-      type="button"
-      on:click={() => (toolTraceExpanded = !toolTraceExpanded)}
-      aria-expanded={toolTraceExpanded}
-    >
-      <strong>Tool trace</strong>
-      <span class="subdued">{totalToolCount}</span>
-    </button>
-
-    {#if toolTraceExpanded && totalToolCount > 0}
-      <div class="tool-batch-stack">
-        {#each toolBatches as batch, index (batch.id)}
-          <article class="tool-batch">
-            <header class="tool-batch-header">
-              <strong>Batch {toolBatches.length - index}</strong>
-              <span class="subdued">{batch.tools.length}</span>
-            </header>
-
-            <div class="tool-inline-list">
-              {#each batch.tools as tool (tool.id)}
-                <button
-                  class:error={tool.status === 'error'}
-                  class:running={tool.status === 'running'}
-                  class:success={tool.status === 'complete'}
-                  class="tool-inline-item"
-                  type="button"
-                  aria-expanded={!!expandedTraceToolMap[tool.id]}
-                  on:click={() => toggleTraceToolDetail(tool.id)}
-                >
-                  <span class="tool-inline-main">
-                    <span
-                      class="tool-inline-icon icon-{resolveToolIcon(tool.toolName)}"
-                      aria-hidden="true"
-                    >
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="14"
-                        height="14"
-                        focusable="false"
-                        aria-hidden="true"
-                      >
-                        <path fill="currentColor" d={iconPath(resolveToolIcon(tool.toolName))}
-                        ></path>
-                      </svg>
-                    </span>
-                    <span class="tool-inline-text">{summarizeToolLine(tool)}</span>
-                  </span>
-                  <span class="tool-inline-status">{describeToolState(tool.status)}</span>
-                </button>
-
-                {#if expandedTraceToolMap[tool.id]}
-                  <pre class="tool-inline-detail">{tool.detail || 'No detail returned.'}</pre>
-                {/if}
-              {/each}
-            </div>
-          </article>
-        {/each}
-      </div>
-    {:else}
-      <p class="tool-trace-empty subdued">
-        {totalToolCount === 0
-          ? 'No tool activity yet.'
-          : `${totalToolCount} tool event${totalToolCount === 1 ? '' : 's'}. Expand to inspect.`}
-      </p>
-    {/if}
-  </section>
-  <div class="chat-log">
+  <div class="chat-log" bind:this={logContainer} onscroll={handleScroll}>
     {#if messages.length === 0}
       <article class="empty-state-card">
         <h3>No transcript yet</h3>
@@ -869,144 +310,80 @@
       </article>
     {/if}
 
-    {#each displayEntries as entry (entry.kind === 'chat' ? `chat-${entry.message.id}` : entry.id)}
-      {#if hiddenEntryMap[displayEntryId(entry)]}
-        <article class="message-card message-card-hidden">
-          <header>
-            <div class="message-heading">
-              <span class="message-prompt">{describeDisplayEntryPrompt(entry)}</span>
-              <strong>{describeDisplayEntryRole(entry)}</strong>
-            </div>
-            <div class="message-meta-actions">
-              <span class="message-status">hidden</span>
-              <button
-                class="ghost-button compact message-action"
-                type="button"
-                on:click={() => toggleDisplayEntryHidden(entry)}>Show</button
-              >
-            </div>
-          </header>
-          <p class="subdued">Entry hidden.</p>
-        </article>
-      {:else if entry.kind === 'chat'}
+    {#each messages as message (message.id)}
+      {#if !isSkippablePlaceholder(message)}
         <article
-          class:assistant={entry.message.role === 'assistant'}
-          class:system={entry.message.role === 'system'}
-          class:user={entry.message.role === 'user'}
-          class="message-card"
+          class="message-card {message.role}"
+          class:assistant={message.role === 'assistant'}
+          class:user={message.role === 'user'}
+          class:system={message.role === 'system'}
         >
           <header>
             <div class="message-heading">
-              <span class="message-prompt">{describeMessagePrompt(entry.message)}</span>
-              <strong>{describeMessageRole(entry.message)}</strong>
+              <span class="message-prompt">{message.role === 'user' ? 'you>' : 'pi>'}</span>
+              <strong>{message.role === 'user' ? 'User' : 'Pi'}</strong>
             </div>
             <div class="message-meta-actions">
-              <span class="message-status">{describeMessageStatus(entry.message)}</span>
-              <button
-                class="ghost-button compact message-action"
-                type="button"
-                on:click={() => copyDisplayEntryText(entry)}
-                >{copiedEntryId === displayEntryId(entry) ? 'Copied' : 'Copy'}</button
-              >
-              <button
-                class="ghost-button compact message-action"
-                type="button"
-                on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button
-              >
-            </div>
-          </header>
-          <div class="markdown-body">
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            {@html renderMarkdown(entry.message.text || '_No text returned._')}
-          </div>
-        </article>
-      {:else}
-        <article class="message-card assistant tool-summary-card">
-          <header>
-            <div class="message-heading">
-              <span class="message-prompt">pi&gt;</span>
-              <strong>tools</strong>
-            </div>
-            <div class="message-meta-actions">
-              <span class="message-status">{entry.statusLabel}</span>
-              <button
-                class="ghost-button compact message-action"
-                type="button"
-                on:click={() => copyDisplayEntryText(entry)}
-                >{copiedEntryId === displayEntryId(entry) ? 'Copied' : 'Copy'}</button
-              >
-              <button
-                class="ghost-button compact message-action"
-                type="button"
-                on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button
-              >
-            </div>
-          </header>
-
-          <div class="tool-summary-icons">
-            {#each entry.toolCalls as toolCall (toolCall.id)}
-              <button
-                class="tool-summary-icon icon-{resolveToolIcon(toolCall.toolName)}"
-                type="button"
-                title={formatToolCallLine(toolCall)}
-                aria-expanded={!!expandedMessageToolMap[`${entry.id}::${toolCall.id}`]}
-                on:click={() => toggleMessageToolDetail(entry.id, toolCall.id)}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="14"
-                  height="14"
-                  focusable="false"
-                  aria-hidden="true"
+              <span class="message-status">{message.status}</span>
+              {#if message.text}
+                <button
+                  class="ghost-button compact message-action"
+                  type="button"
+                  onclick={() => handleCopy(message.id, message.text)}
                 >
-                  <path fill="currentColor" d={iconPath(resolveToolIcon(toolCall.toolName))}></path>
-                </svg>
-              </button>
-            {/each}
-          </div>
+                  {copiedMessageId === message.id ? 'Copied' : 'Copy'}
+                </button>
+              {/if}
+            </div>
+          </header>
 
-          {#each entry.toolCalls as toolCall (toolCall.id)}
-            {#if expandedMessageToolMap[`${entry.id}::${toolCall.id}`]}
-              <pre class="tool-summary-detail">{formatToolCallLine(toolCall)}</pre>
-            {/if}
-          {/each}
+          {#if message.tools && message.tools.length > 0}
+            <ToolCalls tools={message.tools} />
+          {/if}
+
+          {#if message.text}
+            <div class="markdown-body">
+              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+              {@html renderMarkdown(message.text)}
+            </div>
+          {/if}
         </article>
       {/if}
     {/each}
+
     {#if interactivePrompt}
-      <InteractiveCard prompt={interactivePrompt} {onSubmit} {onDismiss} />
+      <InteractiveCard
+        prompt={interactivePrompt}
+        onSubmit={(formattedText) => onsubmit?.(formattedText)}
+        onDismiss={() => oninteractivedismiss?.()}
+      />
     {/if}
-    <div class="chat-log-end" aria-hidden="true" bind:this={logEndAnchor}></div>
   </div>
 
-  <div class:meta-hidden={!showComposerMeta} class="composer" bind:this={composerPanel}>
-    {#if showComposerMeta}
-      <div class="composer-session-meta">
-        <div class="composer-status-row">
-          <span
-            class:ready={statusTone === 'ready'}
-            class:error={statusTone === 'error'}
-            class:running={statusTone === 'running'}
-            class="live-dot"
-          ></span>
-          <strong class="composer-status-title">{statusTitle}</strong>
-          <div class="composer-status-spacer"></div>
-          <div class="usage-rail">
-            <span class="usage-chip">↑ {formatCompactTokenCount(usage.inputTokens)}</span>
-            <span class="usage-chip">↓ {formatCompactTokenCount(usage.outputTokens)}</span>
-            <span class="usage-chip usage-context" title={formatContextChipTitle(usage)}
-              >{formatContextChip(usage)}</span
-            >
-            <span class="usage-chip usage-cost">{formatUsageCost(usage.totalCost)}</span>
-          </div>
-          {#if canAbort}
-            <button class="ghost-button compact" type="button" on:click={() => dispatch('abort')}>
-              Stop
-            </button>
-          {/if}
+  <div class="composer">
+    <div class="composer-session-meta">
+      <div class="composer-status-row">
+        <span
+          class="live-dot"
+          class:ready={statusTone === 'ready'}
+          class:error={statusTone === 'error'}
+          class:running={statusTone === 'running'}
+        ></span>
+        <strong class="composer-status-title">{statusTitle}</strong>
+        <div class="composer-status-spacer"></div>
+        <div class="usage-rail">
+          <span class="usage-chip">↑ {formatCompactTokenCount(usage?.inputTokens ?? 0)}</span>
+          <span class="usage-chip">↓ {formatCompactTokenCount(usage?.outputTokens ?? 0)}</span>
+          <span class="usage-chip usage-context" title={contextChipTitle}>{contextChipLabel}</span>
+          <span class="usage-chip usage-cost">{formatUsageCost(usage?.totalCost ?? 0)}</span>
         </div>
+        {#if canAbort}
+          <button class="ghost-button compact" type="button" onclick={() => onabort?.()}>
+            Stop
+          </button>
+        {/if}
       </div>
-    {/if}
+    </div>
 
     <label class="composer-terminal-input">
       <span class="composer-prefix">$</span>
@@ -1015,24 +392,22 @@
         bind:value={prompt}
         rows="3"
         placeholder="Ask pi to change the active repository..."
-        on:input={handleComposerInput}
-        on:click={handleComposerCursorActivity}
-        on:focus={handleComposerFocus}
-        on:blur={handleComposerBlur}
-        on:keyup={handleComposerCursorActivity}
-        on:keydown={handleComposerKeydown}></textarea>
+        oninput={handleInput}
+        onclick={handleCursorActivity}
+        onkeyup={handleCursorActivity}
+        onkeydown={handleKeydown}></textarea>
     </label>
-    {#if slashCommandSuggestions.length > 0}
+
+    {#if slashSuggestions.length > 0}
       <div class="composer-suggestion-list" role="listbox" aria-label="Slash command suggestions">
-        {#each slashCommandSuggestions as suggestion, index (`${suggestion.command}-${index}`)}
+        {#each slashSuggestions as suggestion, index (`${suggestion.command}-${index}`)}
           <button
-            class:selected={index === selectedSlashSuggestionIndex}
             class="composer-suggestion"
+            class:selected={index === selectedSlashSuggestionIndex}
             type="button"
             role="option"
             aria-selected={index === selectedSlashSuggestionIndex}
-            on:mousedown|preventDefault
-            on:click={() => void selectSlashCommandSuggestion(suggestion)}
+            onclick={() => selectSlashSuggestion(suggestion)}
           >
             <strong>{suggestion.command}</strong>
             <span>{suggestion.description}</span>
@@ -1046,7 +421,7 @@
         <button
           class="secondary-button compact new-button"
           type="button"
-          on:click={() => dispatch('newSession')}
+          onclick={() => onnewsession?.()}
           disabled={runtimePhase !== 'idle'}
         >
           NEW
@@ -1055,7 +430,7 @@
           <button
             class="secondary-button compact cmd-button"
             type="button"
-            on:click={() => dispatch('openCommands')}
+            onclick={() => onopencommands?.()}
             disabled={runtimePhase !== 'idle'}
           >
             CMD
@@ -1063,7 +438,7 @@
           <button
             class="secondary-button compact cmd-button-shortcut"
             type="button"
-            on:click={() => dispatch('openModelCommands')}
+            onclick={() => onopenmodelcommands?.()}
             disabled={runtimePhase !== 'idle'}
             aria-label="Open model switcher"
             title="Quick open model switcher"
@@ -1075,11 +450,11 @@
       <button
         class="primary-button send-button"
         type="button"
-        on:pointerdown={handleSendPointerDown}
-        on:click={submit}
+        onpointerdown={handleSendPointerDown}
+        onclick={handleSubmit}
         disabled={prompt.trim().length === 0}
       >
-        <span class="send-button-model">{sendButtonModel}</span>
+        Send <span class="send-button-model">{sendButtonModel}</span>
       </button>
     </div>
   </div>

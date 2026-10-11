@@ -108,12 +108,22 @@ describe('LiveConnection', () => {
           messageId: 'msg-2',
           text: 'Done!',
           status: 'complete',
+          tools: [
+            {
+              id: 'tool-1',
+              name: 'read',
+              status: 'complete',
+              detail: 'notes.txt',
+            },
+          ],
         },
       } satisfies WebsocketEnvelope),
     });
 
     expect(live.agentSnapshot.messages[0]?.text).toBe('Done!');
     expect(live.agentSnapshot.messages[0]?.status).toBe('complete');
+    expect(live.agentSnapshot.messages[0]?.tools).toHaveLength(1);
+    expect(live.agentSnapshot.messages[0]?.tools?.[0]?.name).toBe('read');
 
     live.destroy();
   });

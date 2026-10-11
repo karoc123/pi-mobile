@@ -21,7 +21,6 @@ describe('WebsocketHub', () => {
     isRetrying: false,
     isBashRunning: false,
     messages: [],
-    tools: [],
     lastError: null,
     interactivePrompt: null,
     usage: {

@@ -11,9 +11,9 @@ import type {
   AgentThinkingLevel,
   AgentUsage,
   ChatMessage,
+  ChatToolCall,
   InteractivePrompt,
   SelectedRepo,
-  ToolActivity,
   WebsocketEnvelope,
 } from '../../shared/contracts.js';
 
@@ -22,7 +22,6 @@ import {
   flattenMessageText,
   hydrateMessagesFromSession,
   summarizePayload,
-  upsertTool,
 } from './pi-agent-hydrator.js';
 import { PiAgentSessionAdapter, type SessionOpenOptions } from './pi-agent-session-adapter.js';
 import type { LogChannel } from './log-service.js';
@@ -33,7 +32,6 @@ type Broadcast = (event: WebsocketEnvelope) => void;
 export class PiAgentService {
   private currentRepo: SelectedRepo | null = null;
   private messages: ChatMessage[] = [];
-  private tools: ToolActivity[] = [];
   private lastError: string | null = null;
   private activeAssistantMessageId: string | null = null;
   private interactivePrompt: InteractivePrompt | null = null;
@@ -68,7 +66,6 @@ export class PiAgentService {
       repo: this.currentRepo,
       ...runtimeState,
       messages: this.messages,
-      tools: this.tools,
       lastError: this.lastError,
       usage: this.getUsageSummary(),
       interactivePrompt: this.interactivePrompt,
@@ -272,7 +269,6 @@ export class PiAgentService {
         }
 
         this.messages = hydrateMessagesFromSession(session.messages);
-        this.tools = [];
         this.emitSnapshot();
         return this.completeCommand(
           'Moved to the selected session point.',
@@ -309,7 +305,6 @@ export class PiAgentService {
 
     this.currentRepo = repo;
     this.messages = [];
-    this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
     this.interactivePrompt = null;
@@ -368,7 +363,6 @@ export class PiAgentService {
     }
 
     this.messages = [];
-    this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
     this.interactivePrompt = null;
@@ -442,7 +436,6 @@ export class PiAgentService {
 
   private syncFromSession(session: AgentSession) {
     this.messages = hydrateMessagesFromSession(session.messages);
-    this.tools = [];
     this.lastError = null;
     this.activeAssistantMessageId = null;
   }
@@ -585,46 +578,46 @@ export class PiAgentService {
         });
       }
 
-      // Record the tool activity so it appears in the trace
-      const tool: ToolActivity = {
+      this.updateAssistantTool(event.toolCallId, () => ({
         id: event.toolCallId,
-        toolName: event.toolName,
+        name: event.toolName,
         status: 'running',
         detail: `ask_user: ${summarizePayload(event.args, null)}`,
-      };
-
-      this.tools = upsertTool(this.tools, tool);
-      this.broadcast({
-        type: 'tool_activity',
-        payload: { tool },
-      });
+      }));
       this.emitStatus();
       return;
     }
 
-    if (
-      event.type === 'tool_execution_start' ||
-      event.type === 'tool_execution_update' ||
-      event.type === 'tool_execution_end'
-    ) {
-      const tool: ToolActivity = {
+    if (event.type === 'tool_execution_start') {
+      this.updateAssistantTool(event.toolCallId, () => ({
         id: event.toolCallId,
-        toolName: event.toolName,
-        status:
-          event.type === 'tool_execution_end' ? (event.isError ? 'error' : 'complete') : 'running',
-        detail:
-          event.type === 'tool_execution_start'
-            ? summarizePayload(event.args, null)
-            : event.type === 'tool_execution_update'
-              ? summarizePayload(event.partialResult, null)
-              : summarizePayload(event.result, null),
-      };
+        name: event.toolName,
+        status: 'running',
+        detail: summarizePayload(event.args, null),
+      }));
+      this.emitStatus();
+      return;
+    }
 
-      this.tools = upsertTool(this.tools, tool);
-      this.broadcast({
-        type: 'tool_activity',
-        payload: { tool },
-      });
+    if (event.type === 'tool_execution_update') {
+      this.updateAssistantTool(event.toolCallId, (existing) => ({
+        id: event.toolCallId,
+        name: event.toolName,
+        status: 'running',
+        detail: summarizePayload(event.partialResult, null) || existing?.detail,
+      }));
+      this.emitStatus();
+      return;
+    }
+
+    if (event.type === 'tool_execution_end') {
+      const endDetail = extractToolExecutionEndDetail(event.result);
+      this.updateAssistantTool(event.toolCallId, (existing) => ({
+        id: event.toolCallId,
+        name: event.toolName,
+        status: event.isError ? 'error' : 'complete',
+        detail: endDetail || existing?.detail,
+      }));
       this.emitStatus();
       return;
     }
@@ -710,6 +703,52 @@ export class PiAgentService {
       usingSubscription: false,
       autoCompactEnabled: false,
     };
+  }
+
+  private updateAssistantTool(
+    toolCallId: string,
+    updateFn: (existing?: ChatToolCall) => ChatToolCall,
+  ): void {
+    const lastAssistantIndex = [...this.messages]
+      .reverse()
+      .findIndex((entry) => entry.role === 'assistant');
+
+    if (lastAssistantIndex === -1) {
+      return;
+    }
+
+    const index = this.messages.length - 1 - lastAssistantIndex;
+    const currentMessage = this.messages[index];
+    const tools = currentMessage.tools ? [...currentMessage.tools] : [];
+    const existingIndex = tools.findIndex((entry) => entry.id === toolCallId);
+    const updatedTool = updateFn(existingIndex >= 0 ? tools[existingIndex] : undefined);
+
+    if (existingIndex >= 0) {
+      tools[existingIndex] = updatedTool;
+    } else {
+      tools.push(updatedTool);
+    }
+
+    const updatedMessage: ChatMessage = {
+      ...currentMessage,
+      tools,
+    };
+
+    this.messages = [
+      ...this.messages.slice(0, index),
+      updatedMessage,
+      ...this.messages.slice(index + 1),
+    ];
+
+    this.broadcast({
+      type: 'chat_message_updated',
+      payload: {
+        messageId: updatedMessage.id,
+        text: updatedMessage.text,
+        status: updatedMessage.status,
+        tools: updatedMessage.tools,
+      },
+    });
   }
 }
 
@@ -825,4 +864,38 @@ export function parseInteractivePromptArgs(args: unknown): InteractivePrompt | n
     title: raw.title.trim(),
     questions,
   };
+}
+
+function extractToolExecutionEndDetail(result: unknown): string {
+  if (result === null || result === undefined) {
+    return '';
+  }
+
+  if (typeof result === 'string') {
+    return result;
+  }
+
+  if (typeof result === 'object' && 'content' in result) {
+    const content = (result as { content: unknown }).content;
+    if (typeof content === 'string') {
+      return content.trim();
+    }
+    if (Array.isArray(content)) {
+      const text = content
+        .map((item) => {
+          if (typeof item === 'string') return item;
+          if (item && typeof item === 'object' && 'text' in item) {
+            return String((item as { text: unknown }).text ?? '');
+          }
+          return '';
+        })
+        .join('')
+        .trim();
+      if (text.length > 0) {
+        return text;
+      }
+    }
+  }
+
+  return summarizePayload(result, null);
 }

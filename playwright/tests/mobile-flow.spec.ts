@@ -156,10 +156,6 @@ test('mobile browser flow displays tool calls and completion', async ({ page }) 
   await expect(page.locator('.message-card.assistant').last()).toContainText(
     'Finished tool execution for read.',
   );
-  const toolTraceToggle = page.locator('.tool-trace-toggle');
-  await expect(toolTraceToggle).toBeVisible();
-  await toolTraceToggle.click();
-  await expect(page.locator('.tool-batch-stack')).toBeVisible();
   await expect(page.locator('.tool-inline-item').filter({ hasText: 'read' }).first()).toBeVisible();
 });
 

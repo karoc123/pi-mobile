@@ -134,12 +134,22 @@ export type GitSyncResult = {
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 
+export type ChatToolStatus = 'running' | 'complete' | 'error';
+
+export type ChatToolCall = {
+  id: string;
+  name: string;
+  status: ChatToolStatus;
+  detail?: string;
+};
+
 export type ChatMessage = {
   id: string;
   role: ChatRole;
   text: string;
   status: 'streaming' | 'complete';
   timestamp: string;
+  tools?: ChatToolCall[];
 };
 
 export type ToolActivity = {
@@ -190,7 +200,6 @@ export type AgentSnapshot = {
   isRetrying: boolean;
   isBashRunning: boolean;
   messages: ChatMessage[];
-  tools: ToolActivity[];
   lastError: string | null;
   usage: AgentUsage;
   interactivePrompt: InteractivePrompt | null;
@@ -478,12 +487,7 @@ export type WebsocketEnvelope =
         messageId: string;
         text: string;
         status: ChatMessage['status'];
-      };
-    }
-  | {
-      type: 'tool_activity';
-      payload: {
-        tool: ToolActivity;
+        tools?: ChatToolCall[];
       };
     }
   | {

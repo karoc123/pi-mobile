@@ -6,7 +6,7 @@
     AgentSlashCommand,
     SelectedRepo,
   } from '../../shared/contracts.js';
-  import { api, apiFetch, run, toErrorMessage } from '../lib/api.js';
+  import { api, run, toErrorMessage } from '../lib/api.js';
   import { editorState } from '../lib/editor-state.svelte.js';
   import { LiveConnection } from '../lib/live-connection.svelte.js';
   import { toast } from '../lib/toast.svelte.js';
@@ -89,16 +89,11 @@
     workspaceChange = { path, version: workspaceChange.version + 1 };
   }
 
-  async function handleRepoSelect(repo: SelectedRepo) {
+  function handleRepoSelect(repo: SelectedRepo) {
     currentRepo = repo;
     workspaceOpen = false;
     editorState.reset();
     handleWorkspaceChange();
-
-    await run(
-      () => api.post('/api/workspace/repo', { path: repo.absolutePath }),
-      'Switched repository.',
-    );
   }
 
   function seedComposer(value: string) {
@@ -111,10 +106,7 @@
     if (trimmed.length === 0) return;
 
     try {
-      await apiFetch('/api/agent/prompt', {
-        method: 'POST',
-        body: JSON.stringify({ prompt: trimmed }),
-      });
+      await api.post('/api/agent/prompt', { prompt: trimmed });
     } catch (error) {
       seedComposer(trimmed);
       toast.show(toErrorMessage(error), 'error');
@@ -134,7 +126,6 @@
     if (!currentRepo) return;
     if (!window.confirm('Start new chat?')) return;
 
-    liveConnection.resetToolTraceBatches();
     await run(
       () => api.post<AgentCommandResponse>('/api/agent/command', { command: 'new-session' }),
       'Started a new session.',
@@ -204,7 +195,6 @@
       {#if view === 'chat'}
         <ChatView
           messages={liveConnection.agentSnapshot.messages}
-          toolBatches={liveConnection.toolTraceBatches}
           runtimePhase={liveConnection.agentSnapshot.runtimePhase}
           pendingMessageCount={liveConnection.agentSnapshot.pendingMessageCount}
           canAbort={liveConnection.agentSnapshot.runtimePhase !== 'idle'}
@@ -215,12 +205,12 @@
           {availableCommands}
           draftStorageScope={currentRepo.relativePath || currentRepo.absolutePath}
           interactivePrompt={liveConnection.agentSnapshot.interactivePrompt}
-          on:submit={(event) => handleChatSubmit(event.detail.prompt)}
-          on:abort={abortRun}
-          on:newSession={() => void startNewChatFromComposer()}
-          on:openCommands={() => void openCommandPalette()}
-          on:openModelCommands={() => void openCommandPalette('/model')}
-          on:interactiveDismiss={() => liveConnection.dismissPrompt()}
+          onsubmit={(prompt) => handleChatSubmit(prompt)}
+          onabort={abortRun}
+          onnewsession={() => void startNewChatFromComposer()}
+          onopencommands={() => void openCommandPalette()}
+          onopenmodelcommands={() => void openCommandPalette('/model')}
+          oninteractivedismiss={() => liveConnection.dismissPrompt()}
         />
       {:else if view === 'diff'}
         <DiffView
