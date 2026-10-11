@@ -36,7 +36,7 @@ npm run build
 npm audit
 ```
 
-Run `npm run test:e2e` for UI/core-workflow changes and `npm run verify:container` for SDK/runtime/deployment changes. The container smoke uses disposable credentials and isolated bind mounts, not the running personal stack. Review `docs/DEVELOPMENT.md` for current tool coverage and limits.
+Run `npm run test:e2e` for UI/core-workflow changes and `npm run verify:container` for SDK/runtime/deployment changes. The container smoke uses disposable credentials and isolated bind mounts, not the running personal stack. Review `AGENTS.md` for current tool coverage and limits.
 
 `check:deps` checks exact versions, undeclared source imports (including Svelte), and backend runtime dependency placement. It does not audit vulnerabilities, detect unused packages, or inspect external packages' transitive import graphs.
 

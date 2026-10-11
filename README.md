@@ -121,4 +121,4 @@ npm run format:fix -- <paths> # format only explicit files
 - Architecture: `docs/ARCHITECTURE.md`
 - Product vision: `docs/VISION.md`
 - Runtime/domain context: `CONTEXT.md`
-- Development checks, tool limits and project skills: `docs/DEVELOPMENT.md`
+- Playbook and development guardrails: `AGENTS.md`

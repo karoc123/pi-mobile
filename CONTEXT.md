@@ -8,14 +8,10 @@ This file captures the project language used to describe PiMobile behavior and r
 A repository-bound pi runtime conversation state, identified by session id or session file, that carries message history, runtime phase, and usage metrics.
 _Avoid_: chat runtime object, prompt history
 
-**Mock session**:
-A deterministic local simulation of an agent session used for wiring, mobile flow validation, and usage/status behavior without a live model call.
-_Avoid_: fake chat, demo thread
+**Test provider**:
+An in-process faux provider registered within the agent runtime (`PI_TEST_PROVIDER=1`) providing deterministic responses and scripted tool calls for offline test suites.
+_Avoid_: mock session, fake chat, demo thread
 
 **Repository runtime selection**:
 The transition that binds watcher state and agent session state to a selected repository path.
 _Avoid_: repo switch event, workspace flip
-
-**Agent broadcaster**:
-The module that translates agent runtime updates into websocket envelopes for chat, tool activity, status, and error streams.
-_Avoid_: event util, ws helper

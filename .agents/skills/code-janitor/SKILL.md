@@ -5,15 +5,15 @@ description: Validate code quality before handing off changes or when asked to c
 
 # Code Janitor
 
-Read `AGENTS.md` and `docs/DEVELOPMENT.md`. Run commands from the repository root.
+Read `AGENTS.md`. Run commands from the repository root.
 
 ## Focused change gate
 
 1. Review your changed files and run the affected tests.
-2. Run `npm run check`: TypeScript checks, JavaScript lint, changed-file Prettier check, dependency/import policies and guardrail regressions.
+2. Run `npm run check`: TypeScript checks, `svelte-check`, ESLint (including Svelte & TypeScript rules), changed-file Prettier check, dependency/import policies and guardrail regressions.
 3. Review the diff for unrelated changes or accidental functionality removal.
 
-Fix failures without weakening rules. TypeScript ESLint and `svelte-check` are currently absent because their available releases/prereleases do not support this project's TypeScript 7. `tsc` does not typecheck Svelte component scripts or templates. Never describe the current gate as full Svelte lint/type coverage.
+Fix failures without weakening rules. TypeScript is pinned to ~6.0.2 to provide full `svelte-check`, `typescript-eslint`, and `eslint-plugin-svelte` coverage across all source and test files.
 
 ## Broad change gate
 
@@ -24,7 +24,7 @@ npm test
 npm run build
 ```
 
-- UI/core flows: `npm run test:e2e` (mobile browser, mock agent).
+- UI/core flows: `npm run test:e2e` (mobile browser, PI_TEST_PROVIDER=1).
 - Deployment/runtime: `npm run verify:container` (separate disposable Compose project).
 - Docs-only changes: check formatting of your changed docs; explain why code checks are not needed.
 

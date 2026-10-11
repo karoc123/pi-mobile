@@ -406,3 +406,23 @@ Messung im Commit-Text.
 - **Beobachten, nicht Teil dieses Plans:** `GitService.getUntrackedDiff` startet pro
   untracked Datei einen eigenen `git diff`-Prozess. Bei vielen Dateien (z. B. fehlendem
   `.gitignore`) ist das auf dem Pi teuer.
+
+---
+
+## 9. Umsetzungs-Ergebnis
+
+Alle Arbeitspakete P0–P8 wurden erfolgreich und atomar umgesetzt:
+
+- **P0 – Vorarbeiten & Sicherheitsnetz** (`21324d8`): TypeScript ~6.0.2 Pin, svelte-check, typescript-eslint & eslint-plugin-svelte, Test-Provider Spike, 8 Playwright E2E-Tests.
+- **P1 – Agent-Backend & Snapshot-Push** (`511ea13`): `piMockMode` und `PiAgentBroadcaster` entfernt, `snapshot` Envelope eingeführt.
+- **P2 – Routen, Konfiguration, Git-Laufzeit** (`cf03994`): Route-Helfer `route`/`repoRoute`, SSH/Git in Entrypoint, tote Typen bereinigt.
+- **P3 – Frontend-Fundament & Tokens** (`908fe68`): API-Client mit `run()`, Theme-Tokens konsolidiert (18 semantische Variablen), Primitiven `Sheet`/`ChoiceGroup`.
+- **P4a – LogView & SystemStatus** (`f034e11`): Svelte 5 Runes, integrierte SSE und Health-Abfrage, scoped CSS.
+- **P4b – WorkspacePicker, PiLoginSheet, AppMenu, LoginScreen** (`da7b04c`): Autonome Komponenten mit `<dialog>` Sheets und Runes.
+- **P4c – DiffView & Hunk-Route** (`a8f19e1`): Konsolidierte Route `POST /api/git/hunk` (`stage`, `unstage`, `revert`), Einzelflag `busy`.
+- **P4d – EditorView & Dateitransport** (`6bc28e8`): `GET /api/files/raw` und `PUT /api/files/raw` (Streaming + Rename), CodeMirror Lazy Loading.
+- **P4e – CommandPalette** (`abf41b0`): 8 konsolidierte Funktionsbereiche, Runes und ChoiceGroup.
+- **P5 – Shell, Live-Verbindung & Polling-Entfall** (`265656b`): `App.svelte` als Auth-Gate, `Workspace.svelte` als Shell, vollständige Beseitigung von Agent-State-Polling.
+- **P6 – Chat & Strukturierte Tools** (`16ec8c1`): `ChatToolCall` in `ChatMessage.tools`, `<ToolCalls>` mit nativem `<details>`, vereinfachtes Auto-Scrollen.
+- **P7 – CSS-Abschluss** (`34d6561`): `styles.css` auf 270 Zeilen verdichtet (Tokens + Primitiven), alle Komponenten voll scoped ohne ungenutzte Selektoren.
+- **P8 – Dokumentation** (dieser Schritt): `AGENTS.md`, `ARCHITECTURE.md`, `CONTEXT.md`, `README.md`, Skill-Dateien aktualisiert.
