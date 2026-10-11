@@ -26,7 +26,9 @@ describe('FileService', () => {
       const createdContent = await readFile(path.join(tempDir, 'notes/new-file.md'), 'utf8');
       expect(createdContent).toBe('# hello world\n');
 
-      await expect(fileService.createFile(repo, 'notes/new-file.md', 'replacement\n')).rejects.toMatchObject({ code: 'EEXIST' });
+      await expect(
+        fileService.createFile(repo, 'notes/new-file.md', 'replacement\n'),
+      ).rejects.toMatchObject({ code: 'EEXIST' });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -54,7 +56,9 @@ describe('FileService', () => {
       await expect(access(path.join(tempDir, 'notes/todo-copy.md'))).rejects.toBeDefined();
 
       await writeFile(path.join(tempDir, 'notes/archive/todo-copy.md'), 'exists\n', 'utf8');
-      await expect(fileService.duplicateFile(repo, 'notes/archive/todo.md', 'notes/archive/todo-copy.md')).rejects.toMatchObject({ code: 'EEXIST' });
+      await expect(
+        fileService.duplicateFile(repo, 'notes/archive/todo.md', 'notes/archive/todo-copy.md'),
+      ).rejects.toMatchObject({ code: 'EEXIST' });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -70,9 +74,13 @@ describe('FileService', () => {
         absolutePath: tempDir,
       };
 
-      const tinyPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sE5e3kAAAAASUVORK5CYII=';
+      const tinyPngBase64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9sE5e3kAAAAASUVORK5CYII=';
       await mkdir(path.join(tempDir, 'assets'), { recursive: true });
-      await writeFile(path.join(tempDir, 'assets', 'pixel.png'), Buffer.from(tinyPngBase64, 'base64'));
+      await writeFile(
+        path.join(tempDir, 'assets', 'pixel.png'),
+        Buffer.from(tinyPngBase64, 'base64'),
+      );
 
       const document = await fileService.readFile(repo, 'assets/pixel.png');
 
@@ -80,7 +88,28 @@ describe('FileService', () => {
       expect(document.kind).toBe('image');
       expect(document.mimeType).toBe('image/png');
       expect(document.content).toBe('');
-      expect(document.imageDataUrl?.startsWith('data:image/png;base64,')).toBe(true);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('detects binary files via NUL-byte', async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-mobile-file-service-'));
+
+    try {
+      const repo = {
+        name: path.basename(tempDir),
+        relativePath: tempDir,
+        absolutePath: tempDir,
+      };
+
+      await writeFile(path.join(tempDir, 'data.bin'), Buffer.from([0x61, 0x62, 0x00, 0x63]));
+
+      const document = await fileService.readFile(repo, 'data.bin');
+
+      expect(document.path).toBe('data.bin');
+      expect(document.kind).toBe('binary');
+      expect(document.content).toBe('');
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

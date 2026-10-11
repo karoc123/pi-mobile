@@ -256,6 +256,17 @@ describe('createApp', () => {
       .post('/api/files/create')
       .set('Cookie', cookie)
       .send({ path: '   ' });
+    const putRawResponse = await request(app)
+      .put('/api/files/raw?path=notes/upload.txt')
+      .set('Cookie', cookie)
+      .set('Content-Type', 'text/plain')
+      .send('hello raw content');
+    const getRawResponse = await request(app)
+      .get('/api/files/raw?path=notes/upload.txt')
+      .set('Cookie', cookie);
+    const downloadRawResponse = await request(app)
+      .get('/api/files/raw?path=notes/upload.txt&download=1')
+      .set('Cookie', cookie);
     const clearLogsResponse = await request(app).delete('/api/logs').set('Cookie', cookie);
 
     expect(authorized.status).toBe(200);
@@ -359,6 +370,13 @@ describe('createApp', () => {
     expect(createFileMissingPathResponse.status).toBe(400);
     expect(createFileMissingPathResponse.body.error.code).toBe('bad_request');
     expect(createFile).toHaveBeenCalledTimes(2);
+    expect(putRawResponse.status).toBe(200);
+    expect(putRawResponse.body).toEqual({ ok: true, path: 'notes/upload.txt' });
+    expect(getRawResponse.status).toBe(200);
+    expect(getRawResponse.text).toBe('hello raw content');
+    expect(downloadRawResponse.status).toBe(200);
+    expect(downloadRawResponse.headers['content-disposition']).toContain('attachment; filename=');
+    expect(downloadRawResponse.headers['content-disposition']).toContain('upload.txt');
     expect(clearLogsResponse.status).toBe(204);
 
     await logService.flush();

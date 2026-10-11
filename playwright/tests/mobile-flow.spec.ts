@@ -267,7 +267,7 @@ test('mobile browser flow previews image and downloads it', async ({ page }) => 
 
   const imagePreview = page.locator('.editor-image-preview img');
   await expect(imagePreview).toBeVisible();
-  await expect(imagePreview).toHaveAttribute('src', /^data:image\/png;base64,/);
+  await expect(imagePreview).toHaveAttribute('src', /\/api\/files\/raw\?path=/);
 
   await page.getByRole('button', { name: 'Actions' }).click();
   const editorActions = page.getByRole('dialog', { name: 'Editor actions' });

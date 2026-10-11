@@ -5,20 +5,25 @@
   import { json } from '@codemirror/lang-json';
   import { markdown } from '@codemirror/lang-markdown';
   import { basicSetup } from 'codemirror';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { onMount } from 'svelte';
 
-  export let value = '';
-  export let filePath = '';
-  export let readOnly = false;
+  interface Props {
+    value?: string;
+    filePath?: string;
+    readOnly?: boolean;
+    onchange?: (value: string) => void;
+  }
 
-  const dispatch = createEventDispatcher<{ change: { value: string } }>();
+  const { value = '', filePath = '', readOnly = false, onchange = () => {} }: Props = $props();
 
   const languageCompartment = new Compartment();
   const editableCompartment = new Compartment();
-  let host: HTMLDivElement;
+  let host = $state<HTMLDivElement>();
   let view: EditorView | null = null;
 
   onMount(() => {
+    if (!host) return;
+
     view = new EditorView({
       parent: host,
       state: EditorState.create({
@@ -30,11 +35,11 @@
           editableCompartment.of(EditorView.editable.of(!readOnly)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
-              dispatch('change', { value: update.state.doc.toString() });
+              onchange(update.state.doc.toString());
             }
-          })
-        ]
-      })
+          }),
+        ],
+      }),
     });
 
     return () => {
@@ -42,16 +47,22 @@
     };
   });
 
-  $: if (view && value !== view.state.doc.toString()) {
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: value }
-    });
-  }
+  $effect(() => {
+    if (view && value !== view.state.doc.toString()) {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: value },
+      });
+    }
+  });
 
-  $: if (view) {
-    view.dispatch({ effects: languageCompartment.reconfigure(languageFor(filePath)) });
-    view.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(!readOnly)) });
-  }
+  $effect(() => {
+    if (view) {
+      view.dispatch({ effects: languageCompartment.reconfigure(languageFor(filePath)) });
+      view.dispatch({
+        effects: editableCompartment.reconfigure(EditorView.editable.of(!readOnly)),
+      });
+    }
+  });
 
   function languageFor(pathValue: string) {
     if (pathValue.endsWith('.json')) {
@@ -62,7 +73,12 @@
       return markdown();
     }
 
-    if (pathValue.endsWith('.ts') || pathValue.endsWith('.tsx') || pathValue.endsWith('.js') || pathValue.endsWith('.svelte')) {
+    if (
+      pathValue.endsWith('.ts') ||
+      pathValue.endsWith('.tsx') ||
+      pathValue.endsWith('.js') ||
+      pathValue.endsWith('.svelte')
+    ) {
       return javascript({ typescript: pathValue.endsWith('.ts') || pathValue.endsWith('.tsx') });
     }
 
@@ -71,3 +87,12 @@
 </script>
 
 <div class="editor-host" bind:this={host}></div>
+
+<style>
+  .editor-host {
+    min-height: 56vh;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+</style>

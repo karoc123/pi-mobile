@@ -1,6 +1,6 @@
 <script lang="ts">
   /* eslint-disable svelte/infinite-reactive-loop */
-  import { onMount, type ComponentType } from 'svelte';
+  import { onMount, type Component } from 'svelte';
 
   import type {
     AgentCommandRequest,
@@ -10,11 +10,6 @@
     AgentUsage,
     ChatMessage,
     ToolActivity,
-    FileCreateResult,
-    FileDocument,
-    FileDownloadInfo,
-    FileEntry,
-    FileMoveResult,
     SelectedRepo,
     SessionResponse,
     WebsocketEnvelope,
@@ -38,6 +33,7 @@
     toErrorMessage,
   } from './lib/api.js';
   import { copyText } from './lib/clipboard.js';
+  import { editorState } from './lib/editor-state.svelte.js';
   import { toast } from './lib/toast.svelte.js';
 
   type ThemeName = 'vscode-dark' | 'vscode-light';
@@ -96,19 +92,7 @@
 
   function handleWorkspaceChange(path = '') {
     workspaceChange = { path, version: workspaceChange.version + 1 };
-    if (selectedDocument && !editorDirty && (!path || selectedDocument.path === path)) {
-      void openFile(selectedDocument.path, false);
-    }
   }
-
-  let fileLoading = false;
-  let filePath = '.';
-  let fileEntries: FileEntry[] = [];
-  let selectedDocument: FileDocument | null = null;
-  let draftContent = '';
-  let editorDirty = false;
-  let savingFile = false;
-  let creatingFile = false;
 
   let agentSnapshot: AgentSnapshot = emptyAgentSnapshot;
   let localSystemMessages: ChatMessage[] = [];
@@ -138,7 +122,11 @@
   let piLoginOpen = false;
   let lazyViewLoading: AsyncViewName | null = null;
   let lazyViewError = '';
-  let editorViewComponent: ComponentType | null = null;
+  let editorViewComponent: Component<{
+    active?: boolean;
+    workspaceChange?: unknown;
+    onworkspacechange?: (path?: string) => void;
+  }> | null = null;
   let editorViewPromise: Promise<void> | null = null;
   let theme: ThemeName = 'vscode-dark';
   let commandPaletteOpen = false;
@@ -518,10 +506,7 @@
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
       };
-      selectedDocument = null;
-      draftContent = '';
-      editorDirty = false;
-      filePath = '.';
+      editorState.reset();
       view = view === 'logs' ? view : 'chat';
       void refreshCurrentRepoData();
       return;
@@ -537,7 +522,7 @@
 
   async function refreshCurrentRepoData() {
     handleWorkspaceChange();
-    await Promise.all([loadFiles('.'), loadAgentState(), loadCommandState()]);
+    await Promise.all([loadAgentState(), loadCommandState()]);
   }
 
   function openLogView() {
@@ -597,143 +582,6 @@
 
     localSystemMessages = [];
     await executePaletteCommand({ command: 'new-session' });
-  }
-
-  async function loadFiles(path: string) {
-    if (!currentRepo) {
-      fileEntries = [];
-      return;
-    }
-
-    fileLoading = true;
-
-    try {
-      const response = await apiFetch<{ currentPath: string; entries: FileEntry[] }>(
-        `/api/files/browse?path=${encodeURIComponent(path)}`,
-      );
-      filePath = response.currentPath;
-      fileEntries = response.entries;
-    } catch (error) {
-      handleApiFailure(error);
-    } finally {
-      fileLoading = false;
-    }
-  }
-
-  async function openFile(path: string, switchView = true) {
-    try {
-      const fileDoc = await apiFetch<FileDocument>(
-        `/api/files/content?path=${encodeURIComponent(path)}`,
-      );
-
-      if (fileDoc.kind === 'binary' && fileDoc.binaryContentBase64) {
-        saveBase64File(
-          fileDoc.binaryContentBase64,
-          fileDoc.mimeType,
-          fileDoc.path.split('/').pop() || 'download',
-        );
-        showBanner('Binary file downloaded.', 'success');
-        return;
-      }
-
-      selectedDocument = fileDoc;
-      draftContent = selectedDocument.kind === 'text' ? selectedDocument.content : '';
-      editorDirty = false;
-      if (switchView) {
-        view = 'editor';
-      }
-    } catch (error) {
-      handleApiFailure(error);
-    }
-  }
-
-  async function saveFile(content: string) {
-    if (!selectedDocument) {
-      return;
-    }
-
-    await run(
-      async () => {
-        await api.post('/api/files/write', { path: selectedDocument!.path, content });
-        selectedDocument = { ...selectedDocument!, content };
-        draftContent = content;
-        editorDirty = false;
-        handleWorkspaceChange(selectedDocument.path);
-      },
-      'File saved.',
-      (busy) => {
-        savingFile = busy;
-      },
-    );
-  }
-
-  async function runFileAction(
-    action: string,
-    body: Record<string, string>,
-    successMessage: string,
-    openResult: boolean,
-  ) {
-    return await run(
-      async () => {
-        const response = await api.post<FileCreateResult | FileMoveResult>(
-          `/api/files/${action}`,
-          body,
-        );
-        const resultPath = 'toPath' in response ? response.toPath : response.path;
-        await loadFiles(parentDirectoryFor(resultPath));
-
-        if (openResult) {
-          await openFile(resultPath);
-        }
-
-        return resultPath;
-      },
-      successMessage,
-      (busy) => {
-        creatingFile = busy;
-      },
-    );
-  }
-
-  const createFile = (path: string, content: string) =>
-    runFileAction('create', { path, content }, 'File created.', true);
-  const createDirectory = (path: string) =>
-    runFileAction('create-directory', { path }, 'Folder created.', false);
-  const duplicateFile = (sourcePath: string, targetPath: string) =>
-    runFileAction('duplicate', { sourcePath, targetPath }, 'File duplicated.', true);
-  const renameFile = (fromPath: string, toPath: string) =>
-    runFileAction('rename', { fromPath, toPath }, 'File renamed.', true);
-  const moveFile = (fromPath: string, toPath: string) =>
-    runFileAction('move', { fromPath, toPath }, 'File moved.', true);
-  const uploadFile = (path: string, contentBase64: string) =>
-    runFileAction('upload', { path, contentBase64 }, 'File uploaded.', true);
-
-  async function downloadFile(filePathToDownload: string) {
-    try {
-      const info = await apiFetch<FileDownloadInfo>(
-        `/api/files/download?path=${encodeURIComponent(filePathToDownload)}`,
-      );
-
-      if (!info.contentBase64) {
-        showBanner('Download failed: no content received.', 'error');
-        return;
-      }
-
-      saveBase64File(info.contentBase64, info.mimeType, info.name);
-      showBanner('File downloaded.', 'success');
-    } catch (error) {
-      handleApiFailure(error);
-    }
-  }
-
-  async function deleteFile(path: string) {
-    const deletedPath = await runFileAction('delete', { path }, 'File deleted.', false);
-
-    if (deletedPath && selectedDocument?.path === deletedPath) {
-      selectedDocument = null;
-      draftContent = '';
-      editorDirty = false;
-    }
   }
 
   /** Sendet eine User-Nachricht und räumt dabei offene InteractivePrompts weg. */
@@ -905,12 +753,7 @@
     workspaceOpen = false;
     piLoginOpen = false;
     workspaceChange = { path: '', version: 0 };
-
-    fileEntries = [];
-    filePath = '.';
-    selectedDocument = null;
-    draftContent = '';
-    editorDirty = false;
+    editorState.reset();
     agentSnapshot = emptyAgentSnapshot;
     resetToolTraceBatches();
     localSystemMessages = [];
@@ -922,28 +765,6 @@
     if (message) {
       showBanner(message, 'error');
     }
-  }
-
-  function saveBase64File(contentBase64: string, mimeType: string | null, fileName: string) {
-    const bytes = Uint8Array.from(atob(contentBase64), (character) => character.charCodeAt(0));
-    const blobUrl = URL.createObjectURL(
-      new Blob([bytes], { type: mimeType || 'application/octet-stream' }),
-    );
-    const anchor = document.createElement('a');
-    anchor.href = blobUrl;
-    anchor.download = fileName;
-    anchor.click();
-    URL.revokeObjectURL(blobUrl);
-  }
-
-  function parentDirectoryFor(relativePath: string) {
-    if (relativePath === '.' || relativePath.length === 0) {
-      return '.';
-    }
-
-    const segments = relativePath.split('/').filter(Boolean);
-    segments.pop();
-    return segments.length === 0 ? '.' : segments.join('/');
   }
 
   function showBanner(message: string, tone: 'info' | 'success' | 'error') {
@@ -1049,40 +870,9 @@
         {#if editorViewComponent}
           <svelte:component
             this={editorViewComponent}
-            entries={fileEntries}
-            currentPath={filePath}
-            selectedFilePath={selectedDocument?.path ?? ''}
-            content={draftContent}
-            fileKind={selectedDocument?.kind ?? 'text'}
-            imageDataUrl={selectedDocument?.imageDataUrl ?? ''}
-            dirty={editorDirty}
-            loading={fileLoading}
-            saving={savingFile}
-            creating={creatingFile}
-            on:browse={(event: CustomEvent<{ path: string }>) => loadFiles(event.detail.path)}
-            on:openFile={(event: CustomEvent<{ path: string }>) => openFile(event.detail.path)}
-            on:save={(event: CustomEvent<{ content: string }>) => saveFile(event.detail.content)}
-            on:createFile={(event: CustomEvent<{ path: string; content: string }>) =>
-              createFile(event.detail.path, event.detail.content)}
-            on:createDirectory={(event: CustomEvent<{ path: string }>) =>
-              createDirectory(event.detail.path)}
-            on:duplicateFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) =>
-              duplicateFile(event.detail.fromPath, event.detail.toPath)}
-            on:renameFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) =>
-              renameFile(event.detail.fromPath, event.detail.toPath)}
-            on:moveFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) =>
-              moveFile(event.detail.fromPath, event.detail.toPath)}
-            on:deleteFile={(event: CustomEvent<{ path: string }>) => deleteFile(event.detail.path)}
-            on:uploadFile={(event: CustomEvent<{ path: string; contentBase64: string }>) =>
-              uploadFile(event.detail.path, event.detail.contentBase64)}
-            on:downloadFile={(event: CustomEvent<{ path: string }>) =>
-              downloadFile(event.detail.path)}
-            on:change={(event: CustomEvent<{ content: string }>) => {
-              draftContent = event.detail.content;
-              editorDirty = selectedDocument
-                ? event.detail.content !== selectedDocument.content
-                : false;
-            }}
+            active={view === 'editor'}
+            {workspaceChange}
+            onworkspacechange={handleWorkspaceChange}
           />
         {:else if lazyViewLoading === 'editor'}
           <section class="view-shell">

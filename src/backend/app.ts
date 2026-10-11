@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { createWriteStream, existsSync } from 'node:fs';
+import { mkdir, rename, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
@@ -15,10 +16,8 @@ import type {
   FileCreateDirectoryResult,
   FileCreateResult,
   FileDeleteResult,
-  FileDownloadInfo,
   FileDuplicateResult,
   FileMoveResult,
-  FileUploadResult,
   GitBranchesResponse,
   GitDiffResponse,
   GitSyncResult,
@@ -39,6 +38,7 @@ import { PiAgentService } from './services/pi-agent-service.js';
 import { PiAuthService, PiAuthServiceError } from './services/pi-auth-service.js';
 import { ResourceHealthService } from './services/resource-health-service.js';
 import { WorkspaceService } from './services/workspace-service.js';
+import { resolveWithin } from './utils/path-utils.js';
 import { HttpError, isHttpError } from './utils/http-error.js';
 
 type AppServices = {
@@ -59,7 +59,12 @@ export function createApp(services: AppServices) {
   const app = express();
   const httpLog = services.logService.child({ source: 'http' });
 
-  app.use(express.json({ limit: '2mb' }));
+  app.use((request, response, next) => {
+    if (request.path === '/api/files/raw' && request.method === 'PUT') {
+      return next();
+    }
+    express.json({ limit: '2mb' })(request, response, next);
+  });
   app.use(cookieParser());
 
   app.use('/api', (_request, response, next) => {
@@ -602,40 +607,77 @@ function createFileRouter(
     }),
   );
 
-  router.post(
-    '/upload',
-    repoRoute(async (repo, request) => {
-      const filePath = getEntryPath(getBodyString(request, 'path'));
-      const contentBase64 = getBodyString(request, 'contentBase64');
-
-      if (contentBase64.length === 0) {
-        throw new HttpError(400, 'bad_request', 'Base64 content is required.', {
-          retriable: false,
-        });
-      }
-
-      await fileService.uploadFile(repo, filePath, contentBase64);
-      return { ok: true, path: filePath } satisfies FileUploadResult;
+  router.get(
+    '/raw',
+    repoRoute(async (repo, request, response) => {
+      const filePath = getEntryPath(getQueryString(request, 'path'));
+      const absolutePath = resolveWithin(repo.absolutePath, filePath);
+      const download = request.query.download === '1';
+      await new Promise<void>((resolve, reject) => {
+        if (download) {
+          response.download(absolutePath, path.basename(absolutePath), (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        } else {
+          response.sendFile(absolutePath, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        }
+      });
     }),
   );
 
-  router.get(
-    '/download',
-    repoRoute(
-      async (repo, request) =>
-        (await fileService.getDownloadInfo(
-          repo,
-          getEntryPath(getQueryString(request, 'path')),
-        )) satisfies FileDownloadInfo,
-    ),
+  router.put(
+    '/raw',
+    repoRoute(async (repo, request) => {
+      const filePath = getEntryPath(getQueryString(request, 'path'));
+      const targetPath = resolveWithin(repo.absolutePath, filePath);
+      await mkdir(path.dirname(targetPath), { recursive: true });
+
+      const tempPath = path.join(
+        path.dirname(targetPath),
+        `.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`,
+      );
+
+      const maxBytes = 50 * 1024 * 1024;
+      let bytesWritten = 0;
+
+      await new Promise<void>((resolve, reject) => {
+        const outStream = createWriteStream(tempPath);
+
+        request.on('data', (chunk: Buffer) => {
+          bytesWritten += chunk.length;
+          if (bytesWritten > maxBytes) {
+            request.destroy(new HttpError(413, 'bad_request', 'File size exceeds 50MB limit.'));
+          }
+        });
+
+        request.pipe(outStream);
+
+        outStream.on('finish', () => resolve());
+        outStream.on('error', (err) => reject(err));
+        request.on('error', (err) => reject(err));
+      }).catch(async (err) => {
+        await rm(tempPath, { force: true }).catch(() => {});
+        throw err;
+      });
+
+      await rename(tempPath, targetPath);
+      return { ok: true, path: filePath };
+    }),
   );
 
   router.use((error: unknown, _request: Request, _response: Response, next: NextFunction) => {
     const code = (error as NodeJS.ErrnoException | null)?.code;
+    const status =
+      (error as { status?: number; statusCode?: number } | null)?.status ??
+      (error as { status?: number; statusCode?: number } | null)?.statusCode;
 
     if (code === 'EEXIST') {
       next(new HttpError(409, 'conflict', 'Target path already exists.', { retriable: false }));
-    } else if (code === 'ENOENT') {
+    } else if (code === 'ENOENT' || status === 404) {
       next(new HttpError(404, 'not_found', 'Path does not exist.', { retriable: false }));
     } else {
       next(error);
