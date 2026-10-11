@@ -3,7 +3,11 @@
 
   import { createEventDispatcher } from 'svelte';
 
-  import type { DiffFile, GitBranchInfo, GitRemoteSyncStatus } from '../../../src/shared/contracts.js';
+  import type {
+    DiffFile,
+    GitBranchInfo,
+    GitRemoteSyncStatus,
+  } from '../../../src/shared/contracts.js';
   import { renderDiff } from '../lib/diff.js';
 
   export let files: DiffFile[] = [];
@@ -43,10 +47,22 @@
   $: allHunks = files.flatMap((file) => file.hunks);
   $: stagedHunkCount = allHunks.filter((hunk) => hunk.staged).length;
   $: unstagedHunkCount = allHunks.length - stagedHunkCount;
-  $: actionsBusy = loading || pulling || pushing || committing || stagingAll || unstagingAll || switchingBranch || creatingBranch;
+  $: actionsBusy =
+    loading ||
+    pulling ||
+    pushing ||
+    committing ||
+    stagingAll ||
+    unstagingAll ||
+    switchingBranch ||
+    creatingBranch;
   $: syncHeadline = describeSyncHeadline(syncStatus);
-  $: pullLabel = pulling ? 'Pulling…' : buildActionLabel('Pull', '↓', syncStatus?.behind ?? 0, Boolean(syncStatus?.hasUpstream));
-  $: pushLabel = pushing ? 'Pushing…' : buildActionLabel('Push', '↑', syncStatus?.ahead ?? 0, Boolean(syncStatus?.hasUpstream));
+  $: pullLabel = pulling
+    ? 'Pulling…'
+    : buildActionLabel('Pull', '↓', syncStatus?.behind ?? 0, Boolean(syncStatus?.hasUpstream));
+  $: pushLabel = pushing
+    ? 'Pushing…'
+    : buildActionLabel('Push', '↑', syncStatus?.ahead ?? 0, Boolean(syncStatus?.hasUpstream));
 
   function triggerPull() {
     closeOverlays();
@@ -159,7 +175,12 @@
     return `↑ ${status.ahead} ↓ ${status.behind}`;
   }
 
-  function buildActionLabel(base: string, icon: '↑' | '↓', commitCount: number, hasUpstream: boolean) {
+  function buildActionLabel(
+    base: string,
+    icon: '↑' | '↓',
+    commitCount: number,
+    hasUpstream: boolean,
+  ) {
     if (!hasUpstream || commitCount <= 0) {
       return base;
     }
@@ -177,7 +198,9 @@
       <h2>Review (Sync: {syncHeadline})</h2>
     </div>
     <div class="header-actions">
-      <span class="status-pill">{files.length} file{files.length === 1 ? '' : 's'} · staged {stagedHunkCount}</span>
+      <span class="status-pill"
+        >{files.length} file{files.length === 1 ? '' : 's'} · staged {stagedHunkCount}</span
+      >
       <div class="diff-actions">
         <button
           class="primary-button"
@@ -192,25 +215,67 @@
 
         {#if actionsOpen}
           <div class="diff-actions-menu" role="menu" aria-label="Git actions">
-            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy || unstagedHunkCount === 0} on:click={triggerStageAll}>
+            <button
+              class="secondary-button"
+              type="button"
+              role="menuitem"
+              disabled={actionsBusy || unstagedHunkCount === 0}
+              on:click={triggerStageAll}
+            >
               {stagingAll ? 'Staging all…' : `Stage all (${unstagedHunkCount})`}
             </button>
-            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy || stagedHunkCount === 0} on:click={triggerUnstageAll}>
+            <button
+              class="secondary-button"
+              type="button"
+              role="menuitem"
+              disabled={actionsBusy || stagedHunkCount === 0}
+              on:click={triggerUnstageAll}
+            >
               {unstagingAll ? 'Unstaging all…' : `Unstage all (${stagedHunkCount})`}
             </button>
-            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPull}>
+            <button
+              class="secondary-button"
+              type="button"
+              role="menuitem"
+              disabled={actionsBusy}
+              on:click={triggerPull}
+            >
               {pullLabel}
             </button>
-            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={triggerPush}>
+            <button
+              class="secondary-button"
+              type="button"
+              role="menuitem"
+              disabled={actionsBusy}
+              on:click={triggerPush}
+            >
               {pushLabel}
             </button>
-            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={openBranchSwitch}>
+            <button
+              class="secondary-button"
+              type="button"
+              role="menuitem"
+              disabled={actionsBusy}
+              on:click={openBranchSwitch}
+            >
               Switch branch…
             </button>
-            <button class="secondary-button" type="button" role="menuitem" disabled={actionsBusy} on:click={openBranchCreate}>
+            <button
+              class="secondary-button"
+              type="button"
+              role="menuitem"
+              disabled={actionsBusy}
+              on:click={openBranchCreate}
+            >
               Create branch…
             </button>
-            <button class="primary-button" type="button" role="menuitem" disabled={actionsBusy || stagedHunkCount === 0} on:click={triggerCommit}>
+            <button
+              class="primary-button"
+              type="button"
+              role="menuitem"
+              disabled={actionsBusy || stagedHunkCount === 0}
+              on:click={triggerCommit}
+            >
               {committing ? 'Committing…' : 'Commit staged'}
             </button>
           </div>
@@ -222,7 +287,15 @@
   {#if branchActionMode !== 'menu'}
     <div class="overlay" role="presentation" on:click={closeOverlays}>
       {#if branchActionMode === 'switch'}
-        <div class="sheet-card branch-sheet" role="dialog" aria-modal="true" aria-label="Switch branch" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+        <div
+          class="sheet-card branch-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Switch branch"
+          tabindex="-1"
+          on:click|stopPropagation
+          on:keydown|stopPropagation
+        >
           <div class="branch-sheet-header">
             <div>
               <p class="eyebrow">Git branch</p>
@@ -237,7 +310,7 @@
             <p class="empty-state small">No branches found.</p>
           {:else}
             <div class="branch-list">
-              {#each branches as branch}
+              {#each branches as branch (branch.name)}
                 <button
                   class="branch-item"
                   class:current={branch.current}
@@ -257,7 +330,15 @@
           {/if}
         </div>
       {:else if branchActionMode === 'create'}
-        <div class="sheet-card branch-sheet" role="dialog" aria-modal="true" aria-label="Create branch" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+        <div
+          class="sheet-card branch-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Create branch"
+          tabindex="-1"
+          on:click|stopPropagation
+          on:keydown|stopPropagation
+        >
           <div class="branch-sheet-header">
             <div>
               <p class="eyebrow">Git branch</p>
@@ -268,6 +349,7 @@
 
           <form class="branch-create-form" on:submit|preventDefault={triggerCreateBranch}>
             <label class="field-label" for="new-branch-name">Branch name</label>
+            <!-- svelte-ignore a11y_autofocus -->
             <input
               id="new-branch-name"
               class="text-input"
@@ -279,8 +361,16 @@
             <p class="empty-state small">Creates a new branch from the current HEAD.</p>
 
             <div class="branch-create-footer">
-              <button class="ghost-button" type="button" on:click={() => (branchActionMode = 'menu')}>Back</button>
-              <button class="primary-button" type="submit" disabled={!branchToCreate.trim() || creatingBranch}>
+              <button
+                class="ghost-button"
+                type="button"
+                on:click={() => (branchActionMode = 'menu')}>Back</button
+              >
+              <button
+                class="primary-button"
+                type="submit"
+                disabled={!branchToCreate.trim() || creatingBranch}
+              >
                 {creatingBranch ? 'Creating...' : 'Create branch'}
               </button>
             </div>
@@ -301,7 +391,7 @@
     </div>
   {:else}
     <div class="diff-stack">
-      {#each files as file}
+      {#each files as file (file.path)}
         <article class="diff-card">
           <header class="diff-card-header">
             <div>
@@ -311,12 +401,16 @@
           </header>
 
           <div class="hunk-stack">
-            {#each file.hunks as hunk}
+            {#each file.hunks as hunk (hunk.id)}
               <section class="hunk-card">
                 <div class="hunk-toolbar">
                   <div class="hunk-toolbar-main">
                     <code>{hunk.header}</code>
-                    <span class:staged={hunk.staged} class:unstaged={!hunk.staged} class="hunk-stage-badge">
+                    <span
+                      class:staged={hunk.staged}
+                      class:unstaged={!hunk.staged}
+                      class="hunk-stage-badge"
+                    >
                       {hunk.staged ? 'staged' : 'unstaged'}
                     </span>
                   </div>
@@ -326,7 +420,8 @@
                         class="secondary-button"
                         type="button"
                         disabled={unstagingHunkId === hunk.id || actionsBusy}
-                        on:click={() => dispatch('unstageHunk', { diff: hunk.diff, hunkId: hunk.id })}
+                        on:click={() =>
+                          dispatch('unstageHunk', { diff: hunk.diff, hunkId: hunk.id })}
                       >
                         {unstagingHunkId === hunk.id ? 'Unstaging...' : 'Unstage hunk'}
                       </button>
@@ -340,11 +435,17 @@
                         {stagingHunkId === hunk.id ? 'Staging...' : 'Stage hunk'}
                       </button>
                     {/if}
-                    <button class="secondary-button" type="button" disabled={revertingHunkId === hunk.id} on:click={() => dispatch('revert', { diff: hunk.diff, hunkId: hunk.id })}>
+                    <button
+                      class="secondary-button"
+                      type="button"
+                      disabled={revertingHunkId === hunk.id}
+                      on:click={() => dispatch('revert', { diff: hunk.diff, hunkId: hunk.id })}
+                    >
                       {revertingHunkId === hunk.id ? 'Reverting...' : 'Revert hunk'}
                     </button>
                   </div>
                 </div>
+                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                 <div class="diff-html">{@html renderDiff(hunk.diff)}</div>
               </section>
             {/each}

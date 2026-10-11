@@ -1,9 +1,11 @@
+<script module lang="ts">
+  export type ThemeName = 'vscode-dark' | 'vscode-light';
+</script>
+
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
 
   import type { SelectedRepo } from '../../../src/shared/contracts.js';
-
-  export type ThemeName = 'vscode-dark' | 'vscode-light';
 
   export let open = false;
   export let currentRepo: SelectedRepo | null = null;
@@ -21,7 +23,15 @@
 
 {#if open}
   <div class="overlay menu-overlay" role="presentation" on:click={() => dispatch('close')}>
-    <div class="menu-panel card-panel" role="dialog" aria-modal="true" aria-label="App menu" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+    <div
+      class="menu-panel card-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-label="App menu"
+      tabindex="-1"
+      on:click|stopPropagation
+      on:keydown|stopPropagation
+    >
       <div class="sheet-header">
         <div>
           <p class="eyebrow">Workspace menu</p>
@@ -31,17 +41,33 @@
 
       <section class="menu-section">
         <p class="eyebrow">Repository</p>
-        <p class="menu-copy">{currentRepo ? currentRepo.relativePath : 'No repository selected yet. Pick one below your configured workspace root.'}</p>
-        <button class="secondary-button" type="button" on:click={() => dispatch('chooseRepo')}>Choose repo</button>
+        <p class="menu-copy">
+          {currentRepo
+            ? currentRepo.relativePath
+            : 'No repository selected yet. Pick one below your configured workspace root.'}
+        </p>
+        <button class="secondary-button" type="button" on:click={() => dispatch('chooseRepo')}
+          >Choose repo</button
+        >
       </section>
 
       <section class="menu-section">
         <p class="eyebrow">Theme</p>
         <div class="theme-toggle-group" role="group" aria-label="Theme switcher">
-          <button class:selected={theme === 'vscode-dark'} class="theme-toggle" type="button" on:click={() => dispatch('setTheme', { value: 'vscode-dark' })}>
+          <button
+            class:selected={theme === 'vscode-dark'}
+            class="theme-toggle"
+            type="button"
+            on:click={() => dispatch('setTheme', { value: 'vscode-dark' })}
+          >
             VS Code Dark
           </button>
-          <button class:selected={theme === 'vscode-light'} class="theme-toggle" type="button" on:click={() => dispatch('setTheme', { value: 'vscode-light' })}>
+          <button
+            class:selected={theme === 'vscode-light'}
+            class="theme-toggle"
+            type="button"
+            on:click={() => dispatch('setTheme', { value: 'vscode-light' })}
+          >
             VS Code Light
           </button>
         </div>
@@ -51,15 +77,23 @@
         <p class="eyebrow">Insights</p>
         <p class="menu-copy">Inspect the live backend log stream to debug runtime activity.</p>
         <div class="menu-insight-actions">
-          <button class="secondary-button" type="button" on:click={() => dispatch('openLogs')}>Open log</button>
+          <button class="secondary-button" type="button" on:click={() => dispatch('openLogs')}
+            >Open log</button
+          >
         </div>
       </section>
 
       <section class="menu-section">
         <p class="eyebrow">Session</p>
         <div class="menu-insight-actions">
-          <button class="secondary-button" type="button" on:click={() => dispatch('openPiLogin')}>Pi Login</button>
-          <button class="ghost-button danger-button" type="button" on:click={() => dispatch('logout')}>Logout</button>
+          <button class="secondary-button" type="button" on:click={() => dispatch('openPiLogin')}
+            >Pi Login</button
+          >
+          <button
+            class="ghost-button danger-button"
+            type="button"
+            on:click={() => dispatch('logout')}>Logout</button
+          >
         </div>
       </section>
     </div>

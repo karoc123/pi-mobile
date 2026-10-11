@@ -1,9 +1,21 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, tick } from 'svelte';
 
-  import type { AgentRuntimePhase, AgentSlashCommand, AgentUsage, ChatMessage, InteractivePrompt, ToolActivity } from '../../../src/shared/contracts.js';
+  import type {
+    AgentRuntimePhase,
+    AgentSlashCommand,
+    AgentUsage,
+    ChatMessage,
+    InteractivePrompt,
+    ToolActivity,
+  } from '../../../src/shared/contracts.js';
   import { formatCompactTokenCount, formatUsageCost } from '../lib/agent-usage.js';
-  import { applySlashCommandSuggestion, getSlashCommandSuggestions, toRuntimeSlashCommandSuggestions, type SlashCommandSuggestion } from '../lib/command-suggestions.js';
+  import {
+    applySlashCommandSuggestion,
+    getSlashCommandSuggestions,
+    toRuntimeSlashCommandSuggestions,
+    type SlashCommandSuggestion,
+  } from '../lib/command-suggestions.js';
   import { renderMarkdown } from '../lib/markdown.js';
   import InteractiveCard from './InteractiveCard.svelte';
 
@@ -49,7 +61,6 @@
     openCommands: void;
     openModelCommands: void;
     newSession: void;
-    submit: { prompt: string };
     interactiveDismiss: void;
   }>();
 
@@ -72,7 +83,6 @@
   let shouldAutoScroll = true;
   let isNearBottom = true;
   let keyboardOpen = false;
-  let composerFocused = false;
   let baseViewportHeight = 0;
   let transcriptSignature = '';
   let showComposerMeta = true;
@@ -108,11 +118,15 @@
   $: totalToolCount = toolBatches.reduce((sum, batch) => sum + batch.tools.length, 0);
   $: displayEntries = buildDisplayEntries(messages);
   $: transcriptSignature = buildTranscriptSignature(messages, displayEntries.length);
-  $: showComposerMeta = !keyboardOpen && (isNearBottom || runtimePhase !== 'idle' || canAbort || Boolean(lastError));
-  $: normalizedDraftStorageScope = draftStorageScope.trim().length > 0 ? draftStorageScope.trim() : 'default';
+  $: showComposerMeta =
+    !keyboardOpen && (isNearBottom || runtimePhase !== 'idle' || canAbort || Boolean(lastError));
+  $: normalizedDraftStorageScope =
+    draftStorageScope.trim().length > 0 ? draftStorageScope.trim() : 'default';
   $: nextPromptDraftStorageKey = buildPromptDraftStorageKey(normalizedDraftStorageScope);
   $: runtimeSlashCommandSuggestions = toRuntimeSlashCommandSuggestions(availableCommands);
-  $: slashCommandSuggestions = slashSuggestionsDismissed ? [] : getSlashCommandSuggestions(prompt, promptCursorIndex, runtimeSlashCommandSuggestions);
+  $: slashCommandSuggestions = slashSuggestionsDismissed
+    ? []
+    : getSlashCommandSuggestions(prompt, promptCursorIndex, runtimeSlashCommandSuggestions);
   $: if (slashCommandSuggestions.length === 0) {
     selectedSlashSuggestionIndex = 0;
   } else if (selectedSlashSuggestionIndex >= slashCommandSuggestions.length) {
@@ -124,7 +138,10 @@
     hydratePromptDraft(activePromptDraftStorageKey);
   }
 
-  $: if (hydratedPromptDraftStorageKey === activePromptDraftStorageKey && activePromptDraftStorageKey.length > 0) {
+  $: if (
+    hydratedPromptDraftStorageKey === activePromptDraftStorageKey &&
+    activePromptDraftStorageKey.length > 0
+  ) {
     persistPromptDraft(activePromptDraftStorageKey, prompt);
   }
 
@@ -263,14 +280,12 @@
   }
 
   function handleComposerFocus() {
-    composerFocused = true;
     slashSuggestionsDismissed = false;
     updatePromptCursorPosition();
     refreshScrollPositionState();
   }
 
   function handleComposerBlur() {
-    composerFocused = false;
     slashSuggestionsDismissed = false;
     updatePromptCursorPosition();
     refreshScrollPositionState();
@@ -307,17 +322,23 @@
     if (slashCommandSuggestions.length > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        selectedSlashSuggestionIndex = (selectedSlashSuggestionIndex + 1) % slashCommandSuggestions.length;
+        selectedSlashSuggestionIndex =
+          (selectedSlashSuggestionIndex + 1) % slashCommandSuggestions.length;
         return;
       }
 
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        selectedSlashSuggestionIndex = (selectedSlashSuggestionIndex - 1 + slashCommandSuggestions.length) % slashCommandSuggestions.length;
+        selectedSlashSuggestionIndex =
+          (selectedSlashSuggestionIndex - 1 + slashCommandSuggestions.length) %
+          slashCommandSuggestions.length;
         return;
       }
 
-      if ((event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) || event.key === 'Tab') {
+      if (
+        (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) ||
+        event.key === 'Tab'
+      ) {
         event.preventDefault();
         void selectSlashCommandSuggestion(slashCommandSuggestions[selectedSlashSuggestionIndex]);
         return;
@@ -403,7 +424,6 @@
     } else {
       document.documentElement.removeAttribute('data-chat-keyboard');
     }
-
   }
 
   function describeMessageStatus(message: ChatMessage) {
@@ -411,7 +431,10 @@
       return message.status === 'streaming' ? 'working...' : 'ready';
     }
 
-    return new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(message.timestamp).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   function buildTranscriptSignature(messageList: ChatMessage[], entryCount: number) {
@@ -550,15 +573,28 @@
       return 'read';
     }
 
-    if (normalized.includes('write') || normalized.includes('edit') || normalized.includes('patch')) {
+    if (
+      normalized.includes('write') ||
+      normalized.includes('edit') ||
+      normalized.includes('patch')
+    ) {
       return 'write';
     }
 
-    if (normalized.includes('search') || normalized.includes('grep') || normalized.includes('find')) {
+    if (
+      normalized.includes('search') ||
+      normalized.includes('grep') ||
+      normalized.includes('find')
+    ) {
       return 'search';
     }
 
-    if (normalized.includes('bash') || normalized.includes('run') || normalized.includes('test') || normalized.includes('build')) {
+    if (
+      normalized.includes('bash') ||
+      normalized.includes('run') ||
+      normalized.includes('test') ||
+      normalized.includes('build')
+    ) {
       return 'terminal';
     }
 
@@ -586,15 +622,19 @@
   }
 
   function formatContextChip(usageValue: AgentUsage) {
-    const usedLabel = usageValue.contextTokens === null ? '?' : formatCompactTokenCount(usageValue.contextTokens);
-    const windowLabel = usageValue.contextWindow === null ? '?' : formatCompactTokenCount(usageValue.contextWindow);
+    const usedLabel =
+      usageValue.contextTokens === null ? '?' : formatCompactTokenCount(usageValue.contextTokens);
+    const windowLabel =
+      usageValue.contextWindow === null ? '?' : formatCompactTokenCount(usageValue.contextWindow);
 
     return `${usedLabel}/${windowLabel}`;
   }
 
   function formatContextChipTitle(usageValue: AgentUsage) {
-    const usedLabel = usageValue.contextTokens === null ? '?' : formatCompactTokenCount(usageValue.contextTokens);
-    const windowLabel = usageValue.contextWindow === null ? '?' : formatCompactTokenCount(usageValue.contextWindow);
+    const usedLabel =
+      usageValue.contextTokens === null ? '?' : formatCompactTokenCount(usageValue.contextTokens);
+    const windowLabel =
+      usageValue.contextWindow === null ? '?' : formatCompactTokenCount(usageValue.contextWindow);
     const modeLabel = usageValue.autoCompactEnabled ? 'auto compact on' : 'auto compact off';
 
     return `Context usage ${usedLabel}/${windowLabel} (${modeLabel})`;
@@ -689,12 +729,16 @@
   function summarizeToolLine(tool: ToolActivity) {
     const compactDetail = compactInline(tool.detail, 160);
     const normalizedName = normalizeToolName(tool.toolName);
-    return compactDetail.length > 0 ? `[tool:${normalizedName}] ${compactDetail}` : `[tool:${normalizedName}]`;
+    return compactDetail.length > 0
+      ? `[tool:${normalizedName}] ${compactDetail}`
+      : `[tool:${normalizedName}]`;
   }
 
   function formatToolCallLine(toolCall: ParsedToolCall) {
     const normalizedName = normalizeToolName(toolCall.toolName);
-    return toolCall.detail.length > 0 ? `[tool:${normalizedName}] ${toolCall.detail}` : `[tool:${normalizedName}]`;
+    return toolCall.detail.length > 0
+      ? `[tool:${normalizedName}] ${toolCall.detail}`
+      : `[tool:${normalizedName}]`;
   }
 
   function describeToolState(status: ToolActivity['status']) {
@@ -747,66 +791,81 @@
   {/if}
 
   <section class="activity-panel card-panel">
-      <button
-        class="tool-trace-toggle ghost-button compact"
-        type="button"
-        on:click={() => (toolTraceExpanded = !toolTraceExpanded)}
-        aria-expanded={toolTraceExpanded}
-      >
-        <strong>Tool trace</strong>
-        <span class="subdued">{totalToolCount}</span>
-      </button>
+    <button
+      class="tool-trace-toggle ghost-button compact"
+      type="button"
+      on:click={() => (toolTraceExpanded = !toolTraceExpanded)}
+      aria-expanded={toolTraceExpanded}
+    >
+      <strong>Tool trace</strong>
+      <span class="subdued">{totalToolCount}</span>
+    </button>
 
-      {#if toolTraceExpanded && totalToolCount > 0}
-        <div class="tool-batch-stack">
-          {#each toolBatches as batch, index (batch.id)}
-            <article class="tool-batch">
-              <header class="tool-batch-header">
-                <strong>Batch {toolBatches.length - index}</strong>
-                <span class="subdued">{batch.tools.length}</span>
-              </header>
+    {#if toolTraceExpanded && totalToolCount > 0}
+      <div class="tool-batch-stack">
+        {#each toolBatches as batch, index (batch.id)}
+          <article class="tool-batch">
+            <header class="tool-batch-header">
+              <strong>Batch {toolBatches.length - index}</strong>
+              <span class="subdued">{batch.tools.length}</span>
+            </header>
 
-              <div class="tool-inline-list">
-                {#each batch.tools as tool (tool.id)}
-                  <button
-                    class:error={tool.status === 'error'}
-                    class:running={tool.status === 'running'}
-                    class:success={tool.status === 'complete'}
-                    class="tool-inline-item"
-                    type="button"
-                    aria-expanded={!!expandedTraceToolMap[tool.id]}
-                    on:click={() => toggleTraceToolDetail(tool.id)}
-                  >
-                    <span class="tool-inline-main">
-                      <span class="tool-inline-icon icon-{resolveToolIcon(tool.toolName)}" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" width="14" height="14" focusable="false" aria-hidden="true">
-                          <path fill="currentColor" d={iconPath(resolveToolIcon(tool.toolName))}></path>
-                        </svg>
-                      </span>
-                      <span class="tool-inline-text">{summarizeToolLine(tool)}</span>
+            <div class="tool-inline-list">
+              {#each batch.tools as tool (tool.id)}
+                <button
+                  class:error={tool.status === 'error'}
+                  class:running={tool.status === 'running'}
+                  class:success={tool.status === 'complete'}
+                  class="tool-inline-item"
+                  type="button"
+                  aria-expanded={!!expandedTraceToolMap[tool.id]}
+                  on:click={() => toggleTraceToolDetail(tool.id)}
+                >
+                  <span class="tool-inline-main">
+                    <span
+                      class="tool-inline-icon icon-{resolveToolIcon(tool.toolName)}"
+                      aria-hidden="true"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="14"
+                        height="14"
+                        focusable="false"
+                        aria-hidden="true"
+                      >
+                        <path fill="currentColor" d={iconPath(resolveToolIcon(tool.toolName))}
+                        ></path>
+                      </svg>
                     </span>
-                    <span class="tool-inline-status">{describeToolState(tool.status)}</span>
-                  </button>
+                    <span class="tool-inline-text">{summarizeToolLine(tool)}</span>
+                  </span>
+                  <span class="tool-inline-status">{describeToolState(tool.status)}</span>
+                </button>
 
-                  {#if expandedTraceToolMap[tool.id]}
-                    <pre class="tool-inline-detail">{tool.detail || 'No detail returned.'}</pre>
-                  {/if}
-                {/each}
-              </div>
-            </article>
-          {/each}
-        </div>
-      {:else}
-        <p class="tool-trace-empty subdued">
-          {totalToolCount === 0 ? 'No tool activity yet.' : `${totalToolCount} tool event${totalToolCount === 1 ? '' : 's'}. Expand to inspect.`}
-        </p>
-      {/if}
-    </section>
+                {#if expandedTraceToolMap[tool.id]}
+                  <pre class="tool-inline-detail">{tool.detail || 'No detail returned.'}</pre>
+                {/if}
+              {/each}
+            </div>
+          </article>
+        {/each}
+      </div>
+    {:else}
+      <p class="tool-trace-empty subdued">
+        {totalToolCount === 0
+          ? 'No tool activity yet.'
+          : `${totalToolCount} tool event${totalToolCount === 1 ? '' : 's'}. Expand to inspect.`}
+      </p>
+    {/if}
+  </section>
   <div class="chat-log">
     {#if messages.length === 0}
       <article class="empty-state-card">
         <h3>No transcript yet</h3>
-        <p>Send the first prompt once a repository is selected. New prompts and agent output will appear here like a running CLI session.</p>
+        <p>
+          Send the first prompt once a repository is selected. New prompts and agent output will
+          appear here like a running CLI session.
+        </p>
       </article>
     {/if}
 
@@ -820,13 +879,22 @@
             </div>
             <div class="message-meta-actions">
               <span class="message-status">hidden</span>
-              <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Show</button>
+              <button
+                class="ghost-button compact message-action"
+                type="button"
+                on:click={() => toggleDisplayEntryHidden(entry)}>Show</button
+              >
             </div>
           </header>
           <p class="subdued">Entry hidden.</p>
         </article>
       {:else if entry.kind === 'chat'}
-        <article class:assistant={entry.message.role === 'assistant'} class:system={entry.message.role === 'system'} class:user={entry.message.role === 'user'} class="message-card">
+        <article
+          class:assistant={entry.message.role === 'assistant'}
+          class:system={entry.message.role === 'system'}
+          class:user={entry.message.role === 'user'}
+          class="message-card"
+        >
           <header>
             <div class="message-heading">
               <span class="message-prompt">{describeMessagePrompt(entry.message)}</span>
@@ -834,11 +902,23 @@
             </div>
             <div class="message-meta-actions">
               <span class="message-status">{describeMessageStatus(entry.message)}</span>
-              <button class="ghost-button compact message-action" type="button" on:click={() => copyDisplayEntryText(entry)}>{copiedEntryId === displayEntryId(entry) ? 'Copied' : 'Copy'}</button>
-              <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button>
+              <button
+                class="ghost-button compact message-action"
+                type="button"
+                on:click={() => copyDisplayEntryText(entry)}
+                >{copiedEntryId === displayEntryId(entry) ? 'Copied' : 'Copy'}</button
+              >
+              <button
+                class="ghost-button compact message-action"
+                type="button"
+                on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button
+              >
             </div>
           </header>
-          <div class="markdown-body">{@html renderMarkdown(entry.message.text || '_No text returned._')}</div>
+          <div class="markdown-body">
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            {@html renderMarkdown(entry.message.text || '_No text returned._')}
+          </div>
         </article>
       {:else}
         <article class="message-card assistant tool-summary-card">
@@ -849,8 +929,17 @@
             </div>
             <div class="message-meta-actions">
               <span class="message-status">{entry.statusLabel}</span>
-              <button class="ghost-button compact message-action" type="button" on:click={() => copyDisplayEntryText(entry)}>{copiedEntryId === displayEntryId(entry) ? 'Copied' : 'Copy'}</button>
-              <button class="ghost-button compact message-action" type="button" on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button>
+              <button
+                class="ghost-button compact message-action"
+                type="button"
+                on:click={() => copyDisplayEntryText(entry)}
+                >{copiedEntryId === displayEntryId(entry) ? 'Copied' : 'Copy'}</button
+              >
+              <button
+                class="ghost-button compact message-action"
+                type="button"
+                on:click={() => toggleDisplayEntryHidden(entry)}>Hide</button
+              >
             </div>
           </header>
 
@@ -863,7 +952,13 @@
                 aria-expanded={!!expandedMessageToolMap[`${entry.id}::${toolCall.id}`]}
                 on:click={() => toggleMessageToolDetail(entry.id, toolCall.id)}
               >
-                <svg viewBox="0 0 24 24" width="14" height="14" focusable="false" aria-hidden="true">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="14"
+                  height="14"
+                  focusable="false"
+                  aria-hidden="true"
+                >
                   <path fill="currentColor" d={iconPath(resolveToolIcon(toolCall.toolName))}></path>
                 </svg>
               </button>
@@ -879,11 +974,7 @@
       {/if}
     {/each}
     {#if interactivePrompt}
-      <InteractiveCard
-        prompt={interactivePrompt}
-        {onSubmit}
-        {onDismiss}
-      />
+      <InteractiveCard prompt={interactivePrompt} {onSubmit} {onDismiss} />
     {/if}
     <div class="chat-log-end" aria-hidden="true" bind:this={logEndAnchor}></div>
   </div>
@@ -892,13 +983,20 @@
     {#if showComposerMeta}
       <div class="composer-session-meta">
         <div class="composer-status-row">
-          <span class:ready={statusTone === 'ready'} class:error={statusTone === 'error'} class:running={statusTone === 'running'} class="live-dot"></span>
+          <span
+            class:ready={statusTone === 'ready'}
+            class:error={statusTone === 'error'}
+            class:running={statusTone === 'running'}
+            class="live-dot"
+          ></span>
           <strong class="composer-status-title">{statusTitle}</strong>
           <div class="composer-status-spacer"></div>
           <div class="usage-rail">
             <span class="usage-chip">↑ {formatCompactTokenCount(usage.inputTokens)}</span>
             <span class="usage-chip">↓ {formatCompactTokenCount(usage.outputTokens)}</span>
-            <span class="usage-chip usage-context" title={formatContextChipTitle(usage)}>{formatContextChip(usage)}</span>
+            <span class="usage-chip usage-context" title={formatContextChipTitle(usage)}
+              >{formatContextChip(usage)}</span
+            >
             <span class="usage-chip usage-cost">{formatUsageCost(usage.totalCost)}</span>
           </div>
           {#if canAbort}
@@ -922,8 +1020,7 @@
         on:focus={handleComposerFocus}
         on:blur={handleComposerBlur}
         on:keyup={handleComposerCursorActivity}
-        on:keydown={handleComposerKeydown}
-      ></textarea>
+        on:keydown={handleComposerKeydown}></textarea>
     </label>
     {#if slashCommandSuggestions.length > 0}
       <div class="composer-suggestion-list" role="listbox" aria-label="Slash command suggestions">
@@ -946,11 +1043,21 @@
 
     <div class="composer-footer">
       <div class="composer-actions">
-        <button class="secondary-button compact new-button" type="button" on:click={() => dispatch('newSession')} disabled={runtimePhase !== 'idle'}>
+        <button
+          class="secondary-button compact new-button"
+          type="button"
+          on:click={() => dispatch('newSession')}
+          disabled={runtimePhase !== 'idle'}
+        >
           NEW
         </button>
         <div class="cmd-split" role="group" aria-label="Command palette actions">
-          <button class="secondary-button compact cmd-button" type="button" on:click={() => dispatch('openCommands')} disabled={runtimePhase !== 'idle'}>
+          <button
+            class="secondary-button compact cmd-button"
+            type="button"
+            on:click={() => dispatch('openCommands')}
+            disabled={runtimePhase !== 'idle'}
+          >
             CMD
           </button>
           <button

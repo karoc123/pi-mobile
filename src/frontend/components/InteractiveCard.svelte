@@ -1,25 +1,29 @@
 <script lang="ts">
-  import type { InteractivePrompt, InteractiveAnswer } from '../../../src/shared/contracts.js';
+  import type { InteractivePrompt } from '../../../src/shared/contracts.js';
 
-  let { prompt, onSubmit, onDismiss }: {
+  const {
+    prompt,
+    onSubmit,
+    onDismiss,
+  }: {
     prompt: InteractivePrompt;
     onSubmit: (formattedText: string) => void;
     onDismiss: () => void;
   } = $props();
 
-  let answers: Record<string, string | string[]> = $state({});
-  let freeTextValues: Record<string, string> = $state({});
-  let showFreeText: Record<string, boolean> = $state({});
+  const answers: Record<string, string | string[]> = $state({});
+  const freeTextValues: Record<string, string> = $state({});
+  const showFreeText: Record<string, boolean> = $state({});
   let submitted = $state(false);
 
-  let canSubmit = $derived(
+  const canSubmit = $derived(
     !submitted &&
-    prompt.questions.every((q) => {
-      const val = answers[q.id];
-      if (val === undefined) return false;
-      if (Array.isArray(val)) return val.length > 0;
-      return typeof val === 'string' && val.trim().length > 0;
-    }),
+      prompt.questions.every((q) => {
+        const val = answers[q.id];
+        if (val === undefined) return false;
+        if (Array.isArray(val)) return val.length > 0;
+        return typeof val === 'string' && val.trim().length > 0;
+      }),
   );
 
   function formatValue(value: string | string[]): string {
@@ -31,7 +35,9 @@
     if (submitted) return;
 
     if (multiple) {
-      const current: string[] = Array.isArray(answers[questionId]) ? (answers[questionId] as string[]) : [];
+      const current: string[] = Array.isArray(answers[questionId])
+        ? (answers[questionId] as string[])
+        : [];
       const next = current.includes(option)
         ? current.filter((o) => o !== option)
         : [...current, option];
@@ -44,7 +50,9 @@
 
   function isSelected(questionId: string, option: string, multiple?: boolean) {
     if (multiple) {
-      const current: string[] = Array.isArray(answers[questionId]) ? (answers[questionId] as string[]) : [];
+      const current: string[] = Array.isArray(answers[questionId])
+        ? (answers[questionId] as string[])
+        : [];
       return current.includes(option);
     }
     return !showFreeText[questionId] && answers[questionId] === option;
@@ -244,7 +252,10 @@
     background: var(--terminal-shell);
     color: var(--terminal-ink);
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    transition:
+      background 0.15s,
+      border-color 0.15s,
+      color 0.15s;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     user-select: none;

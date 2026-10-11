@@ -1,11 +1,20 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, type ComponentType } from 'svelte';
 
   import type { FileEntry } from '../../../src/shared/contracts.js';
 
-  type ActionMode = 'menu' | 'create-file' | 'create-directory' | 'duplicate-file' | 'rename-file' | 'move-file' | 'delete-file' | 'upload-file' | 'download-file';
+  type ActionMode =
+    | 'menu'
+    | 'create-file'
+    | 'create-directory'
+    | 'duplicate-file'
+    | 'rename-file'
+    | 'move-file'
+    | 'delete-file'
+    | 'upload-file'
+    | 'download-file';
 
-  let codeEditorComponent: any = null;
+  let codeEditorComponent: ComponentType | null = null;
   let codeEditorPromise: Promise<void> | null = null;
   let codeEditorError = '';
 
@@ -114,7 +123,10 @@
       newDirectoryName = 'new-folder';
     }
 
-    if (selectedFilePath && (mode === 'duplicate-file' || mode === 'rename-file' || mode === 'move-file')) {
+    if (
+      selectedFilePath &&
+      (mode === 'duplicate-file' || mode === 'rename-file' || mode === 'move-file')
+    ) {
       if (mode === 'duplicate-file') {
         targetPath = withCopySuffix(selectedFilePath);
       } else {
@@ -145,8 +157,14 @@
       return directoryName.length > 0 && nextPath.length > 0 && nextPath !== '.';
     }
 
-    if (actionMode === 'duplicate-file' || actionMode === 'rename-file' || actionMode === 'move-file') {
-      return selectedFilePath.length > 0 && targetPath.trim().length > 0 && targetPath.trim() !== '.';
+    if (
+      actionMode === 'duplicate-file' ||
+      actionMode === 'rename-file' ||
+      actionMode === 'move-file'
+    ) {
+      return (
+        selectedFilePath.length > 0 && targetPath.trim().length > 0 && targetPath.trim() !== '.'
+      );
     }
 
     if (actionMode === 'delete-file') {
@@ -340,7 +358,15 @@
 
   {#if actionsOpen}
     <div class="overlay" role="presentation" on:click={closeActions}>
-      <div class="sheet-card editor-action-sheet" role="dialog" aria-modal="true" aria-label="Editor actions" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+      <div
+        class="sheet-card editor-action-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Editor actions"
+        tabindex="-1"
+        on:click|stopPropagation
+        on:keydown|stopPropagation
+      >
         <div class="editor-actions-panel-header">
           <div>
             <p class="eyebrow">Editor actions</p>
@@ -367,58 +393,151 @@
 
         {#if actionMode === 'menu'}
           <div class="editor-action-menu">
-            <button class="secondary-button" type="button" on:click={() => selectAction('create-file')}>New file</button>
-            <button class="secondary-button" type="button" on:click={() => selectAction('create-directory')}>New folder</button>
-            <button class="secondary-button" type="button" on:click={() => selectAction('upload-file')}>Upload file</button>
+            <button
+              class="secondary-button"
+              type="button"
+              on:click={() => selectAction('create-file')}>New file</button
+            >
+            <button
+              class="secondary-button"
+              type="button"
+              on:click={() => selectAction('create-directory')}>New folder</button
+            >
+            <button
+              class="secondary-button"
+              type="button"
+              on:click={() => selectAction('upload-file')}>Upload file</button
+            >
 
             {#if selectedFilePath}
-              <button class="secondary-button" type="button" on:click={() => selectAction('download-file')}>Download file</button>
-              <button class="secondary-button" type="button" on:click={() => selectAction('duplicate-file')}>Duplicate file</button>
-              <button class="secondary-button" type="button" on:click={() => selectAction('rename-file')}>Rename file</button>
-              <button class="secondary-button" type="button" on:click={() => selectAction('move-file')}>Move file</button>
-              <button class="danger-button" type="button" on:click={() => selectAction('delete-file')}>Delete file</button>
+              <button
+                class="secondary-button"
+                type="button"
+                on:click={() => selectAction('download-file')}>Download file</button
+              >
+              <button
+                class="secondary-button"
+                type="button"
+                on:click={() => selectAction('duplicate-file')}>Duplicate file</button
+              >
+              <button
+                class="secondary-button"
+                type="button"
+                on:click={() => selectAction('rename-file')}>Rename file</button
+              >
+              <button
+                class="secondary-button"
+                type="button"
+                on:click={() => selectAction('move-file')}>Move file</button
+              >
+              <button
+                class="danger-button"
+                type="button"
+                on:click={() => selectAction('delete-file')}>Delete file</button
+              >
             {:else}
-              <p class="empty-state small">Open a file to unlock download, duplicate, rename, move and delete actions.</p>
+              <p class="empty-state small">
+                Open a file to unlock download, duplicate, rename, move and delete actions.
+              </p>
             {/if}
           </div>
         {:else}
           <form class="editor-actions-form" on:submit|preventDefault={submitAction}>
             {#if actionMode === 'create-file'}
               <label class="field-label" for="new-file-name">File path</label>
-              <input id="new-file-name" class="text-input" bind:value={newFileName} placeholder="notes/new-file.md" autocomplete="off" />
+              <input
+                id="new-file-name"
+                class="text-input"
+                bind:value={newFileName}
+                placeholder="notes/new-file.md"
+                autocomplete="off"
+              />
 
               <label class="field-label" for="new-file-content">Initial content</label>
-              <textarea id="new-file-content" class="text-input editor-actions-textarea" bind:value={newFileContent} placeholder="Optional starter content"></textarea>
+              <textarea
+                id="new-file-content"
+                class="text-input editor-actions-textarea"
+                bind:value={newFileContent}
+                placeholder="Optional starter content"></textarea>
 
-              <p class="empty-state small">Creates the file inside {currentPath === '.' ? 'the repo root' : currentPath}.</p>
+              <p class="empty-state small">
+                Creates the file inside {currentPath === '.' ? 'the repo root' : currentPath}.
+              </p>
             {:else if actionMode === 'create-directory'}
               <label class="field-label" for="new-folder-name">Folder path</label>
-              <input id="new-folder-name" class="text-input" bind:value={newDirectoryName} placeholder="notes/new-folder" autocomplete="off" />
+              <input
+                id="new-folder-name"
+                class="text-input"
+                bind:value={newDirectoryName}
+                placeholder="notes/new-folder"
+                autocomplete="off"
+              />
 
-              <p class="empty-state small">Creates the folder inside {currentPath === '.' ? 'the repo root' : currentPath}.</p>
+              <p class="empty-state small">
+                Creates the folder inside {currentPath === '.' ? 'the repo root' : currentPath}.
+              </p>
             {:else if actionMode === 'duplicate-file' || actionMode === 'rename-file' || actionMode === 'move-file'}
               <p class="empty-state small">Current file: <strong>{selectedFilePath}</strong></p>
 
               <label class="field-label" for="target-path">Target path</label>
-              <input id="target-path" class="text-input" bind:value={targetPath} placeholder="src/new-name.ts" autocomplete="off" />
+              <input
+                id="target-path"
+                class="text-input"
+                bind:value={targetPath}
+                placeholder="src/new-name.ts"
+                autocomplete="off"
+              />
             {:else if actionMode === 'upload-file'}
               <label class="field-label" for="upload-file-name">Upload as</label>
-              <input id="upload-file-name" class="text-input" bind:value={uploadingFileName} placeholder="target/file.ext" autocomplete="off" />
-              <p class="empty-state small">Select a file from your device to upload into {currentPath === '.' ? 'the repo root' : currentPath}.</p>
+              <input
+                id="upload-file-name"
+                class="text-input"
+                bind:value={uploadingFileName}
+                placeholder="target/file.ext"
+                autocomplete="off"
+              />
+              <p class="empty-state small">
+                Select a file from your device to upload into {currentPath === '.'
+                  ? 'the repo root'
+                  : currentPath}.
+              </p>
             {:else if actionMode === 'download-file'}
               <p class="empty-state small">
                 Download <strong>{selectedFilePath}</strong> to your device.
               </p>
             {:else}
               <p class="empty-state small">
-                The file <strong>{selectedFilePath}</strong> will be permanently deleted from the repository working tree.
+                The file <strong>{selectedFilePath}</strong> will be permanently deleted from the repository
+                working tree.
               </p>
             {/if}
 
             <div class="editor-actions-footer">
-              <button class="ghost-button" type="button" on:click={() => (actionMode = 'menu')}>Back</button>
-              <button class="primary-button" type="submit" disabled={!canSubmitAction() || creating || uploading}>
-                {creating || uploading ? 'Working...' : actionMode === 'create-file' ? 'Create file' : actionMode === 'create-directory' ? 'Create folder' : actionMode === 'duplicate-file' ? 'Duplicate file' : actionMode === 'rename-file' ? 'Rename file' : actionMode === 'move-file' ? 'Move file' : actionMode === 'upload-file' ? 'Select file...' : actionMode === 'download-file' ? 'Download file' : 'Delete file'}
+              <button class="ghost-button" type="button" on:click={() => (actionMode = 'menu')}
+                >Back</button
+              >
+              <button
+                class="primary-button"
+                type="submit"
+                disabled={!canSubmitAction() || creating || uploading}
+              >
+                {creating || uploading
+                  ? 'Working...'
+                  : actionMode === 'create-file'
+                    ? 'Create file'
+                    : actionMode === 'create-directory'
+                      ? 'Create folder'
+                      : actionMode === 'duplicate-file'
+                        ? 'Duplicate file'
+                        : actionMode === 'rename-file'
+                          ? 'Rename file'
+                          : actionMode === 'move-file'
+                            ? 'Move file'
+                            : actionMode === 'upload-file'
+                              ? 'Select file...'
+                              : actionMode === 'download-file'
+                                ? 'Download file'
+                                : 'Delete file'}
               </button>
             </div>
           </form>
@@ -443,7 +562,11 @@
             </button>
           {/if}
           {#if currentPath !== '.'}
-            <button class="ghost-button" type="button" on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>↑</button>
+            <button
+              class="ghost-button"
+              type="button"
+              on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>↑</button
+            >
           {/if}
         </div>
       </div>
@@ -456,12 +579,15 @@
         <p class="empty-state small">No files in this directory.</p>
       {:else}
         <div class="browser-list">
-          {#each entries as entry}
+          {#each entries as entry (entry.relativePath)}
             <button
               class:selected={entry.kind === 'file' && entry.relativePath === selectedFilePath}
               class="browser-entry"
               type="button"
-              on:click={() => entry.kind === 'directory' ? dispatch('browse', { path: entry.relativePath }) : dispatch('openFile', { path: entry.relativePath })}
+              on:click={() =>
+                entry.kind === 'directory'
+                  ? dispatch('browse', { path: entry.relativePath })
+                  : dispatch('openFile', { path: entry.relativePath })}
             >
               <strong>{entry.name}</strong>
               <span>{entry.kind === 'directory' ? 'Open folder' : entry.relativePath}</span>
@@ -486,7 +612,13 @@
           {/if}
         {:else}
           {#if codeEditorComponent}
-            <svelte:component this={codeEditorComponent} value={content} filePath={selectedFilePath} on:change={(event) => dispatch('change', { content: event.detail.value })} />
+            <svelte:component
+              this={codeEditorComponent}
+              value={content}
+              filePath={selectedFilePath}
+              on:change={(event: CustomEvent<{ value: string }>) =>
+                dispatch('change', { content: event.detail.value })}
+            />
           {:else if codeEditorPromise}
             <div class="empty-state-card compact">
               <h3>Loading editor engine...</h3>
@@ -507,10 +639,20 @@
       {/if}
 
       <div class="editor-panel-footer">
-        <button class="secondary-button" type="button" on:click={openActions} aria-expanded={actionsOpen}>
+        <button
+          class="secondary-button"
+          type="button"
+          on:click={openActions}
+          aria-expanded={actionsOpen}
+        >
           Actions
         </button>
-        <button class="primary-button" type="button" on:click={() => dispatch('save', { content })} disabled={!selectedFilePath || !dirty || saving}>
+        <button
+          class="primary-button"
+          type="button"
+          on:click={() => dispatch('save', { content })}
+          disabled={!selectedFilePath || !dirty || saving}
+        >
           {saving ? 'Saving...' : dirty ? 'Save changes' : 'Saved'}
         </button>
       </div>

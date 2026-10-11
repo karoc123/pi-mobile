@@ -1,8 +1,13 @@
-import type { AgentSnapshot, ChatMessage, InteractivePrompt, ToolActivity, WebsocketEnvelope } from "../../shared/contracts.js";
+import type {
+  ChatMessage,
+  InteractivePrompt,
+  ToolActivity,
+  WebsocketEnvelope,
+} from '../../shared/contracts.js';
 
 type Broadcast = (event: WebsocketEnvelope) => void;
 
-type AgentStatusPayload = Extract<WebsocketEnvelope, { type: "agent_status" }> ["payload"];
+type AgentStatusPayload = Extract<WebsocketEnvelope, { type: 'agent_status' }>['payload'];
 
 export class PiAgentBroadcaster {
   constructor(private readonly broadcast: Broadcast) {}
@@ -13,14 +18,14 @@ export class PiAgentBroadcaster {
 
   chatMessageAdded(message: ChatMessage) {
     this.broadcast({
-      type: "chat_message_added",
+      type: 'chat_message_added',
       payload: { message },
     });
   }
 
-  chatMessageUpdated(messageId: string, text: string, status: ChatMessage["status"]) {
+  chatMessageUpdated(messageId: string, text: string, status: ChatMessage['status']) {
     this.broadcast({
-      type: "chat_message_updated",
+      type: 'chat_message_updated',
       payload: {
         messageId,
         text,
@@ -31,28 +36,28 @@ export class PiAgentBroadcaster {
 
   toolActivity(tool: ToolActivity) {
     this.broadcast({
-      type: "tool_activity",
+      type: 'tool_activity',
       payload: { tool },
     });
   }
 
   agentError(message: string) {
     this.broadcast({
-      type: "agent_error",
+      type: 'agent_error',
       payload: { message },
     });
   }
 
   interactivePrompt(prompt: InteractivePrompt) {
     this.broadcast({
-      type: "interactive_prompt",
+      type: 'interactive_prompt',
       payload: prompt,
     });
   }
 
   agentStatus(payload: AgentStatusPayload) {
     this.broadcast({
-      type: "agent_status",
+      type: 'agent_status',
       payload,
     });
   }

@@ -19,16 +19,16 @@
     "format": "node scripts/format.mjs",
     "format:all": "node scripts/format.mjs --all",
     "format:fix": "node scripts/format.mjs --write",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && svelte-check --tsconfig tsconfig.json",
     "check:deps": "node scripts/check-deps.mjs",
-    "check:architecture": "node scripts/check-architecture.mjs",
-    "check": "npm run typecheck && npm run lint && npm run format && npm run check:deps && npm run check:architecture && npm run test:guardrails",
+    "check": "npm run typecheck && npm run lint && npm run format && npm run check:deps && npm run test:guardrails",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "verify:container": "bash scripts/container-smoke.sh"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "1.1.0",
     "@earendil-works/pi-coding-agent": "1.1.0",
     "chokidar": "5.0.0",
     "cookie-parser": "1.4.7",
@@ -37,7 +37,6 @@
     "ws": "8.22.0"
   },
   "devDependencies": {
-    "@babel/parser": "8.0.7",
     "@codemirror/lang-javascript": "6.2.5",
     "@codemirror/lang-json": "6.0.2",
     "@codemirror/lang-markdown": "6.5.2",
@@ -57,6 +56,7 @@
     "diff2html": "3.4.56",
     "dompurify": "3.4.16",
     "eslint": "10.12.0",
+    "eslint-plugin-svelte": "3.23.1",
     "globals": "17.13.0",
     "jsdom": "30.1.2",
     "marked": "18.1.0",
@@ -64,8 +64,10 @@
     "prettier-plugin-svelte": "4.1.1",
     "supertest": "7.3.1",
     "svelte": "5.57.2",
+    "svelte-check": "4.7.6",
     "tsx": "4.23.15",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.1",
     "vite": "8.3.4",
     "vitest": "5.0.3"
   }

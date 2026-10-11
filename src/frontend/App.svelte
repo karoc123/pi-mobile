@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  /* eslint-disable svelte/infinite-reactive-loop */
+  import { onMount, type ComponentType } from 'svelte';
+  import { SvelteMap, SvelteURLSearchParams } from 'svelte/reactivity';
 
   import type {
     AgentCommandRequest,
@@ -8,7 +10,6 @@
     AgentSnapshot,
     AgentUsage,
     ChatMessage,
-    InteractivePrompt,
     ToolActivity,
     BackendHealthResponse,
     BackendResourceCheck,
@@ -33,7 +34,7 @@
     SessionResponse,
     WebsocketEnvelope,
     WorkspaceCloneResult,
-    WorkspaceEntry
+    WorkspaceEntry,
   } from '../shared/contracts.js';
   import AppMenu from './components/AppMenu.svelte';
   import BottomNav from './components/BottomNav.svelte';
@@ -67,7 +68,6 @@
   const maxVisibleLogEntries = 600;
   const maxToolBatchCount = 8;
   const maxToolsPerBatch = 24;
-  const maxLocalSystemMessages = 40;
 
   const emptyUsage: AgentUsage = {
     inputTokens: 0,
@@ -170,8 +170,8 @@
   let piAuthError = '';
   let lazyViewLoading: AsyncViewName | null = null;
   let lazyViewError = '';
-  let diffViewComponent: any = null;
-  let editorViewComponent: any = null;
+  let diffViewComponent: ComponentType | null = null;
+  let editorViewComponent: ComponentType | null = null;
   let diffViewPromise: Promise<void> | null = null;
   let editorViewPromise: Promise<void> | null = null;
   let theme: ThemeName = 'vscode-dark';
@@ -243,7 +243,9 @@
     const shouldPollAgentState =
       authenticated &&
       !!currentRepo &&
-      (socketStatus !== 'connected' || agentSnapshot.runtimePhase !== 'idle' || unresolvedUsageCost);
+      (socketStatus !== 'connected' ||
+        agentSnapshot.runtimePhase !== 'idle' ||
+        unresolvedUsageCost);
 
     if (shouldPollAgentState) {
       startAgentStatePolling();
@@ -286,7 +288,10 @@
       return;
     }
 
-    setTheme(window.matchMedia('(prefers-color-scheme: light)').matches ? 'vscode-light' : 'vscode-dark', false);
+    setTheme(
+      window.matchMedia('(prefers-color-scheme: light)').matches ? 'vscode-light' : 'vscode-dark',
+      false,
+    );
   }
 
   function setTheme(nextTheme: ThemeName, persist = true) {
@@ -379,7 +384,7 @@
     try {
       const session = await apiFetch<SessionResponse>('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password }),
       });
 
       authenticated = session.authenticated;
@@ -429,14 +434,18 @@
     }
   }
 
-  async function submitPiAuth(endpoint: 'login-token' | 'logout', body: Record<string, string>, successMessage: string) {
+  async function submitPiAuth(
+    endpoint: 'login-token' | 'logout',
+    body: Record<string, string>,
+    successMessage: string,
+  ) {
     piAuthSubmitting = true;
     piAuthError = '';
 
     try {
       await apiFetch(`/api/pi/auth/${endpoint}`, {
         method: 'POST',
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
 
       showBanner(successMessage, 'success');
@@ -450,8 +459,10 @@
     }
   }
 
-  const loginPiToken = (provider: string, token: string) => submitPiAuth('login-token', { provider, token }, `Pi token for ${provider} saved.`);
-  const logoutPiProvider = (provider: string) => submitPiAuth('logout', { provider }, `Pi auth for ${provider} removed.`);
+  const loginPiToken = (provider: string, token: string) =>
+    submitPiAuth('login-token', { provider, token }, `Pi token for ${provider} saved.`);
+  const logoutPiProvider = (provider: string) =>
+    submitPiAuth('logout', { provider }, `Pi auth for ${provider} removed.`);
 
   function connectSocket() {
     if (reconnectTimer !== null) {
@@ -626,7 +637,10 @@
 
     const updatedBatch: ToolTraceBatch = {
       ...activeBatch,
-      tools: [tool, ...activeBatch.tools.filter((entry) => entry.id !== tool.id)].slice(0, maxToolsPerBatch),
+      tools: [tool, ...activeBatch.tools.filter((entry) => entry.id !== tool.id)].slice(
+        0,
+        maxToolsPerBatch,
+      ),
     };
 
     toolTraceBatches = [updatedBatch, ...toolTraceBatches.slice(1)];
@@ -649,9 +663,7 @@
       // On reconnect, do not restore a prompt the user already dismissed.
       const serverPrompt = event.payload.interactivePrompt ?? null;
       const interactivePrompt =
-        serverPrompt && serverPrompt.promptId === dismissedPromptId
-          ? null
-          : serverPrompt;
+        serverPrompt && serverPrompt.promptId === dismissedPromptId ? null : serverPrompt;
 
       agentSnapshot = {
         ...event.payload,
@@ -689,7 +701,7 @@
     if (event.type === 'chat_message_added') {
       agentSnapshot = {
         ...agentSnapshot,
-        messages: [...agentSnapshot.messages, event.payload.message]
+        messages: [...agentSnapshot.messages, event.payload.message],
       };
 
       if (event.payload.message.role === 'user' || event.payload.message.role === 'assistant') {
@@ -705,8 +717,8 @@
         messages: agentSnapshot.messages.map((message) =>
           message.id === event.payload.messageId
             ? { ...message, text: event.payload.text, status: event.payload.status }
-            : message
-        )
+            : message,
+        ),
       };
       return;
     }
@@ -714,7 +726,10 @@
     if (event.type === 'tool_activity') {
       agentSnapshot = {
         ...agentSnapshot,
-        tools: [event.payload.tool, ...agentSnapshot.tools.filter((tool) => tool.id !== event.payload.tool.id)].slice(0, 12)
+        tools: [
+          event.payload.tool,
+          ...agentSnapshot.tools.filter((tool) => tool.id !== event.payload.tool.id),
+        ].slice(0, 12),
       };
       appendToolTrace(event.payload.tool);
       return;
@@ -749,7 +764,7 @@
       agentSnapshot = {
         ...emptyAgentSnapshot,
         repo: event.payload.repo,
-        isConfigured: true
+        isConfigured: true,
       };
       selectedDocument = null;
       draftContent = '';
@@ -769,7 +784,7 @@
     if (event.type === 'agent_error') {
       agentSnapshot = {
         ...agentSnapshot,
-        lastError: event.payload.message
+        lastError: event.payload.message,
       };
     }
   }
@@ -798,7 +813,7 @@
     try {
       await apiFetch('/api/workspaces/select', {
         method: 'POST',
-        body: JSON.stringify({ path })
+        body: JSON.stringify({ path }),
       });
       menuOpen = false;
       workspaceOpen = false;
@@ -814,7 +829,7 @@
     try {
       const response = await apiFetch<WorkspaceCloneResult>('/api/workspaces/clone', {
         method: 'POST',
-        body: JSON.stringify({ remoteUrl, destinationPath })
+        body: JSON.stringify({ remoteUrl, destinationPath }),
       });
 
       currentRepo = response.repo;
@@ -946,7 +961,9 @@
     fileLoading = true;
 
     try {
-      const response = await apiFetch<{ currentPath: string; entries: FileEntry[] }>(`/api/files/browse?path=${encodeURIComponent(path)}`);
+      const response = await apiFetch<{ currentPath: string; entries: FileEntry[] }>(
+        `/api/files/browse?path=${encodeURIComponent(path)}`,
+      );
       filePath = response.currentPath;
       fileEntries = response.entries;
     } catch (error) {
@@ -958,10 +975,16 @@
 
   async function openFile(path: string) {
     try {
-      const fileDoc = await apiFetch<FileDocument>(`/api/files/content?path=${encodeURIComponent(path)}`);
+      const fileDoc = await apiFetch<FileDocument>(
+        `/api/files/content?path=${encodeURIComponent(path)}`,
+      );
 
       if (fileDoc.kind === 'binary' && fileDoc.binaryContentBase64) {
-        saveBase64File(fileDoc.binaryContentBase64, fileDoc.mimeType, fileDoc.path.split('/').pop() || 'download');
+        saveBase64File(
+          fileDoc.binaryContentBase64,
+          fileDoc.mimeType,
+          fileDoc.path.split('/').pop() || 'download',
+        );
         showBanner('Binary file downloaded.', 'success');
         return;
       }
@@ -985,7 +1008,7 @@
     try {
       await apiFetch('/api/files/write', {
         method: 'POST',
-        body: JSON.stringify({ path: selectedDocument.path, content })
+        body: JSON.stringify({ path: selectedDocument.path, content }),
       });
       selectedDocument = { ...selectedDocument, content };
       draftContent = content;
@@ -999,13 +1022,18 @@
     }
   }
 
-  async function runFileAction(action: string, body: Record<string, string>, successMessage: string, openResult: boolean) {
+  async function runFileAction(
+    action: string,
+    body: Record<string, string>,
+    successMessage: string,
+    openResult: boolean,
+  ) {
     creatingFile = true;
 
     try {
       const response = await apiFetch<FileCreateResult | FileMoveResult>(`/api/files/${action}`, {
         method: 'POST',
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
       });
       const resultPath = 'toPath' in response ? response.toPath : response.path;
       await loadFiles(parentDirectoryFor(resultPath));
@@ -1024,16 +1052,24 @@
     }
   }
 
-  const createFile = (path: string, content: string) => runFileAction('create', { path, content }, 'File created.', true);
-  const createDirectory = (path: string) => runFileAction('create-directory', { path }, 'Folder created.', false);
-  const duplicateFile = (sourcePath: string, targetPath: string) => runFileAction('duplicate', { sourcePath, targetPath }, 'File duplicated.', true);
-  const renameFile = (fromPath: string, toPath: string) => runFileAction('rename', { fromPath, toPath }, 'File renamed.', true);
-  const moveFile = (fromPath: string, toPath: string) => runFileAction('move', { fromPath, toPath }, 'File moved.', true);
-  const uploadFile = (path: string, contentBase64: string) => runFileAction('upload', { path, contentBase64 }, 'File uploaded.', true);
+  const createFile = (path: string, content: string) =>
+    runFileAction('create', { path, content }, 'File created.', true);
+  const createDirectory = (path: string) =>
+    runFileAction('create-directory', { path }, 'Folder created.', false);
+  const duplicateFile = (sourcePath: string, targetPath: string) =>
+    runFileAction('duplicate', { sourcePath, targetPath }, 'File duplicated.', true);
+  const renameFile = (fromPath: string, toPath: string) =>
+    runFileAction('rename', { fromPath, toPath }, 'File renamed.', true);
+  const moveFile = (fromPath: string, toPath: string) =>
+    runFileAction('move', { fromPath, toPath }, 'File moved.', true);
+  const uploadFile = (path: string, contentBase64: string) =>
+    runFileAction('upload', { path, contentBase64 }, 'File uploaded.', true);
 
   async function downloadFile(filePathToDownload: string) {
     try {
-      const info = await apiFetch<FileDownloadInfo>(`/api/files/download?path=${encodeURIComponent(filePathToDownload)}`);
+      const info = await apiFetch<FileDownloadInfo>(
+        `/api/files/download?path=${encodeURIComponent(filePathToDownload)}`,
+      );
 
       if (!info.contentBase64) {
         showBanner('Download failed: no content received.', 'error');
@@ -1079,7 +1115,7 @@
     try {
       await apiFetch('/api/agent/prompt', {
         method: 'POST',
-        body: JSON.stringify({ prompt: trimmed })
+        body: JSON.stringify({ prompt: trimmed }),
       });
     } catch (error) {
       seedComposer(trimmed);
@@ -1101,7 +1137,7 @@
     try {
       const response = await apiFetch<AgentCommandResponse>('/api/agent/command', {
         method: 'POST',
-        body: JSON.stringify(request)
+        body: JSON.stringify(request),
       });
 
       await loadAgentState();
@@ -1157,7 +1193,9 @@
   }
 
   async function copyLastAssistantReply() {
-    const lastAssistantReply = [...agentSnapshot.messages].reverse().find((message) => message.role === 'assistant' && message.text.trim().length > 0);
+    const lastAssistantReply = [...agentSnapshot.messages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && message.text.trim().length > 0);
 
     if (!lastAssistantReply) {
       showBanner('No assistant reply to copy yet.', 'info');
@@ -1177,7 +1215,7 @@
     }
   }
 
-  function requestCommit(_event?: CustomEvent<void>) {
+  function requestCommit() {
     if (committing) {
       return;
     }
@@ -1202,7 +1240,7 @@
     endpoint: string,
     body: Record<string, string> | null,
     setBusy: (busy: boolean) => void,
-    successMessage: (response: T) => string
+    successMessage: (response: T) => string,
   ) {
     if (!currentRepo) {
       showBanner('Select a repository first.', 'error');
@@ -1214,7 +1252,7 @@
     try {
       const response = await apiFetch<T>(`/api/git/${endpoint}`, {
         method: 'POST',
-        ...(body ? { body: JSON.stringify(body) } : {})
+        ...(body ? { body: JSON.stringify(body) } : {}),
       });
       await loadDiff();
       showBanner(successMessage(response), 'success');
@@ -1228,19 +1266,69 @@
   }
 
   const commitChanges = (message: string) =>
-    runGitAction<GitCommitResult>('commit', { message }, (busy) => (committing = busy), ({ commitSha }) => `Committed ${commitSha.slice(0, 7)}.`);
-  const pullChanges = () => runGitAction<GitSyncResult>('pull', null, (busy) => (pulling = busy), (response) => response.summary || 'Pull completed.');
-  const pushChanges = () => runGitAction<GitSyncResult>('push', null, (busy) => (pushing = busy), (response) => response.summary || 'Push completed.');
+    runGitAction<GitCommitResult>(
+      'commit',
+      { message },
+      (busy) => (committing = busy),
+      ({ commitSha }) => `Committed ${commitSha.slice(0, 7)}.`,
+    );
+  const pullChanges = () =>
+    runGitAction<GitSyncResult>(
+      'pull',
+      null,
+      (busy) => (pulling = busy),
+      (response) => response.summary || 'Pull completed.',
+    );
+  const pushChanges = () =>
+    runGitAction<GitSyncResult>(
+      'push',
+      null,
+      (busy) => (pushing = busy),
+      (response) => response.summary || 'Push completed.',
+    );
   const stageHunk = (diff: string, hunkId: string) =>
-    runGitAction('stage-hunk', { diff }, (busy) => (stagingHunkId = busy ? hunkId : null), () => 'Hunk staged.');
+    runGitAction(
+      'stage-hunk',
+      { diff },
+      (busy) => (stagingHunkId = busy ? hunkId : null),
+      () => 'Hunk staged.',
+    );
   const unstageHunk = (diff: string, hunkId: string) =>
-    runGitAction('unstage-hunk', { diff }, (busy) => (unstagingHunkId = busy ? hunkId : null), () => 'Hunk unstaged.');
-  const stageAllChanges = () => runGitAction('stage-all', null, (busy) => (stagingAll = busy), () => 'All changes staged.');
-  const unstageAllChanges = () => runGitAction('unstage-all', null, (busy) => (unstagingAll = busy), () => 'All changes unstaged.');
-  const switchBranch = (name: string) => runGitAction('branch/switch', { name }, (busy) => (switchingBranch = busy), () => `Switched to ${name}.`);
+    runGitAction(
+      'unstage-hunk',
+      { diff },
+      (busy) => (unstagingHunkId = busy ? hunkId : null),
+      () => 'Hunk unstaged.',
+    );
+  const stageAllChanges = () =>
+    runGitAction(
+      'stage-all',
+      null,
+      (busy) => (stagingAll = busy),
+      () => 'All changes staged.',
+    );
+  const unstageAllChanges = () =>
+    runGitAction(
+      'unstage-all',
+      null,
+      (busy) => (unstagingAll = busy),
+      () => 'All changes unstaged.',
+    );
+  const switchBranch = (name: string) =>
+    runGitAction(
+      'branch/switch',
+      { name },
+      (busy) => (switchingBranch = busy),
+      () => `Switched to ${name}.`,
+    );
 
   async function revertHunk(diff: string, hunkId: string) {
-    const reverted = await runGitAction('revert-hunk', { diff }, (busy) => (revertingHunkId = busy ? hunkId : null), () => 'Hunk reverted.');
+    const reverted = await runGitAction(
+      'revert-hunk',
+      { diff },
+      (busy) => (revertingHunkId = busy ? hunkId : null),
+      () => 'Hunk reverted.',
+    );
 
     if (reverted && selectedDocument && !editorDirty) {
       await openFile(selectedDocument.path);
@@ -1248,7 +1336,14 @@
   }
 
   async function createBranch(name: string) {
-    if (await runGitAction('branch/create', { name }, (busy) => (creatingBranch = busy), () => `Created branch ${name}.`)) {
+    if (
+      await runGitAction(
+        'branch/create',
+        { name },
+        (busy) => (creatingBranch = busy),
+        () => `Created branch ${name}.`,
+      )
+    ) {
       await loadBranches();
     }
   }
@@ -1279,7 +1374,7 @@
     }
 
     try {
-      const query = new URLSearchParams();
+      const query = new SvelteURLSearchParams();
       query.set('limit', '200');
 
       if (!refresh && logEntries.length > 0) {
@@ -1337,7 +1432,7 @@
 
     try {
       await apiFetch('/api/logs', {
-        method: 'DELETE'
+        method: 'DELETE',
       });
       logEntries = [];
       logKnownSources = [];
@@ -1397,7 +1492,7 @@
       return;
     }
 
-    const query = new URLSearchParams();
+    const query = new SvelteURLSearchParams();
 
     if (logLevelFilter) {
       query.set('level', logLevelFilter);
@@ -1615,7 +1710,9 @@
 
   function saveBase64File(contentBase64: string, mimeType: string | null, fileName: string) {
     const bytes = Uint8Array.from(atob(contentBase64), (character) => character.charCodeAt(0));
-    const blobUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType || 'application/octet-stream' }));
+    const blobUrl = URL.createObjectURL(
+      new Blob([bytes], { type: mimeType || 'application/octet-stream' }),
+    );
     const anchor = document.createElement('a');
     anchor.href = blobUrl;
     anchor.download = fileName;
@@ -1634,7 +1731,7 @@
   }
 
   function mergeLogEntries(current: BackendLogEntry[], incoming: BackendLogEntry[]) {
-    const bySeq = new Map<number, BackendLogEntry>();
+    const bySeq = new SvelteMap<number, BackendLogEntry>();
 
     for (const entry of current) {
       bySeq.set(entry.seq, entry);
@@ -1648,30 +1745,9 @@
   }
 
   function collectLogSources(entries: BackendLogEntry[]) {
-    return [...new Set(entries.map((entry) => entry.source).filter((source) => source.length > 0))].sort((left, right) => left.localeCompare(right));
-  }
-
-  function createSystemMessageId() {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID();
-    }
-
-    return `system-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
-
-  function appendLocalSystemMessage(text: string) {
-    const systemMessage: ChatMessage = {
-      id: createSystemMessageId(),
-      role: 'system',
-      text,
-      status: 'complete',
-      timestamp: new Date().toISOString(),
-    };
-
-    localSystemMessages = [
-      ...localSystemMessages,
-      systemMessage,
-    ].slice(-maxLocalSystemMessages);
+    return [
+      ...new Set(entries.map((entry) => entry.source).filter((source) => source.length > 0)),
+    ].sort((left, right) => left.localeCompare(right));
   }
 
   function coalesceUsageCost(nextUsage: AgentUsage, previousUsage: AgentUsage) {
@@ -1714,7 +1790,11 @@
     </div>
   </main>
 {:else if !authenticated}
-  <LoginScreen pending={loginPending} error={loginError} on:submit={(event) => login(event.detail.password)} />
+  <LoginScreen
+    pending={loginPending}
+    error={loginError}
+    on:submit={(event) => login(event.detail.password)}
+  />
 {:else}
   <main class="app-shell">
     <div class="app-chrome-actions">
@@ -1744,17 +1824,23 @@
     </div>
 
     {#if bannerMessage}
-      <div class:success={bannerTone === 'success'} class:error={bannerTone === 'error'} class="notice floating">{bannerMessage}</div>
+      <div
+        class:success={bannerTone === 'success'}
+        class:error={bannerTone === 'error'}
+        class="notice floating"
+      >
+        {bannerMessage}
+      </div>
     {/if}
 
     {#if systemStatusVisible}
       <SystemStatusBar
         authStatus="authenticated"
-        socketStatus={socketStatus}
+        {socketStatus}
         reconnectAttempt={socketReconnectAttempt}
-        backendStatus={backendStatus}
-        backendLastSeen={backendLastSeen}
-        backendUptimeSeconds={backendUptimeSeconds}
+        {backendStatus}
+        {backendLastSeen}
+        {backendUptimeSeconds}
         logStreamLive={view === 'logs' && logLive && logStreamConnected}
         resourcesAccessible={backendResourcesAccessible}
         resourceChecks={backendResourceChecks}
@@ -1816,29 +1902,34 @@
             files={diffFiles}
             loading={diffLoading}
             syncStatus={diffSyncStatus}
-            revertingHunkId={revertingHunkId}
-            stagingHunkId={stagingHunkId}
-            unstagingHunkId={unstagingHunkId}
-            stagingAll={stagingAll}
-            unstagingAll={unstagingAll}
-            committing={committing}
-            pulling={pulling}
-            pushing={pushing}
+            {revertingHunkId}
+            {stagingHunkId}
+            {unstagingHunkId}
+            {stagingAll}
+            {unstagingAll}
+            {committing}
+            {pulling}
+            {pushing}
             on:commit={requestCommit}
             on:pull={() => void pullChanges()}
             on:push={() => void pushChanges()}
             on:stageAll={() => void stageAllChanges()}
             on:unstageAll={() => void unstageAllChanges()}
-            on:stageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) => stageHunk(event.detail.diff, event.detail.hunkId)}
-            on:unstageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) => unstageHunk(event.detail.diff, event.detail.hunkId)}
-            on:revert={(event: CustomEvent<{ diff: string; hunkId: string }>) => revertHunk(event.detail.diff, event.detail.hunkId)}
+            on:stageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) =>
+              stageHunk(event.detail.diff, event.detail.hunkId)}
+            on:unstageHunk={(event: CustomEvent<{ diff: string; hunkId: string }>) =>
+              unstageHunk(event.detail.diff, event.detail.hunkId)}
+            on:revert={(event: CustomEvent<{ diff: string; hunkId: string }>) =>
+              revertHunk(event.detail.diff, event.detail.hunkId)}
             branches={branchList}
             branchesLoading={branchListLoading}
-            switchingBranch={switchingBranch}
-            creatingBranch={creatingBranch}
+            {switchingBranch}
+            {creatingBranch}
             on:loadBranches={loadBranches}
-            on:branchSwitch={(event: CustomEvent<{ name: string }>) => switchBranch(event.detail.name)}
-            on:branchCreate={(event: CustomEvent<{ name: string }>) => createBranch(event.detail.name)}
+            on:branchSwitch={(event: CustomEvent<{ name: string }>) =>
+              switchBranch(event.detail.name)}
+            on:branchCreate={(event: CustomEvent<{ name: string }>) =>
+              createBranch(event.detail.name)}
           />
         {:else if lazyViewLoading === 'diff'}
           <section class="view-shell">
@@ -1872,17 +1963,26 @@
             on:browse={(event: CustomEvent<{ path: string }>) => loadFiles(event.detail.path)}
             on:openFile={(event: CustomEvent<{ path: string }>) => openFile(event.detail.path)}
             on:save={(event: CustomEvent<{ content: string }>) => saveFile(event.detail.content)}
-            on:createFile={(event: CustomEvent<{ path: string; content: string }>) => createFile(event.detail.path, event.detail.content)}
-            on:createDirectory={(event: CustomEvent<{ path: string }>) => createDirectory(event.detail.path)}
-            on:duplicateFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) => duplicateFile(event.detail.fromPath, event.detail.toPath)}
-            on:renameFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) => renameFile(event.detail.fromPath, event.detail.toPath)}
-            on:moveFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) => moveFile(event.detail.fromPath, event.detail.toPath)}
+            on:createFile={(event: CustomEvent<{ path: string; content: string }>) =>
+              createFile(event.detail.path, event.detail.content)}
+            on:createDirectory={(event: CustomEvent<{ path: string }>) =>
+              createDirectory(event.detail.path)}
+            on:duplicateFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) =>
+              duplicateFile(event.detail.fromPath, event.detail.toPath)}
+            on:renameFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) =>
+              renameFile(event.detail.fromPath, event.detail.toPath)}
+            on:moveFile={(event: CustomEvent<{ fromPath: string; toPath: string }>) =>
+              moveFile(event.detail.fromPath, event.detail.toPath)}
             on:deleteFile={(event: CustomEvent<{ path: string }>) => deleteFile(event.detail.path)}
-            on:uploadFile={(event: CustomEvent<{ path: string; contentBase64: string }>) => uploadFile(event.detail.path, event.detail.contentBase64)}
-            on:downloadFile={(event: CustomEvent<{ path: string }>) => downloadFile(event.detail.path)}
+            on:uploadFile={(event: CustomEvent<{ path: string; contentBase64: string }>) =>
+              uploadFile(event.detail.path, event.detail.contentBase64)}
+            on:downloadFile={(event: CustomEvent<{ path: string }>) =>
+              downloadFile(event.detail.path)}
             on:change={(event: CustomEvent<{ content: string }>) => {
               draftContent = event.detail.content;
-              editorDirty = selectedDocument ? event.detail.content !== selectedDocument.content : false;
+              editorDirty = selectedDocument
+                ? event.detail.content !== selectedDocument.content
+                : false;
             }}
           />
         {:else if lazyViewLoading === 'editor'}
@@ -1905,17 +2005,26 @@
       <section class="view-shell">
         <div class="empty-state-card">
           <h2>No repository selected</h2>
-          <p>Open the repository picker and choose any Git repository below the configured WORKSPACE_ROOT.</p>
-          <button class="primary-button" type="button" on:click={() => (workspaceOpen = true)}>Open picker</button>
+          <p>
+            Open the repository picker and choose any Git repository below the configured
+            WORKSPACE_ROOT.
+          </p>
+          <button class="primary-button" type="button" on:click={() => (workspaceOpen = true)}
+            >Open picker</button
+          >
         </div>
       </section>
     {/if}
 
-    <BottomNav currentView={view === 'logs' ? 'chat' : view} disabled={!currentRepo} on:navigate={(event) => navigateMainView(event.detail.view)} />
+    <BottomNav
+      currentView={view === 'logs' ? 'chat' : view}
+      disabled={!currentRepo}
+      on:navigate={(event) => navigateMainView(event.detail.view)}
+    />
     <AppMenu
       open={menuOpen}
-      currentRepo={currentRepo}
-      theme={theme}
+      {currentRepo}
+      {theme}
       on:close={() => (menuOpen = false)}
       on:chooseRepo={() => {
         menuOpen = false;
@@ -1948,7 +2057,7 @@
       loading={workspaceLoading}
       cloning={workspaceCloning}
       currentPath={workspacePath}
-      currentRepo={currentRepo}
+      {currentRepo}
       entries={workspaceEntries}
       on:close={() => (workspaceOpen = false)}
       on:browse={(event) => loadWorkspaces(event.detail.path)}
@@ -1960,7 +2069,7 @@
       loading={commandStateLoading}
       busy={commandBusy}
       state={commandState}
-      theme={theme}
+      {theme}
       initialCommand={commandPaletteInitialCommand}
       selectionToken={commandPaletteSelectionToken}
       on:close={() => (commandPaletteOpen = false)}

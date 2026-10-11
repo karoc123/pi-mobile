@@ -1,7 +1,35 @@
+import { builtinModules } from 'node:module';
 import js from '@eslint/js';
 import globals from 'globals';
+import tseslint from 'typescript-eslint';
+import svelte from 'eslint-plugin-svelte';
 
-export default [
+const serverPackages = [
+  '@earendil-works/pi-coding-agent',
+  '@earendil-works/pi-ai',
+  'express',
+  'cookie-parser',
+  'chokidar',
+  'ws',
+];
+
+const nodeBuiltinPaths = [
+  ...builtinModules.map((name) => ({
+    name,
+    message: 'Node builtins are not allowed in frontend or shared code.',
+  })),
+  ...builtinModules.map((name) => ({
+    name: `node:${name}`,
+    message: 'Node builtins are not allowed in frontend or shared code.',
+  })),
+];
+
+const serverPackagePaths = serverPackages.map((name) => ({
+  name,
+  message: `Server package "${name}" cannot be imported in frontend or shared code.`,
+}));
+
+export default tseslint.config(
   {
     ignores: [
       '**/node_modules/**',
@@ -22,4 +50,98 @@ export default [
     languageOptions: { globals: globals.node },
     rules: { 'no-unused-vars': ['error', { argsIgnorePattern: '^_' }] },
   },
-];
+  ...tseslint.configs.recommended.map((config) => ({
+    ...config,
+    files: ['src/**/*.{ts,svelte}', 'playwright/**/*.ts', '*.ts'],
+  })),
+  ...svelte.configs['flat/recommended'].map((config) => ({
+    ...config,
+    files: ['src/**/*.svelte'],
+  })),
+  {
+    files: ['src/**/*.svelte'],
+    languageOptions: {
+      parserOptions: {
+        parser: tseslint.parser,
+      },
+    },
+  },
+  {
+    files: ['src/**/*.{ts,svelte}', 'playwright/**/*.ts', '*.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      '@typescript-eslint/no-explicit-any': 'warn',
+    },
+  },
+  {
+    files: ['src/frontend/**/*.{ts,svelte}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+      },
+    },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [...nodeBuiltinPaths, ...serverPackagePaths],
+          patterns: [
+            {
+              group: ['@backend/**', '**/backend/**', '**/backend', 'node:*'],
+              message: 'Frontend code cannot import backend code or Node builtins.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/shared/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [...nodeBuiltinPaths, ...serverPackagePaths],
+          patterns: [
+            {
+              group: [
+                '@backend/**',
+                '**/backend/**',
+                '**/backend',
+                '@frontend/**',
+                '**/frontend/**',
+                '**/frontend',
+                'node:*',
+              ],
+              message: 'Shared contracts cannot import frontend, backend, or Node builtins.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/backend/**/*.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@frontend/**', '**/frontend/**', '**/frontend'],
+              message: 'Backend code cannot import frontend code.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+);

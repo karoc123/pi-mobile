@@ -1,7 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
 
-  import type { AgentCommandRequest, AgentCommandState, AgentModelOption } from '../../../src/shared/contracts.js';
+  import type {
+    AgentCommandRequest,
+    AgentCommandState,
+    AgentModelOption,
+  } from '../../../src/shared/contracts.js';
   import type { ThemeName } from './AppMenu.svelte';
   import { SLASH_COMMANDS } from '../lib/command-suggestions.js';
 
@@ -63,7 +67,15 @@
 
 {#if open}
   <div class="overlay" role="presentation" on:click={() => dispatch('close')}>
-    <div class="sheet-card command-sheet" role="dialog" aria-modal="true" aria-label="Command palette" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+    <div
+      class="sheet-card command-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+      tabindex="-1"
+      on:click|stopPropagation
+      on:keydown|stopPropagation
+    >
       <div class="sheet-header">
         <div>
           <p class="eyebrow">Command palette</p>
@@ -75,8 +87,13 @@
       <div class="command-body">
         <div class="command-layout">
           <div class="command-list">
-            {#each SLASH_COMMANDS as suggestion}
-              <button class:selected={selectedCommand === suggestion.command} class="command-tab" type="button" on:click={() => (selectedCommand = suggestion.command)}>
+            {#each SLASH_COMMANDS as suggestion (suggestion.command)}
+              <button
+                class:selected={selectedCommand === suggestion.command}
+                class="command-tab"
+                type="button"
+                on:click={() => (selectedCommand = suggestion.command)}
+              >
                 <strong>{suggestion.command}</strong>
                 <span>{suggestion.description}</span>
               </button>
@@ -94,19 +111,20 @@
                 {#if availableModels.length === 0}
                   <p class="empty-state small">No models are available for switching right now.</p>
                 {:else}
-                  {#each availableModels as model}
+                  {#each availableModels as model (model.provider + '/' + model.modelId)}
                     <button
                       class:selected={model.isCurrent}
                       class="command-option"
                       type="button"
                       disabled={busy || model.isCurrent}
-                      on:click={() => dispatch('execute', {
-                        request: {
-                          command: 'set-model',
-                          provider: model.provider,
-                          modelId: model.modelId,
-                        },
-                      })}
+                      on:click={() =>
+                        dispatch('execute', {
+                          request: {
+                            command: 'set-model',
+                            provider: model.provider,
+                            modelId: model.modelId,
+                          },
+                        })}
                     >
                       <div class="command-option-main">
                         <strong>{model.provider}/{model.modelId}</strong>
@@ -115,7 +133,13 @@
                           <span>{formatModelUsage(model)}</span>
                         {/if}
                       </div>
-                      <span class="command-meta">{model.isCurrent ? 'Current' : model.usingSubscription ? 'OAuth' : 'Ready'}</span>
+                      <span class="command-meta"
+                        >{model.isCurrent
+                          ? 'Current'
+                          : model.usingSubscription
+                            ? 'OAuth'
+                            : 'Ready'}</span
+                      >
                     </button>
                   {/each}
                 {/if}
@@ -157,7 +181,13 @@
                   <article class="command-summary-card">
                     <strong>Runtime status</strong>
                     <span>
-                      {state.isCompacting ? 'Compacting' : state.isRetrying ? 'Retrying' : state.isBashRunning ? 'Running bash' : 'Idle'}
+                      {state.isCompacting
+                        ? 'Compacting'
+                        : state.isRetrying
+                          ? 'Retrying'
+                          : state.isBashRunning
+                            ? 'Running bash'
+                            : 'Idle'}
                       {#if state.pendingMessageCount > 0}
                         · queue {state.pendingMessageCount}
                       {/if}
@@ -172,10 +202,20 @@
                 <section class="menu-section">
                   <p class="eyebrow">Theme</p>
                   <div class="theme-toggle-group" role="group" aria-label="Theme switcher">
-                    <button class:selected={theme === 'vscode-dark'} class="theme-toggle" type="button" on:click={() => dispatch('setTheme', { value: 'vscode-dark' })}>
+                    <button
+                      class:selected={theme === 'vscode-dark'}
+                      class="theme-toggle"
+                      type="button"
+                      on:click={() => dispatch('setTheme', { value: 'vscode-dark' })}
+                    >
                       VS Code Dark
                     </button>
-                    <button class:selected={theme === 'vscode-light'} class="theme-toggle" type="button" on:click={() => dispatch('setTheme', { value: 'vscode-light' })}>
+                    <button
+                      class:selected={theme === 'vscode-light'}
+                      class="theme-toggle"
+                      type="button"
+                      on:click={() => dispatch('setTheme', { value: 'vscode-light' })}
+                    >
                       VS Code Light
                     </button>
                   </div>
@@ -186,14 +226,21 @@
                   {#if state.thinkingLevels.length === 0}
                     <p class="empty-state small">This model does not expose thinking controls.</p>
                   {:else}
-                    <div class="theme-toggle-group command-toggle-grid" role="group" aria-label="Thinking level">
-                      {#each state.thinkingLevels as level}
+                    <div
+                      class="theme-toggle-group command-toggle-grid"
+                      role="group"
+                      aria-label="Thinking level"
+                    >
+                      {#each state.thinkingLevels as level (level.value)}
                         <button
                           class:selected={level.isCurrent}
                           class="theme-toggle"
                           type="button"
                           disabled={busy || level.isCurrent}
-                          on:click={() => dispatch('execute', { request: { command: 'set-thinking', level: level.value } })}
+                          on:click={() =>
+                            dispatch('execute', {
+                              request: { command: 'set-thinking', level: level.value },
+                            })}
                         >
                           {level.value}
                         </button>
@@ -204,17 +251,36 @@
 
                 <section class="menu-section">
                   <p class="eyebrow">Compaction</p>
-                  <button class="secondary-button" type="button" disabled={busy} on:click={() => dispatch('execute', { request: { command: 'set-auto-compact', enabled: !state.autoCompactEnabled } })}>
-                    {state.autoCompactEnabled ? 'Disable auto compaction' : 'Enable auto compaction'}
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    disabled={busy}
+                    on:click={() =>
+                      dispatch('execute', {
+                        request: {
+                          command: 'set-auto-compact',
+                          enabled: !state.autoCompactEnabled,
+                        },
+                      })}
+                  >
+                    {state.autoCompactEnabled
+                      ? 'Disable auto compaction'
+                      : 'Enable auto compaction'}
                   </button>
                 </section>
               </div>
             {:else if selectedCommand === '/queue'}
               <div class="command-stack">
-                <p class="subdued">Control how queued steering and follow-up messages are delivered.</p>
+                <p class="subdued">
+                  Control how queued steering and follow-up messages are delivered.
+                </p>
                 <article class="command-summary-card">
                   <strong>Pending queue</strong>
-                  <span>{state.pendingMessageCount} message{state.pendingMessageCount === 1 ? '' : 's'}</span>
+                  <span
+                    >{state.pendingMessageCount} message{state.pendingMessageCount === 1
+                      ? ''
+                      : 's'}</span
+                  >
                 </article>
                 <section class="menu-section">
                   <p class="eyebrow">Steering mode</p>
@@ -224,7 +290,10 @@
                       class="theme-toggle"
                       type="button"
                       disabled={busy || state.steeringMode === 'all'}
-                      on:click={() => dispatch('execute', { request: { command: 'set-steering-mode', mode: 'all' } })}
+                      on:click={() =>
+                        dispatch('execute', {
+                          request: { command: 'set-steering-mode', mode: 'all' },
+                        })}
                     >
                       all
                     </button>
@@ -233,7 +302,10 @@
                       class="theme-toggle"
                       type="button"
                       disabled={busy || state.steeringMode === 'one-at-a-time'}
-                      on:click={() => dispatch('execute', { request: { command: 'set-steering-mode', mode: 'one-at-a-time' } })}
+                      on:click={() =>
+                        dispatch('execute', {
+                          request: { command: 'set-steering-mode', mode: 'one-at-a-time' },
+                        })}
                     >
                       one-at-a-time
                     </button>
@@ -247,7 +319,10 @@
                       class="theme-toggle"
                       type="button"
                       disabled={busy || state.followUpMode === 'all'}
-                      on:click={() => dispatch('execute', { request: { command: 'set-follow-up-mode', mode: 'all' } })}
+                      on:click={() =>
+                        dispatch('execute', {
+                          request: { command: 'set-follow-up-mode', mode: 'all' },
+                        })}
                     >
                       all
                     </button>
@@ -256,7 +331,10 @@
                       class="theme-toggle"
                       type="button"
                       disabled={busy || state.followUpMode === 'one-at-a-time'}
-                      on:click={() => dispatch('execute', { request: { command: 'set-follow-up-mode', mode: 'one-at-a-time' } })}
+                      on:click={() =>
+                        dispatch('execute', {
+                          request: { command: 'set-follow-up-mode', mode: 'one-at-a-time' },
+                        })}
                     >
                       one-at-a-time
                     </button>
@@ -274,18 +352,31 @@
                   class="secondary-button"
                   type="button"
                   disabled={busy}
-                  on:click={() => dispatch('execute', { request: { command: 'set-auto-retry', enabled: !state.autoRetryEnabled } })}
+                  on:click={() =>
+                    dispatch('execute', {
+                      request: { command: 'set-auto-retry', enabled: !state.autoRetryEnabled },
+                    })}
                 >
                   {state.autoRetryEnabled ? 'Disable auto retry' : 'Enable auto retry'}
                 </button>
-                <button class="ghost-button" type="button" disabled={busy || !state.isRetrying} on:click={() => dispatch('execute', { request: { command: 'abort-retry' } })}>
+                <button
+                  class="ghost-button"
+                  type="button"
+                  disabled={busy || !state.isRetrying}
+                  on:click={() => dispatch('execute', { request: { command: 'abort-retry' } })}
+                >
                   Abort retry
                 </button>
               </div>
             {:else if selectedCommand === '/compact'}
               <div class="command-stack">
                 <p class="subdued">Run a manual context compaction for the current session.</p>
-                <button class="primary-button" type="button" disabled={busy} on:click={() => dispatch('execute', { request: { command: 'compact' } })}>
+                <button
+                  class="primary-button"
+                  type="button"
+                  disabled={busy}
+                  on:click={() => dispatch('execute', { request: { command: 'compact' } })}
+                >
                   Compact now
                 </button>
               </div>
@@ -293,7 +384,13 @@
               <div class="command-stack">
                 <p class="subdued">Run a direct bash command inside the active repository.</p>
                 <label class="field-label" for="command-bash-input">Command</label>
-                <input id="command-bash-input" class="text-input" type="text" bind:value={bashCommandDraft} placeholder="git status --short" />
+                <input
+                  id="command-bash-input"
+                  class="text-input"
+                  type="text"
+                  bind:value={bashCommandDraft}
+                  placeholder="git status --short"
+                />
                 <label class="subdued">
                   <input type="checkbox" bind:checked={bashExcludeFromContext} />
                   Exclude command output from next prompt context
@@ -303,17 +400,23 @@
                     class="primary-button"
                     type="button"
                     disabled={busy || bashCommandDraft.trim().length === 0}
-                    on:click={() => dispatch('execute', {
-                      request: {
-                        command: 'run-bash',
-                        commandText: bashCommandDraft,
-                        excludeFromContext: bashExcludeFromContext,
-                      },
-                    })}
+                    on:click={() =>
+                      dispatch('execute', {
+                        request: {
+                          command: 'run-bash',
+                          commandText: bashCommandDraft,
+                          excludeFromContext: bashExcludeFromContext,
+                        },
+                      })}
                   >
                     Run bash
                   </button>
-                  <button class="secondary-button" type="button" disabled={busy || !state.isBashRunning} on:click={() => dispatch('execute', { request: { command: 'abort-bash' } })}>
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    disabled={busy || !state.isBashRunning}
+                    on:click={() => dispatch('execute', { request: { command: 'abort-bash' } })}
+                  >
                     Abort bash
                   </button>
                 </div>
@@ -322,12 +425,21 @@
               <div class="command-stack">
                 <p class="subdued">Set a custom display name for the current session.</p>
                 <label class="field-label" for="session-name-input">Session name</label>
-                <input id="session-name-input" class="text-input" type="text" bind:value={sessionNameDraft} placeholder="Feature planning" />
+                <input
+                  id="session-name-input"
+                  class="text-input"
+                  type="text"
+                  bind:value={sessionNameDraft}
+                  placeholder="Feature planning"
+                />
                 <button
                   class="primary-button"
                   type="button"
                   disabled={busy || sessionNameDraft.trim().length === 0}
-                  on:click={() => dispatch('execute', { request: { command: 'set-session-name', name: sessionNameDraft } })}
+                  on:click={() =>
+                    dispatch('execute', {
+                      request: { command: 'set-session-name', name: sessionNameDraft },
+                    })}
                 >
                   Save session name
                 </button>
@@ -336,10 +448,26 @@
               <div class="command-stack">
                 <p class="subdued">Export the current session branch for sharing or archival.</p>
                 <div class="theme-toggle-group" role="group" aria-label="Export session">
-                  <button class="primary-button" type="button" disabled={busy} on:click={() => dispatch('execute', { request: { command: 'export-session', format: 'html' } })}>
+                  <button
+                    class="primary-button"
+                    type="button"
+                    disabled={busy}
+                    on:click={() =>
+                      dispatch('execute', {
+                        request: { command: 'export-session', format: 'html' },
+                      })}
+                  >
                     Export HTML
                   </button>
-                  <button class="secondary-button" type="button" disabled={busy} on:click={() => dispatch('execute', { request: { command: 'export-session', format: 'jsonl' } })}>
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    disabled={busy}
+                    on:click={() =>
+                      dispatch('execute', {
+                        request: { command: 'export-session', format: 'jsonl' },
+                      })}
+                  >
                     Export JSONL
                   </button>
                 </div>
@@ -348,21 +476,30 @@
               <div class="command-stack">
                 <p class="subdued">Resume one of the saved sessions for this repository.</p>
                 {#if state.resumeSessions.length === 0}
-                  <p class="empty-state small">No saved sessions were found for this repository yet.</p>
+                  <p class="empty-state small">
+                    No saved sessions were found for this repository yet.
+                  </p>
                 {:else}
-                  {#each state.resumeSessions as sessionEntry}
+                  {#each state.resumeSessions as sessionEntry (sessionEntry.id)}
                     <button
                       class:selected={sessionEntry.isCurrent}
                       class="command-option"
                       type="button"
                       disabled={busy || sessionEntry.isCurrent}
-                      on:click={() => dispatch('execute', { request: { command: 'resume-session', sessionPath: sessionEntry.path } })}
+                      on:click={() =>
+                        dispatch('execute', {
+                          request: { command: 'resume-session', sessionPath: sessionEntry.path },
+                        })}
                     >
                       <div class="command-option-main">
                         <strong>{sessionEntry.name ?? sessionEntry.preview}</strong>
                         <span>{sessionEntry.path}</span>
                       </div>
-                      <span class="command-meta">{sessionEntry.isCurrent ? 'Current' : formatTimestamp(sessionEntry.modifiedAt)}</span>
+                      <span class="command-meta"
+                        >{sessionEntry.isCurrent
+                          ? 'Current'
+                          : formatTimestamp(sessionEntry.modifiedAt)}</span
+                      >
                     </button>
                   {/each}
                 {/if}
@@ -370,14 +507,24 @@
             {:else if selectedCommand === '/new'}
               <div class="command-stack">
                 <p class="subdued">Start a fresh session in the current repository.</p>
-                <button class="primary-button" type="button" disabled={busy} on:click={() => dispatch('execute', { request: { command: 'new-session' } })}>
+                <button
+                  class="primary-button"
+                  type="button"
+                  disabled={busy}
+                  on:click={() => dispatch('execute', { request: { command: 'new-session' } })}
+                >
                   Start new session
                 </button>
               </div>
             {:else if selectedCommand === '/copy'}
               <div class="command-stack">
                 <p class="subdued">Copy the latest assistant reply to the clipboard.</p>
-                <button class="primary-button" type="button" disabled={busy} on:click={() => dispatch('copy')}>
+                <button
+                  class="primary-button"
+                  type="button"
+                  disabled={busy}
+                  on:click={() => dispatch('copy')}
+                >
                   Copy last reply
                 </button>
               </div>
@@ -387,14 +534,17 @@
                 {#if state.treeEntries.length === 0}
                   <p class="empty-state small">No tree entries are available yet.</p>
                 {:else}
-                  {#each state.treeEntries as entry}
+                  {#each state.treeEntries as entry (entry.entryId)}
                     <button
                       class:selected={entry.isCurrent}
                       class="command-option command-tree-option"
                       type="button"
                       style={`padding-left: ${0.9 + entry.depth * 0.7}rem;`}
                       disabled={busy || entry.isCurrent}
-                      on:click={() => dispatch('execute', { request: { command: 'navigate-tree', entryId: entry.entryId } })}
+                      on:click={() =>
+                        dispatch('execute', {
+                          request: { command: 'navigate-tree', entryId: entry.entryId },
+                        })}
                     >
                       <div class="command-option-main">
                         <strong>{entry.preview}</strong>
@@ -411,12 +561,15 @@
                 {#if state.forkEntries.length === 0}
                   <p class="empty-state small">There are no earlier prompts to fork from yet.</p>
                 {:else}
-                  {#each state.forkEntries as entry}
+                  {#each state.forkEntries as entry (entry.entryId)}
                     <button
                       class="command-option"
                       type="button"
                       disabled={busy}
-                      on:click={() => dispatch('execute', { request: { command: 'fork-session', entryId: entry.entryId } })}
+                      on:click={() =>
+                        dispatch('execute', {
+                          request: { command: 'fork-session', entryId: entry.entryId },
+                        })}
                     >
                       <div class="command-option-main">
                         <strong>{entry.preview}</strong>
@@ -429,11 +582,15 @@
               </div>
             {:else if selectedCommand === '/commands'}
               <div class="command-stack">
-                <p class="subdued">Runtime slash commands discovered from extensions, prompts, and skills.</p>
+                <p class="subdued">
+                  Runtime slash commands discovered from extensions, prompts, and skills.
+                </p>
                 {#if state.availableCommands.length === 0}
-                  <p class="empty-state small">No runtime slash commands discovered for this repository yet.</p>
+                  <p class="empty-state small">
+                    No runtime slash commands discovered for this repository yet.
+                  </p>
                 {:else}
-                  {#each state.availableCommands as command}
+                  {#each state.availableCommands as command (command.name)}
                     <button
                       class="command-option"
                       type="button"
@@ -442,7 +599,9 @@
                     >
                       <div class="command-option-main">
                         <strong>/{command.name}</strong>
-                        <span>{command.description ?? 'No description available'} · {command.source}</span>
+                        <span
+                          >{command.description ?? 'No description available'} · {command.source}</span
+                        >
                       </div>
                       <span class="command-meta">Insert</span>
                     </button>

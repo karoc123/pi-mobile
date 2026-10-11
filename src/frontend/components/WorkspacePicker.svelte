@@ -48,7 +48,14 @@
 
 {#if open}
   <div class="overlay" role="presentation" on:click={() => dispatch('close')}>
-    <section class="sheet-card" role="dialog" aria-modal="true" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+    <section
+      class="sheet-card"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      on:click|stopPropagation
+      on:keydown|stopPropagation
+    >
       <div class="sheet-header">
         <div>
           <p class="eyebrow">Repository picker</p>
@@ -82,13 +89,21 @@
           disabled={cloning}
         />
 
-        <button class="primary-button compact" type="submit" disabled={cloning || remoteUrl.trim().length === 0}>
+        <button
+          class="primary-button compact"
+          type="submit"
+          disabled={cloning || remoteUrl.trim().length === 0}
+        >
           {cloning ? 'Cloning…' : 'Clone And Activate'}
         </button>
       </form>
 
       {#if currentPath !== '.'}
-        <button class="path-button" type="button" on:click={() => dispatch('browse', { path: parentPath(currentPath) })}>
+        <button
+          class="path-button"
+          type="button"
+          on:click={() => dispatch('browse', { path: parentPath(currentPath) })}
+        >
           Up one level
         </button>
       {/if}
@@ -99,14 +114,22 @@
         {:else if entries.length === 0}
           <p class="empty-state small">No directories found at this level.</p>
         {:else}
-          {#each entries as entry}
+          {#each entries as entry (entry.relativePath)}
             <article class="picker-entry">
-              <button class="entry-main" type="button" on:click={() => dispatch('browse', { path: entry.relativePath })}>
+              <button
+                class="entry-main"
+                type="button"
+                on:click={() => dispatch('browse', { path: entry.relativePath })}
+              >
                 <strong>{entry.name}</strong>
                 <span>{entry.isGitRepo ? 'Git repository available' : 'Browse deeper'}</span>
               </button>
               {#if entry.isGitRepo}
-                <button class="primary-button compact" type="button" on:click={() => dispatch('select', { path: entry.relativePath })}>
+                <button
+                  class="primary-button compact"
+                  type="button"
+                  on:click={() => dispatch('select', { path: entry.relativePath })}
+                >
                   {currentRepo?.relativePath === entry.relativePath ? 'Active' : 'Use repo'}
                 </button>
               {/if}

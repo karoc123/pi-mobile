@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher } from 'svelte';
 
-  import type { BackendLogEntry, BackendLogLevel } from "../../../src/shared/contracts.js";
+  import type { BackendLogEntry, BackendLogLevel } from '../../../src/shared/contracts.js';
 
   export let entries: BackendLogEntry[] = [];
   export let loading = false;
@@ -10,26 +10,26 @@
   export let hasMore = false;
   export let live = true;
   export let streamConnected = false;
-  export let levelFilter: BackendLogLevel | "" = "";
-  export let sourceFilter = "";
-  export let searchFilter = "";
+  export let levelFilter: BackendLogLevel | '' = '';
+  export let sourceFilter = '';
+  export let searchFilter = '';
   export let knownSources: string[] = [];
-  export let lastError = "";
+  export let lastError = '';
 
   const dispatch = createEventDispatcher<{
     refresh: void;
     loadMore: void;
     clearAll: void;
     toggleLive: { value: boolean };
-    setLevel: { value: BackendLogLevel | "" };
+    setLevel: { value: BackendLogLevel | '' };
     setSource: { value: string };
     setSearch: { value: string };
     clearFilters: void;
   }>();
 
   const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: "short",
-    timeStyle: "medium",
+    dateStyle: 'short',
+    timeStyle: 'medium',
   });
 
   let searchDraft = searchFilter;
@@ -43,11 +43,11 @@
   }
 
   function formatDetails(details: unknown) {
-    if (details === null || details === undefined || details === "") {
-      return "";
+    if (details === null || details === undefined || details === '') {
+      return '';
     }
 
-    if (typeof details === "string") {
+    if (typeof details === 'string') {
       return details;
     }
 
@@ -59,7 +59,7 @@
   }
 
   function applySearch() {
-    dispatch("setSearch", { value: searchDraft.trim() });
+    dispatch('setSearch', { value: searchDraft.trim() });
   }
 </script>
 
@@ -68,15 +68,32 @@
     <div>
       <p class="eyebrow">Runtime log</p>
       <h1>Backend activity stream</h1>
-      <p class="lede">Full structured output from API, runtime lifecycle, watchers, and agent execution.</p>
+      <p class="lede">
+        Full structured output from API, runtime lifecycle, watchers, and agent execution.
+      </p>
     </div>
     <div class="log-header-actions">
-      <button class="secondary-button compact" type="button" on:click={() => dispatch("refresh")} disabled={loading}>Refresh</button>
-      <button class:selected={live} class="secondary-button compact" type="button" on:click={() => dispatch("toggleLive", { value: !live })}>
-        {live ? "Pause live" : "Resume live"}
+      <button
+        class="secondary-button compact"
+        type="button"
+        on:click={() => dispatch('refresh')}
+        disabled={loading}>Refresh</button
+      >
+      <button
+        class:selected={live}
+        class="secondary-button compact"
+        type="button"
+        on:click={() => dispatch('toggleLive', { value: !live })}
+      >
+        {live ? 'Pause live' : 'Resume live'}
       </button>
-      <button class="ghost-button compact danger-button" type="button" on:click={() => dispatch("clearAll")} disabled={clearing}>
-        {clearing ? "Deleting log..." : "Delete complete log"}
+      <button
+        class="ghost-button compact danger-button"
+        type="button"
+        on:click={() => dispatch('clearAll')}
+        disabled={clearing}
+      >
+        {clearing ? 'Deleting log...' : 'Delete complete log'}
       </button>
     </div>
   </div>
@@ -87,13 +104,22 @@
         <p class="eyebrow">Filters</p>
         <h2>Find incidents quickly</h2>
       </div>
-      <button class="ghost-button compact" type="button" on:click={() => dispatch("clearFilters")}>Reset filters</button>
+      <button class="ghost-button compact" type="button" on:click={() => dispatch('clearFilters')}
+        >Reset filters</button
+      >
     </div>
 
     <div class="log-filter-grid">
       <label>
         <span class="field-label">Level</span>
-        <select class="text-input" value={levelFilter} on:change={(event) => dispatch("setLevel", { value: (event.currentTarget as HTMLSelectElement).value as BackendLogLevel | "" })}>
+        <select
+          class="text-input"
+          value={levelFilter}
+          on:change={(event) =>
+            dispatch('setLevel', {
+              value: (event.currentTarget as HTMLSelectElement).value as BackendLogLevel | '',
+            })}
+        >
           <option value="">All levels</option>
           <option value="debug">debug</option>
           <option value="info">info</option>
@@ -104,9 +130,14 @@
 
       <label>
         <span class="field-label">Source</span>
-        <select class="text-input" value={sourceFilter} on:change={(event) => dispatch("setSource", { value: (event.currentTarget as HTMLSelectElement).value })}>
+        <select
+          class="text-input"
+          value={sourceFilter}
+          on:change={(event) =>
+            dispatch('setSource', { value: (event.currentTarget as HTMLSelectElement).value })}
+        >
           <option value="">All sources</option>
-          {#each knownSources as source}
+          {#each knownSources as source (source)}
             <option value={source}>{source}</option>
           {/each}
         </select>
@@ -115,14 +146,21 @@
       <form class="log-search-form" on:submit|preventDefault={applySearch}>
         <label>
           <span class="field-label">Search</span>
-          <input class="text-input" type="search" bind:value={searchDraft} placeholder="message, event, repo, request id" />
+          <input
+            class="text-input"
+            type="search"
+            bind:value={searchDraft}
+            placeholder="message, event, repo, request id"
+          />
         </label>
         <button class="secondary-button compact" type="submit">Apply</button>
       </form>
     </div>
 
     <div class="log-meta-row">
-      <span class:ok={streamConnected} class:warn={!streamConnected} class="status-pill">{streamConnected ? "Live stream connected" : "Live stream disconnected"}</span>
+      <span class:ok={streamConnected} class:warn={!streamConnected} class="status-pill"
+        >{streamConnected ? 'Live stream connected' : 'Live stream disconnected'}</span
+      >
       <span class="status-pill">{entries.length} visible entries</span>
     </div>
 
@@ -144,8 +182,13 @@
   {:else}
     <div class="log-entry-list">
       {#if hasMore}
-        <button class="secondary-button" type="button" on:click={() => dispatch("loadMore")} disabled={loadingMore}>
-          {loadingMore ? "Loading older entries..." : "Load older entries"}
+        <button
+          class="secondary-button"
+          type="button"
+          on:click={() => dispatch('loadMore')}
+          disabled={loadingMore}
+        >
+          {loadingMore ? 'Loading older entries...' : 'Load older entries'}
         </button>
       {/if}
 

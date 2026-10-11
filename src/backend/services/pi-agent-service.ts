@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 
-import { type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { type AgentSession, type AgentSessionEvent } from '@earendil-works/pi-coding-agent';
 
 import type {
   AgentCommandRequest,
@@ -15,15 +15,20 @@ import type {
   SelectedRepo,
   ToolActivity,
   WebsocketEnvelope,
-} from "../../shared/contracts.js";
+} from '../../shared/contracts.js';
 
-import type { AppConfig } from "../config.js";
-import { PiAgentBroadcaster } from "./pi-agent-broadcaster.js";
-import { flattenMessageText, hydrateMessagesFromSession, summarizePayload, summarizeText, upsertTool } from "./pi-agent-hydrator.js";
-import { PiAgentMockAdapter, type MockRuntimeContext } from "./pi-agent-mock-adapter.js";
-import { PiAgentSessionAdapter, type SessionOpenOptions } from "./pi-agent-session-adapter.js";
-import { noopLogger, type LogChannel } from "./log-service.js";
-import type { ModelUsageStore } from "./model-usage-store.js";
+import type { AppConfig } from '../config.js';
+import { PiAgentBroadcaster } from './pi-agent-broadcaster.js';
+import {
+  flattenMessageText,
+  hydrateMessagesFromSession,
+  summarizePayload,
+  upsertTool,
+} from './pi-agent-hydrator.js';
+import { PiAgentMockAdapter, type MockRuntimeContext } from './pi-agent-mock-adapter.js';
+import { PiAgentSessionAdapter, type SessionOpenOptions } from './pi-agent-session-adapter.js';
+import { noopLogger, type LogChannel } from './log-service.js';
+import type { ModelUsageStore } from './model-usage-store.js';
 
 type Broadcast = (event: WebsocketEnvelope) => void;
 
@@ -76,10 +81,10 @@ export class PiAgentService {
     const usage = this.getUsageSummary();
 
     // Letzte Nachricht als Vorschau (max 120 Zeichen)
-    const lastAssistantMsg = [...this.messages].reverse().find((m) => m.role === "assistant");
+    const lastAssistantMsg = [...this.messages].reverse().find((m) => m.role === 'assistant');
     const lastMessagePreview = lastAssistantMsg
       ? lastAssistantMsg.text.length > 120
-        ? lastAssistantMsg.text.slice(0, 120) + "…"
+        ? lastAssistantMsg.text.slice(0, 120) + '…'
         : lastAssistantMsg.text
       : null;
     const lastMessageFull = lastAssistantMsg?.text ?? null;
@@ -117,8 +122,8 @@ export class PiAgentService {
   }
 
   async executeCommand(request: AgentCommandRequest): Promise<AgentCommandResponse> {
-    if (!request || typeof request !== "object" || typeof request.command !== "string") {
-      throw new Error("Missing agent command.");
+    if (!request || typeof request !== 'object' || typeof request.command !== 'string') {
+      throw new Error('Missing agent command.');
     }
 
     if (this.config.piMockMode) {
@@ -128,59 +133,69 @@ export class PiAgentService {
     const session = await this.ensureSession();
 
     switch (request.command) {
-      case "set-model": {
+      case 'set-model': {
         const model = session.modelRuntime.getModel(request.provider, request.modelId);
 
         if (!model) {
-          throw new Error(`Configured pi model ${request.provider}/${request.modelId} was not found.`);
+          throw new Error(
+            `Configured pi model ${request.provider}/${request.modelId} was not found.`,
+          );
         }
 
         await session.setModel(model);
         return this.completeCommand(`Model switched to ${request.provider}/${request.modelId}.`);
       }
 
-      case "set-thinking": {
+      case 'set-thinking': {
         session.setThinkingLevel(request.level);
         return this.completeCommand(`Thinking set to ${session.thinkingLevel}.`);
       }
 
-      case "set-auto-compact": {
+      case 'set-auto-compact': {
         session.setAutoCompactionEnabled(request.enabled);
-        return this.completeCommand(request.enabled ? "Auto compaction enabled." : "Auto compaction disabled.");
+        return this.completeCommand(
+          request.enabled ? 'Auto compaction enabled.' : 'Auto compaction disabled.',
+        );
       }
 
-      case "set-steering-mode": {
+      case 'set-steering-mode': {
         session.setSteeringMode(request.mode);
         return this.completeCommand(`Steering mode set to ${request.mode}.`);
       }
 
-      case "set-follow-up-mode": {
+      case 'set-follow-up-mode': {
         session.setFollowUpMode(request.mode);
         return this.completeCommand(`Follow-up mode set to ${request.mode}.`);
       }
 
-      case "set-auto-retry": {
+      case 'set-auto-retry': {
         session.setAutoRetryEnabled(request.enabled);
-        return this.completeCommand(request.enabled ? "Auto retry enabled." : "Auto retry disabled.");
+        return this.completeCommand(
+          request.enabled ? 'Auto retry enabled.' : 'Auto retry disabled.',
+        );
       }
 
-      case "abort-retry": {
+      case 'abort-retry': {
         session.abortRetry();
-        return this.completeCommand("Retry aborted.");
+        return this.completeCommand('Retry aborted.');
       }
 
-      case "compact": {
-        const customInstructions = typeof request.customInstructions === "string" && request.customInstructions.trim().length > 0 ? request.customInstructions.trim() : undefined;
+      case 'compact': {
+        const customInstructions =
+          typeof request.customInstructions === 'string' &&
+          request.customInstructions.trim().length > 0
+            ? request.customInstructions.trim()
+            : undefined;
         await session.compact(customInstructions);
         this.messages = hydrateMessagesFromSession(session.messages);
-        return this.completeCommand("Context compacted.");
+        return this.completeCommand('Context compacted.');
       }
 
-      case "run-bash": {
+      case 'run-bash': {
         const commandText = request.commandText.trim();
 
         if (commandText.length === 0) {
-          throw new Error("Bash command cannot be empty.");
+          throw new Error('Bash command cannot be empty.');
         }
 
         const runPromise = session.executeBash(commandText, undefined, {
@@ -200,79 +215,90 @@ export class PiAgentService {
         };
       }
 
-      case "abort-bash": {
+      case 'abort-bash': {
         session.abortBash();
-        return this.completeCommand("Bash command aborted.");
+        return this.completeCommand('Bash command aborted.');
       }
 
-      case "set-session-name": {
+      case 'set-session-name': {
         const nextName = request.name.trim();
 
         if (nextName.length === 0) {
-          throw new Error("Session name cannot be empty.");
+          throw new Error('Session name cannot be empty.');
         }
 
         session.setSessionName(nextName);
         return this.completeCommand(`Session renamed to \"${nextName}\".`);
       }
 
-      case "export-session": {
-        const outputPath = typeof request.outputPath === "string" && request.outputPath.trim().length > 0 ? request.outputPath.trim() : undefined;
-        const exportedPath = request.format === "html" ? await session.exportToHtml(outputPath) : session.exportToJsonl(outputPath);
+      case 'export-session': {
+        const outputPath =
+          typeof request.outputPath === 'string' && request.outputPath.trim().length > 0
+            ? request.outputPath.trim()
+            : undefined;
+        const exportedPath =
+          request.format === 'html'
+            ? await session.exportToHtml(outputPath)
+            : session.exportToJsonl(outputPath);
 
         return this.completeCommand(`Session exported to ${exportedPath}.`);
       }
 
-      case "new-session": {
+      case 'new-session': {
         await this.createSession(false, {
           preferredModel: getModelReference(session),
           preferredThinkingLevel: session.thinkingLevel as AgentThinkingLevel,
           useConfiguredDefaults: true,
         });
         return {
-          message: "Started a new session.",
+          message: 'Started a new session.',
           prompt: null,
         };
       }
 
-      case "resume-session": {
+      case 'resume-session': {
         await this.openSessionPath(request.sessionPath, {
           useConfiguredDefaults: false,
         });
         return {
-          message: "Session resumed.",
+          message: 'Session resumed.',
           prompt: null,
         };
       }
 
-      case "navigate-tree": {
+      case 'navigate-tree': {
         const result = await session.navigateTree(request.entryId);
 
         if (result.cancelled) {
           return {
-            message: "Tree navigation cancelled.",
+            message: 'Tree navigation cancelled.',
             prompt: null,
           };
         }
 
         this.messages = hydrateMessagesFromSession(session.messages);
         this.tools = [];
-        return this.completeCommand("Moved to the selected session point.", result.editorText ?? null);
+        return this.completeCommand(
+          'Moved to the selected session point.',
+          result.editorText ?? null,
+        );
       }
 
-      case "fork-session": {
-        const userMessage = session.getUserMessagesForForking().find((entry) => entry.entryId === request.entryId);
+      case 'fork-session': {
+        const userMessage = session
+          .getUserMessagesForForking()
+          .find((entry) => entry.entryId === request.entryId);
         const sessionPath = session.sessionManager.createBranchedSession(request.entryId);
 
         if (!userMessage || !sessionPath) {
-          throw new Error("Could not fork the selected session entry.");
+          throw new Error('Could not fork the selected session entry.');
         }
 
         await this.openSessionPath(sessionPath, {
           useConfiguredDefaults: false,
         });
         return {
-          message: "Forked a new session from the selected prompt.",
+          message: 'Forked a new session from the selected prompt.',
           prompt: userMessage.text,
         };
       }
@@ -314,7 +340,7 @@ export class PiAgentService {
     const accepted = await this.acceptPrompt(session, promptText);
 
     if (!accepted) {
-      throw new Error("The prompt was rejected by the pi runtime.");
+      throw new Error('The prompt was rejected by the pi runtime.');
     }
 
     if (session.model) {
@@ -326,9 +352,9 @@ export class PiAgentService {
 
     const userMessage: ChatMessage = {
       id: randomUUID(),
-      role: "user",
+      role: 'user',
       text: promptText,
-      status: "complete",
+      status: 'complete',
       timestamp: new Date().toISOString(),
     };
 
@@ -353,7 +379,7 @@ export class PiAgentService {
 
   async startNewSession() {
     if (!this.currentRepo) {
-      throw new Error("No repository selected for pi session.");
+      throw new Error('No repository selected for pi session.');
     }
 
     this.messages = [];
@@ -394,11 +420,11 @@ export class PiAgentService {
 
   private async ensureSession() {
     if (!this.currentRepo) {
-      throw new Error("No repository selected for pi session.");
+      throw new Error('No repository selected for pi session.');
     }
 
     if (this.config.piMockMode) {
-      throw new Error("Mock mode does not create a real pi session.");
+      throw new Error('Mock mode does not create a real pi session.');
     }
 
     return this.sessionAdapter.ensureSession(this.currentRepo);
@@ -411,10 +437,14 @@ export class PiAgentService {
     },
   ) {
     if (!this.currentRepo) {
-      throw new Error("No repository selected for pi session.");
+      throw new Error('No repository selected for pi session.');
     }
 
-    const session = await this.sessionAdapter.createSession(this.currentRepo, continueRecent, options);
+    const session = await this.sessionAdapter.createSession(
+      this.currentRepo,
+      continueRecent,
+      options,
+    );
     this.syncFromSession(session);
     this.emitStatus();
     return session;
@@ -422,10 +452,14 @@ export class PiAgentService {
 
   private async openSessionPath(sessionPath: string, options: SessionOpenOptions) {
     if (!this.currentRepo) {
-      throw new Error("No repository selected for pi session.");
+      throw new Error('No repository selected for pi session.');
     }
 
-    const session = await this.sessionAdapter.openSessionPath(this.currentRepo, sessionPath, options);
+    const session = await this.sessionAdapter.openSessionPath(
+      this.currentRepo,
+      sessionPath,
+      options,
+    );
     this.syncFromSession(session);
     this.emitStatus();
   }
@@ -443,7 +477,7 @@ export class PiAgentService {
 
       try {
         const runPromise = session.prompt(promptText, {
-          streamingBehavior: session.isStreaming ? "steer" : undefined,
+          streamingBehavior: session.isStreaming ? 'steer' : undefined,
           preflightResult: (disposition) => {
             if (preflightSettled) {
               return;
@@ -470,12 +504,12 @@ export class PiAgentService {
   }
 
   private handleSessionEvent(event: AgentSessionEvent) {
-    if (event.type === "message_start" && event.message.role === "assistant") {
+    if (event.type === 'message_start' && event.message.role === 'assistant') {
       const message: ChatMessage = {
         id: randomUUID(),
-        role: "assistant",
-        text: "",
-        status: "streaming",
+        role: 'assistant',
+        text: '',
+        status: 'streaming',
         timestamp: new Date().toISOString(),
       };
 
@@ -486,7 +520,7 @@ export class PiAgentService {
       return;
     }
 
-    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+    if (event.type === 'message_update' && event.assistantMessageEvent.type === 'text_delta') {
       if (!this.activeAssistantMessageId) {
         return;
       }
@@ -501,14 +535,22 @@ export class PiAgentService {
       const updatedMessage: ChatMessage = {
         ...currentMessage,
         text: `${currentMessage.text}${event.assistantMessageEvent.delta}`,
-        status: "streaming",
+        status: 'streaming',
       };
-      this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
-      this.broadcaster.chatMessageUpdated(updatedMessage.id, updatedMessage.text, updatedMessage.status);
+      this.messages = [
+        ...this.messages.slice(0, index),
+        updatedMessage,
+        ...this.messages.slice(index + 1),
+      ];
+      this.broadcaster.chatMessageUpdated(
+        updatedMessage.id,
+        updatedMessage.text,
+        updatedMessage.status,
+      );
       return;
     }
 
-    if (event.type === "message_end" && event.message.role === "assistant") {
+    if (event.type === 'message_end' && event.message.role === 'assistant') {
       if (!this.activeAssistantMessageId) {
         return;
       }
@@ -524,24 +566,32 @@ export class PiAgentService {
       const updatedMessage: ChatMessage = {
         ...currentMessage,
         text: currentMessage.text || flattenMessageText(event.message),
-        status: "complete",
+        status: 'complete',
       };
-      this.messages = [...this.messages.slice(0, index), updatedMessage, ...this.messages.slice(index + 1)];
+      this.messages = [
+        ...this.messages.slice(0, index),
+        updatedMessage,
+        ...this.messages.slice(index + 1),
+      ];
       this.activeAssistantMessageId = null;
-      this.broadcaster.chatMessageUpdated(updatedMessage.id, updatedMessage.text, updatedMessage.status);
+      this.broadcaster.chatMessageUpdated(
+        updatedMessage.id,
+        updatedMessage.text,
+        updatedMessage.status,
+      );
       this.emitStatus();
       return;
     }
 
-    if (event.type === "tool_execution_start" && event.toolName === "ask_user") {
+    if (event.type === 'tool_execution_start' && event.toolName === 'ask_user') {
       const prompt = parseInteractivePromptArgs(event.args);
 
       if (prompt) {
         this.interactivePrompt = prompt;
         this.broadcaster.interactivePrompt(prompt);
       } else {
-        this.logger.warn("Invalid ask_user tool arguments – skipping interactive prompt.", {
-          event: "ask_user_invalid",
+        this.logger.warn('Invalid ask_user tool arguments – skipping interactive prompt.', {
+          event: 'ask_user_invalid',
           repo: this.currentRepo?.absolutePath ?? null,
           details: { args: event.args },
         });
@@ -551,7 +601,7 @@ export class PiAgentService {
       const tool: ToolActivity = {
         id: event.toolCallId,
         toolName: event.toolName,
-        status: "running",
+        status: 'running',
         detail: `ask_user: ${summarizePayload(event.args, null)}`,
       };
 
@@ -561,15 +611,20 @@ export class PiAgentService {
       return;
     }
 
-    if (event.type === "tool_execution_start" || event.type === "tool_execution_update" || event.type === "tool_execution_end") {
+    if (
+      event.type === 'tool_execution_start' ||
+      event.type === 'tool_execution_update' ||
+      event.type === 'tool_execution_end'
+    ) {
       const tool: ToolActivity = {
         id: event.toolCallId,
         toolName: event.toolName,
-        status: event.type === "tool_execution_end" ? (event.isError ? "error" : "complete") : "running",
+        status:
+          event.type === 'tool_execution_end' ? (event.isError ? 'error' : 'complete') : 'running',
         detail:
-          event.type === "tool_execution_start"
+          event.type === 'tool_execution_start'
             ? summarizePayload(event.args, null)
-            : event.type === "tool_execution_update"
+            : event.type === 'tool_execution_update'
               ? summarizePayload(event.partialResult, null)
               : summarizePayload(event.result, null),
       };
@@ -581,15 +636,15 @@ export class PiAgentService {
     }
 
     if (
-      event.type === "agent_start" ||
-      event.type === "turn_start" ||
-      event.type === "agent_end" ||
-      event.type === "turn_end" ||
-      event.type === "queue_update" ||
-      event.type === "compaction_start" ||
-      event.type === "compaction_end" ||
-      event.type === "auto_retry_start" ||
-      event.type === "auto_retry_end"
+      event.type === 'agent_start' ||
+      event.type === 'turn_start' ||
+      event.type === 'agent_end' ||
+      event.type === 'turn_end' ||
+      event.type === 'queue_update' ||
+      event.type === 'compaction_start' ||
+      event.type === 'compaction_end' ||
+      event.type === 'auto_retry_start' ||
+      event.type === 'auto_retry_end'
     ) {
       this.emitStatus();
     }
@@ -624,8 +679,8 @@ export class PiAgentService {
 
   private recordError(error: unknown) {
     const message = toErrorMessage(error);
-    this.logger.error("Pi agent runtime reported an error.", {
-      event: "pi_agent_error",
+    this.logger.error('Pi agent runtime reported an error.', {
+      event: 'pi_agent_error',
       repo: this.currentRepo?.absolutePath ?? null,
       details: {
         message,
@@ -694,8 +749,8 @@ function createEmptyCommandState(): AgentCommandState {
     session: null,
     models: [],
     thinkingLevels: [],
-    steeringMode: "all",
-    followUpMode: "one-at-a-time",
+    steeringMode: 'all',
+    followUpMode: 'one-at-a-time',
     autoCompactEnabled: false,
     autoRetryEnabled: false,
     isRetrying: false,
@@ -721,12 +776,16 @@ function getModelReference(session: AgentSession) {
 }
 
 function toErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Unknown pi runtime error.";
+  return error instanceof Error ? error.message : 'Unknown pi runtime error.';
 }
 
-function formatBashResultMessage(exitCode: number | undefined, cancelled: boolean, truncated: boolean) {
-  const exitLabel = typeof exitCode === "number" ? String(exitCode) : "n/a";
-  const suffix = truncated ? " Output was truncated." : "";
+function formatBashResultMessage(
+  exitCode: number | undefined,
+  cancelled: boolean,
+  truncated: boolean,
+) {
+  const exitLabel = typeof exitCode === 'number' ? String(exitCode) : 'n/a';
+  const suffix = truncated ? ' Output was truncated.' : '';
 
   if (cancelled) {
     return `Bash run cancelled (exit ${exitLabel}).${suffix}`;
@@ -740,13 +799,13 @@ function formatBashResultMessage(exitCode: number | undefined, cancelled: boolea
  * Returns null if the payload is malformed.
  */
 export function parseInteractivePromptArgs(args: unknown): InteractivePrompt | null {
-  if (!args || typeof args !== "object") {
+  if (!args || typeof args !== 'object') {
     return null;
   }
 
   const raw = args as Record<string, unknown>;
 
-  if (typeof raw.title !== "string" || raw.title.trim().length === 0) {
+  if (typeof raw.title !== 'string' || raw.title.trim().length === 0) {
     return null;
   }
 
@@ -754,24 +813,28 @@ export function parseInteractivePromptArgs(args: unknown): InteractivePrompt | n
     return null;
   }
 
-  const questions: InteractivePrompt["questions"] = [];
+  const questions: InteractivePrompt['questions'] = [];
 
   for (const q of raw.questions) {
-    if (!q || typeof q !== "object") {
+    if (!q || typeof q !== 'object') {
       return null;
     }
 
     const qRaw = q as Record<string, unknown>;
 
-    if (typeof qRaw.id !== "string" || qRaw.id.trim().length === 0) {
+    if (typeof qRaw.id !== 'string' || qRaw.id.trim().length === 0) {
       return null;
     }
 
-    if (typeof qRaw.label !== "string" || qRaw.label.trim().length === 0) {
+    if (typeof qRaw.label !== 'string' || qRaw.label.trim().length === 0) {
       return null;
     }
 
-    if (!Array.isArray(qRaw.options) || qRaw.options.length === 0 || !qRaw.options.every((opt: unknown) => typeof opt === "string")) {
+    if (
+      !Array.isArray(qRaw.options) ||
+      qRaw.options.length === 0 ||
+      !qRaw.options.every((opt: unknown) => typeof opt === 'string')
+    ) {
       return null;
     }
 
@@ -781,7 +844,10 @@ export function parseInteractivePromptArgs(args: unknown): InteractivePrompt | n
       options: qRaw.options as string[],
       allowFreeText: qRaw.allowFreeText === true,
       multiple: qRaw.multiple === true,
-      placeholder: typeof qRaw.placeholder === "string" && qRaw.placeholder.trim().length > 0 ? qRaw.placeholder.trim() : undefined,
+      placeholder:
+        typeof qRaw.placeholder === 'string' && qRaw.placeholder.trim().length > 0
+          ? qRaw.placeholder.trim()
+          : undefined,
     });
   }
 

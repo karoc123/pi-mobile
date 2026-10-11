@@ -50,7 +50,14 @@
 
 {#if open}
   <div class="overlay" role="presentation" on:click={() => dispatch('close')}>
-    <section class="sheet-card" role="dialog" aria-modal="true" tabindex="-1" on:click|stopPropagation on:keydown|stopPropagation>
+    <section
+      class="sheet-card"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+      on:click|stopPropagation
+      on:keydown|stopPropagation
+    >
       <div class="sheet-header">
         <div>
           <p class="eyebrow">Pi login</p>
@@ -59,7 +66,9 @@
         <button class="ghost-button" type="button" on:click={() => dispatch('close')}>Close</button>
       </div>
 
-      <p class="menu-copy">Token is stored in the persistent Pi volume and reused across restarts.</p>
+      <p class="menu-copy">
+        Token is stored in the persistent Pi volume and reused across restarts.
+      </p>
 
       {#if loading}
         <p class="empty-state small">Loading providers…</p>
@@ -67,9 +76,16 @@
         <p class="empty-state small">No providers available.</p>
       {:else}
         <label class="field-label" for="pi-provider-select">Provider</label>
-        <select id="pi-provider-select" class="text-input" bind:value={provider} disabled={submitting}>
-          {#each providers as entry}
-            <option value={entry.provider}>{entry.label}{entry.configured ? ' · configured' : ''}</option>
+        <select
+          id="pi-provider-select"
+          class="text-input"
+          bind:value={provider}
+          disabled={submitting}
+        >
+          {#each providers as entry (entry.provider)}
+            <option value={entry.provider}
+              >{entry.label}{entry.configured ? ' · configured' : ''}</option
+            >
           {/each}
         </select>
 
@@ -86,9 +102,24 @@
         />
 
         <div class="menu-insight-actions">
-          <button class="secondary-button" type="button" on:click={() => dispatch('refresh')} disabled={submitting}>Refresh</button>
-          <button class="secondary-button" type="button" on:click={handleLogout} disabled={submitting}>Logout provider</button>
-          <button class="primary-button" type="button" on:click={handleSubmit} disabled={submitting || token.trim().length === 0 || provider.trim().length === 0}>
+          <button
+            class="secondary-button"
+            type="button"
+            on:click={() => dispatch('refresh')}
+            disabled={submitting}>Refresh</button
+          >
+          <button
+            class="secondary-button"
+            type="button"
+            on:click={handleLogout}
+            disabled={submitting}>Logout provider</button
+          >
+          <button
+            class="primary-button"
+            type="button"
+            on:click={handleSubmit}
+            disabled={submitting || token.trim().length === 0 || provider.trim().length === 0}
+          >
             {submitting ? 'Saving…' : 'Save token'}
           </button>
         </div>

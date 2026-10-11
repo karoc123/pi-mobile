@@ -1,14 +1,30 @@
-import path from "node:path";
+import path from 'node:path';
 
-import { ModelRuntime, SessionManager, createAgentSession, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import {
+  ModelRuntime,
+  SessionManager,
+  createAgentSession,
+  type AgentSession,
+  type AgentSessionEvent,
+} from '@earendil-works/pi-coding-agent';
 
-import { askUserTool } from "./ask-user-tool.js";
+import { askUserTool } from './ask-user-tool.js';
 
-import type { AgentCommandState, AgentResumeSession, AgentRuntimePhase, AgentSlashCommand, AgentThinkingLevel, AgentTreeEntry, AgentUsage, SelectedRepo } from "../../shared/contracts.js";
+import type {
+  AgentCommandState,
+  AgentResumeSession,
+  AgentRuntimePhase,
+  AgentSlashCommand,
+  AgentThinkingLevel,
+  AgentTreeEntry,
+  AgentUsage,
+  SelectedRepo,
+} from '../../shared/contracts.js';
 
-import type { AppConfig } from "../config.js";
-import { flattenMessageText, summarizeText } from "./pi-agent-hydrator.js";
-import type { LogChannel } from "./log-service.js";
+import type { AppConfig } from '../config.js';
+import { flattenMessageText, summarizeText } from './pi-agent-hydrator.js';
+import type { LogChannel } from './log-service.js';
+import { setupTestProvider } from './test-provider.js';
 
 export type SessionOpenOptions = {
   preferredModel?: { provider: string; modelId: string } | null;
@@ -45,13 +61,23 @@ export class PiAgentSessionAdapter {
     return this.createSession(repo, true);
   }
 
-  async createSession(repo: SelectedRepo, continueRecent: boolean, options: SessionOpenOptions = { useConfiguredDefaults: true }) {
+  async createSession(
+    repo: SelectedRepo,
+    continueRecent: boolean,
+    options: SessionOpenOptions = { useConfiguredDefaults: true },
+  ) {
     const sessionDirectory = this.resolveSessionDirectory(repo);
-    const sessionManager = continueRecent ? SessionManager.continueRecent(repo.absolutePath, sessionDirectory) : SessionManager.create(repo.absolutePath, sessionDirectory);
+    const sessionManager = continueRecent
+      ? SessionManager.continueRecent(repo.absolutePath, sessionDirectory)
+      : SessionManager.create(repo.absolutePath, sessionDirectory);
     return this.openSessionManager(repo, sessionManager, options);
   }
 
-  async openSessionPath(repo: SelectedRepo, sessionPath: string, options: SessionOpenOptions = { useConfiguredDefaults: false }) {
+  async openSessionPath(
+    repo: SelectedRepo,
+    sessionPath: string,
+    options: SessionOpenOptions = { useConfiguredDefaults: false },
+  ) {
     return this.openSessionManager(repo, SessionManager.open(sessionPath), options);
   }
 
@@ -64,7 +90,13 @@ export class PiAgentSessionAdapter {
 
     return {
       isStreaming,
-      runtimePhase: deriveRuntimePhase({ isStreaming, isCompacting, isRetrying, isBashRunning, pendingMessageCount }),
+      runtimePhase: deriveRuntimePhase({
+        isStreaming,
+        isCompacting,
+        isRetrying,
+        isBashRunning,
+        pendingMessageCount,
+      }),
       pendingMessageCount,
       isCompacting,
       isRetrying,
@@ -99,7 +131,10 @@ export class PiAgentSessionAdapter {
       contextWindow: contextUsage?.contextWindow ?? model?.contextWindow ?? null,
       contextPercent: contextUsage?.percent ?? null,
       modelId: model?.id ?? null,
-      usingSubscription: model ? this.session.modelRuntime.isUsingSubscription(model.provider) || this.session.modelRuntime.isUsingOAuth(model.provider) : false,
+      usingSubscription: model
+        ? this.session.modelRuntime.isUsingSubscription(model.provider) ||
+          this.session.modelRuntime.isUsingOAuth(model.provider)
+        : false,
       autoCompactEnabled: this.session.autoCompactionEnabled,
     };
   }
@@ -110,6 +145,7 @@ export class PiAgentSessionAdapter {
     // Login/logout happens through a separate service instance.
     // Reload auth + models so command palette availability reflects changes immediately.
     await session.modelRuntime.refresh({ allowNetwork: false });
+    await setupTestProvider(session.modelRuntime);
 
     const sessionStats = session.getSessionStats();
     const currentModel = session.model;
@@ -136,8 +172,14 @@ export class PiAgentSessionAdapter {
           modelId: model.id,
           name: model.name,
           available: isModelReadyForSelection(session.modelRuntime, model.provider),
-          isCurrent: Boolean(currentModel && currentModel.provider === model.provider && currentModel.id === model.id),
-          usingSubscription: session.modelRuntime.isUsingSubscription(model.provider) || session.modelRuntime.isUsingOAuth(model.provider),
+          isCurrent: Boolean(
+            currentModel &&
+            currentModel.provider === model.provider &&
+            currentModel.id === model.id,
+          ),
+          usingSubscription:
+            session.modelRuntime.isUsingSubscription(model.provider) ||
+            session.modelRuntime.isUsingOAuth(model.provider),
         }))
         .filter((model) => model.available || model.isCurrent)
         .sort((left, right) => {
@@ -149,7 +191,9 @@ export class PiAgentSessionAdapter {
             return left.available ? -1 : 1;
           }
 
-          return `${left.provider}/${left.modelId}`.localeCompare(`${right.provider}/${right.modelId}`);
+          return `${left.provider}/${left.modelId}`.localeCompare(
+            `${right.provider}/${right.modelId}`,
+          );
         }),
       thinkingLevels: session.getAvailableThinkingLevels().map((level) => ({
         value: level as AgentThinkingLevel,
@@ -164,8 +208,13 @@ export class PiAgentSessionAdapter {
       isBashRunning: session.isBashRunning,
       pendingMessageCount: session.pendingMessageCount,
       availableCommands,
-      resumeSessions: resumeSessions.sort((left, right) => right.modified.getTime() - left.modified.getTime()).map((entry) => toResumeSession(entry, currentSessionFile)),
-      treeEntries: flattenTreeEntries(session.sessionManager.getTree(), session.sessionManager.getLeafId()),
+      resumeSessions: resumeSessions
+        .sort((left, right) => right.modified.getTime() - left.modified.getTime())
+        .map((entry) => toResumeSession(entry, currentSessionFile)),
+      treeEntries: flattenTreeEntries(
+        session.sessionManager.getTree(),
+        session.sessionManager.getLeafId(),
+      ),
       forkEntries: session.getUserMessagesForForking().map((entry) => ({
         entryId: entry.entryId,
         preview: summarizeText(entry.text),
@@ -173,12 +222,27 @@ export class PiAgentSessionAdapter {
     };
   }
 
-  private async openSessionManager(repo: SelectedRepo, sessionManager: SessionManager, options: SessionOpenOptions) {
-    const authPath = this.config.piAgentDir ? path.join(this.config.piAgentDir, "auth.json") : undefined;
-    const modelsPath = this.config.piAgentDir ? path.join(this.config.piAgentDir, "models.json") : undefined;
+  private async openSessionManager(
+    repo: SelectedRepo,
+    sessionManager: SessionManager,
+    options: SessionOpenOptions,
+  ) {
+    const authPath = this.config.piAgentDir
+      ? path.join(this.config.piAgentDir, 'auth.json')
+      : undefined;
+    const modelsPath = this.config.piAgentDir
+      ? path.join(this.config.piAgentDir, 'models.json')
+      : undefined;
     const modelRuntime = await ModelRuntime.create({ authPath, modelsPath });
-    const model = this.resolvePreferredModel(modelRuntime, options.preferredModel, options.useConfiguredDefaults ?? false);
-    const thinkingLevel = options.preferredThinkingLevel ?? (options.useConfiguredDefaults ? this.config.piThinkingLevel : undefined);
+    await setupTestProvider(modelRuntime);
+    const model = this.resolvePreferredModel(
+      modelRuntime,
+      options.preferredModel,
+      options.useConfiguredDefaults ?? false,
+    );
+    const thinkingLevel =
+      options.preferredThinkingLevel ??
+      (options.useConfiguredDefaults ? this.config.piThinkingLevel : undefined);
 
     const { session } = await createAgentSession({
       cwd: repo.absolutePath,
@@ -202,7 +266,11 @@ export class PiAgentSessionAdapter {
     return session;
   }
 
-  private resolvePreferredModel(modelRuntime: ModelRuntime, preferredModel: { provider: string; modelId: string } | null | undefined, useConfiguredDefaults: boolean) {
+  private resolvePreferredModel(
+    modelRuntime: ModelRuntime,
+    preferredModel: { provider: string; modelId: string } | null | undefined,
+    useConfiguredDefaults: boolean,
+  ) {
     if (preferredModel) {
       const model = modelRuntime.getModel(preferredModel.provider, preferredModel.modelId);
 
@@ -211,7 +279,18 @@ export class PiAgentSessionAdapter {
       }
     }
 
-    return useConfiguredDefaults ? this.resolveConfiguredModel(modelRuntime) : undefined;
+    const configured = useConfiguredDefaults
+      ? this.resolveConfiguredModel(modelRuntime)
+      : undefined;
+    if (configured) {
+      return configured;
+    }
+
+    if (process.env.PI_TEST_PROVIDER === '1') {
+      return modelRuntime.getModel('faux', 'faux-1');
+    }
+
+    return undefined;
   }
 
   private resolveConfiguredModel(modelRuntime: ModelRuntime) {
@@ -222,7 +301,9 @@ export class PiAgentSessionAdapter {
     const model = modelRuntime.getModel(this.config.piProvider, this.config.piModel);
 
     if (!model) {
-      throw new Error(`Configured pi model ${this.config.piProvider}/${this.config.piModel} was not found.`);
+      throw new Error(
+        `Configured pi model ${this.config.piProvider}/${this.config.piModel} was not found.`,
+      );
     }
 
     return model;
@@ -238,28 +319,34 @@ export class PiAgentSessionAdapter {
 
   private getAvailableSlashCommands(session: AgentSession, repoPath: string): AgentSlashCommand[] {
     try {
-      const extensionCommands: AgentSlashCommand[] = session.extensionRunner.getRegisteredCommands().map((command) => ({
-        name: command.invocationName,
-        description: command.description ?? null,
-        source: "extension",
-      }));
+      const extensionCommands: AgentSlashCommand[] = session.extensionRunner
+        .getRegisteredCommands()
+        .map((command) => ({
+          name: command.invocationName,
+          description: command.description ?? null,
+          source: 'extension',
+        }));
 
       const promptCommands: AgentSlashCommand[] = session.promptTemplates.map((template) => ({
         name: template.name,
         description: template.description ?? null,
-        source: "prompt",
+        source: 'prompt',
       }));
 
-      const skillCommands: AgentSlashCommand[] = session.resourceLoader.getSkills().skills.map((skill) => ({
-        name: `skill:${skill.name}`,
-        description: skill.description ?? null,
-        source: "skill",
-      }));
+      const skillCommands: AgentSlashCommand[] = session.resourceLoader
+        .getSkills()
+        .skills.map((skill) => ({
+          name: `skill:${skill.name}`,
+          description: skill.description ?? null,
+          source: 'skill',
+        }));
 
-      return [...extensionCommands, ...promptCommands, ...skillCommands].sort((left, right) => left.name.localeCompare(right.name));
+      return [...extensionCommands, ...promptCommands, ...skillCommands].sort((left, right) =>
+        left.name.localeCompare(right.name),
+      );
     } catch (error) {
-      this.logger.warn("Could not resolve slash commands for command palette.", {
-        event: "slash_commands_unavailable",
+      this.logger.warn('Could not resolve slash commands for command palette.', {
+        event: 'slash_commands_unavailable',
         repo: repoPath,
         details: {
           message: error instanceof Error ? error.message : String(error),
@@ -271,7 +358,10 @@ export class PiAgentSessionAdapter {
   }
 }
 
-function toResumeSession(entry: Awaited<ReturnType<typeof SessionManager.list>>[number], currentSessionFile: string | undefined): AgentResumeSession {
+function toResumeSession(
+  entry: Awaited<ReturnType<typeof SessionManager.list>>[number],
+  currentSessionFile: string | undefined,
+): AgentResumeSession {
   return {
     path: entry.path,
     id: entry.id,
@@ -283,15 +373,19 @@ function toResumeSession(entry: Awaited<ReturnType<typeof SessionManager.list>>[
   };
 }
 
-function flattenTreeEntries(nodes: ReturnType<SessionManager["getTree"]>, currentLeafId: string | null, depth = 0): AgentTreeEntry[] {
+function flattenTreeEntries(
+  nodes: ReturnType<SessionManager['getTree']>,
+  currentLeafId: string | null,
+  depth = 0,
+): AgentTreeEntry[] {
   return nodes.flatMap((node) => {
     const children = flattenTreeEntries(node.children, currentLeafId, depth + 1);
 
-    if (node.entry.type !== "message") {
+    if (node.entry.type !== 'message') {
       return children;
     }
 
-    if (node.entry.message.role !== "user" && node.entry.message.role !== "assistant") {
+    if (node.entry.message.role !== 'user' && node.entry.message.role !== 'assistant') {
       return children;
     }
 
@@ -313,37 +407,43 @@ function isModelReadyForSelection(modelRuntime: ModelRuntime, provider: string) 
 
   return (
     status.configured &&
-    (status.source === "stored" ||
-      status.source === "runtime" ||
-      status.source === "environment" ||
-      status.source === "models_json_key" ||
-      status.source === "models_json_command" ||
-      status.source === "fallback")
+    (status.source === 'stored' ||
+      status.source === 'runtime' ||
+      status.source === 'environment' ||
+      status.source === 'models_json_key' ||
+      status.source === 'models_json_command' ||
+      status.source === 'fallback')
   );
 }
 
-export function deriveRuntimePhase(input: { isStreaming: boolean; isCompacting: boolean; isRetrying: boolean; isBashRunning: boolean; pendingMessageCount: number }): AgentRuntimePhase {
+export function deriveRuntimePhase(input: {
+  isStreaming: boolean;
+  isCompacting: boolean;
+  isRetrying: boolean;
+  isBashRunning: boolean;
+  pendingMessageCount: number;
+}): AgentRuntimePhase {
   if (input.isRetrying) {
-    return "retrying";
+    return 'retrying';
   }
 
   if (input.isCompacting) {
-    return "compacting";
+    return 'compacting';
   }
 
   if (input.isBashRunning) {
-    return "bash-running";
+    return 'bash-running';
   }
 
   if (input.isStreaming) {
-    return "streaming";
+    return 'streaming';
   }
 
   if (input.pendingMessageCount > 0) {
-    return "queued";
+    return 'queued';
   }
 
-  return "idle";
+  return 'idle';
 }
 
 function resolveSessionTotalCost(sessionStatsCost: unknown, messages: readonly unknown[]) {
@@ -385,7 +485,7 @@ function aggregateAssistantMessageCost(messages: readonly unknown[]) {
 }
 
 function readAssistantMessageCost(message: unknown) {
-  if (!message || typeof message !== "object") {
+  if (!message || typeof message !== 'object') {
     return null;
   }
 
@@ -398,7 +498,7 @@ function readAssistantMessageCost(message: unknown) {
     };
   };
 
-  if (assistantMessage.role !== "assistant") {
+  if (assistantMessage.role !== 'assistant') {
     return null;
   }
 
@@ -406,7 +506,7 @@ function readAssistantMessageCost(message: unknown) {
 }
 
 function parseNonNegativeNumber(value: unknown) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     return null;
   }
 
@@ -414,5 +514,5 @@ function parseNonNegativeNumber(value: unknown) {
 }
 
 function toSessionDirName(repoAbsolutePath: string) {
-  return Buffer.from(repoAbsolutePath).toString("base64url");
+  return Buffer.from(repoAbsolutePath).toString('base64url');
 }
