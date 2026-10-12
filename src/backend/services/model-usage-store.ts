@@ -1,8 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
+import fs from 'node:fs';
+import path from 'node:path';
 
-import type { AgentModelOption } from "../../shared/contracts.js";
-import type { LogChannel } from "./log-service.js";
+import type { AgentModelOption } from '../../shared/contracts.js';
+import type { LogChannel } from './log-service.js';
 
 type ModelUsageCounts = Record<string, number>;
 
@@ -26,8 +26,8 @@ export class ModelUsageStore {
       fs.writeFileSync(tempPath, JSON.stringify(this.counts));
       fs.renameSync(tempPath, this.filePath);
     } catch (error) {
-      this.logger?.warn("Failed to persist model usage.", {
-        event: "model_usage_persist_failed",
+      this.logger?.warn('Failed to persist model usage.', {
+        event: 'model_usage_persist_failed',
         details: { message: error instanceof Error ? error.message : String(error) },
       });
     }
@@ -35,7 +35,10 @@ export class ModelUsageStore {
 
   rank(models: AgentModelOption[]): AgentModelOption[] {
     return models
-      .map((model) => ({ ...model, usageCount: this.counts[toKey(model.provider, model.modelId)] ?? 0 }))
+      .map((model) => ({
+        ...model,
+        usageCount: this.counts[toKey(model.provider, model.modelId)] ?? 0,
+      }))
       .sort(
         (left, right) =>
           Number(right.isCurrent) - Number(left.isCurrent) ||
@@ -52,14 +55,16 @@ function toKey(provider: string, modelId: string) {
 
 function readCounts(filePath: string): ModelUsageCounts {
   try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf8'));
 
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return {};
     }
 
     return Object.fromEntries(
-      Object.entries(parsed).filter((entry): entry is [string, number] => Number.isInteger(entry[1]) && entry[1] > 0),
+      Object.entries(parsed).filter(
+        (entry): entry is [string, number] => Number.isInteger(entry[1]) && entry[1] > 0,
+      ),
     );
   } catch {
     return {};

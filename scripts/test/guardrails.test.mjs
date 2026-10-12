@@ -111,3 +111,31 @@ test('format writes require explicit paths and cannot format the full tree', () 
     );
   }
 });
+
+test('Svelte compiler requires Runes and rejects legacy reactive declarations', async () => {
+  const { compile } = await import('svelte/compiler');
+  const { default: config } = await import('../../svelte.config.js');
+  assert.equal(config.compilerOptions.runes, true);
+  for (const source of [
+    '<script>export let name;</script>',
+    '<script>let value = 0; $: value = 1;</script>',
+  ]) {
+    assert.throws(() => compile(source, config.compilerOptions));
+  }
+  compile(
+    '<script>let value = $state(0);</script><button onclick={() => value++}>{value}</button>',
+    config.compilerOptions,
+  );
+});
+
+test('ESLint rejects legacy event directives and createEventDispatcher', async () => {
+  const { ESLint } = await import('eslint');
+  const lint = new ESLint({ cwd: root });
+  for (const source of [
+    '<button on:click={() => {}}>Go</button>',
+    '<script>import { createEventDispatcher } from "svelte"; const dispatch = createEventDispatcher();</script><button onclick={() => dispatch("go")}>Go</button>',
+  ]) {
+    const [result] = await lint.lintText(source, { filePath: 'src/frontend/Legacy.svelte' });
+    assert.ok(result.errorCount > 0, JSON.stringify(result.messages));
+  }
+});

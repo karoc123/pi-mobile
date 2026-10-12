@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
   import type { ChatToolCall } from '../../shared/contracts.js';
 
   const {
@@ -6,6 +7,8 @@
   }: {
     tools?: ChatToolCall[];
   } = $props();
+
+  const openTools = new SvelteSet<string>();
 
   function resolveToolIcon(name: string): string {
     const lower = name.toLowerCase();
@@ -44,6 +47,7 @@
   function describeToolStatus(status: ChatToolCall['status']): string {
     if (status === 'running') return 'running';
     if (status === 'error') return 'error';
+    if (status === 'aborted') return 'aborted';
     return 'done';
   }
 </script>
@@ -51,7 +55,13 @@
 {#if tools.length > 0}
   <div class="tool-calls-list">
     {#each tools as tool (tool.id)}
-      <details class="tool-inline-item">
+      <details
+        class="tool-inline-item"
+        ontoggle={(event) => {
+          if (event.currentTarget.open) openTools.add(tool.id);
+          else openTools.delete(tool.id);
+        }}
+      >
         <summary class="tool-summary-header">
           <span class="tool-summary-icon icon-{resolveToolIcon(tool.name)}">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -61,7 +71,7 @@
           <span class="tool-name">{tool.name}</span>
           <span class="tool-status status-{tool.status}">{describeToolStatus(tool.status)}</span>
         </summary>
-        {#if tool.detail}
+        {#if openTools.has(tool.id) && tool.detail}
           <pre class="tool-summary-detail">{tool.detail}</pre>
         {/if}
       </details>
@@ -78,18 +88,20 @@
   }
 
   .tool-inline-item {
-    background: var(--surface-bg, rgba(255, 255, 255, 0.04));
-    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-    border-radius: var(--radius-sm, 6px);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 0.35rem;
     overflow: hidden;
-    font-size: var(--text-xs, 0.8rem);
+    font-size: 0.8rem;
   }
 
   .tool-summary-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 0.5rem;
+    padding: 0.5rem;
+    min-height: 44px;
+    box-sizing: border-box;
     cursor: pointer;
     user-select: none;
     list-style: none;
@@ -114,28 +126,28 @@
   }
 
   .icon-read {
-    color: var(--color-cyan, #06b6d4);
+    color: var(--accent);
   }
 
   .icon-write {
-    color: var(--color-amber, #f59e0b);
+    color: var(--accent);
   }
 
   .icon-search {
-    color: var(--color-indigo, #818cf8);
+    color: var(--accent);
   }
 
   .icon-terminal {
-    color: var(--color-emerald, #10b981);
+    color: var(--success);
   }
 
   .icon-generic {
-    color: var(--color-subdued, #94a3b8);
+    color: var(--muted);
   }
 
   .tool-name {
     font-weight: 600;
-    font-family: var(--font-mono, monospace);
+    font-family: 'IBM Plex Mono', monospace;
     flex: 1;
   }
 
@@ -148,26 +160,27 @@
   }
 
   .status-running {
-    background: rgba(59, 130, 246, 0.15);
-    color: var(--color-blue, #60a5fa);
+    background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+    color: var(--ink);
   }
 
   .status-complete {
-    background: rgba(34, 197, 94, 0.15);
-    color: var(--color-emerald, #4ade80);
+    background: color-mix(in srgb, var(--success) 12%, var(--surface));
+    color: var(--ink);
   }
 
+  .status-aborted,
   .status-error {
-    background: rgba(239, 68, 68, 0.15);
-    color: var(--color-rose, #f87171);
+    background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+    color: var(--ink);
   }
 
   .tool-summary-detail {
     margin: 0;
     padding: 0.5rem;
-    border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
-    background: var(--bg-code, rgba(0, 0, 0, 0.25));
-    font-family: var(--font-mono, monospace);
+    border-top: 1px solid var(--line);
+    background: var(--surface-strong);
+    font-family: 'IBM Plex Mono', monospace;
     font-size: 0.75rem;
     line-height: 1.4;
     white-space: pre-wrap;

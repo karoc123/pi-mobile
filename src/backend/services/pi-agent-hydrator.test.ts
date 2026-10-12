@@ -146,4 +146,52 @@ describe('hydrateMessagesFromSession', () => {
     expect(messages[0].tools?.[0].status).toBe('error');
     expect(messages[0].tools?.[0].detail).toBe('Command failed with exit code 1');
   });
+  it('matches parallel results strictly by call id and leaves missing results aborted', () => {
+    const messages = hydrateMessagesFromSession([
+      {
+        role: 'assistant',
+        content: ['a', 'b', 'c'].map((id) => ({
+          type: 'toolCall',
+          id,
+          name: 'read',
+          arguments: { path: id },
+        })),
+      },
+      { role: 'toolResult', toolCallId: 'b', toolName: 'read', content: 'B' },
+      { role: 'toolResult', toolCallId: 'a', toolName: 'read', content: 'A' },
+      { role: 'toolResult', toolCallId: 'unknown', toolName: 'read', content: 'wrong' },
+    ]);
+    expect(messages[0].tools).toMatchObject([
+      { id: 'a', detail: 'A', status: 'complete' },
+      { id: 'b', detail: 'B', status: 'complete' },
+      { id: 'c', status: 'aborted' },
+    ]);
+    expect(
+      hydrateMessagesFromSession(
+        [{ role: 'assistant', content: [{ type: 'toolCall', id: 'pending', name: 'read' }] }],
+        true,
+      )[0].tools?.[0].status,
+    ).toBe('running');
+  });
+
+  it('bounds tool arguments and results in snapshots', () => {
+    const input = {
+      role: 'assistant',
+      content: [
+        {
+          type: 'toolCall',
+          id: 'large',
+          name: 'write',
+          arguments: { content: 'x'.repeat(100_000) },
+        },
+      ],
+    };
+    expect(hydrateMessagesFromSession([input])[0].tools?.[0].detail?.length).toBeLessThan(260);
+    const result = hydrateMessagesFromSession([
+      input,
+      { role: 'toolResult', toolCallId: 'large', content: 'x'.repeat(100_000) },
+    ]);
+    expect(result[0].tools?.[0].detail?.length).toBeLessThan(4120);
+    expect(result[0].tools?.[0].detail).toContain('gekürzt');
+  });
 });

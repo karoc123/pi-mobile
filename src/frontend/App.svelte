@@ -6,10 +6,10 @@
   import LoginScreen from './components/LoginScreen.svelte';
   import Workspace from './components/Workspace.svelte';
   import { apiFetch, setUnauthorizedHandler, toErrorMessage } from './lib/api.js';
-  import { toast } from './lib/toast.svelte.js';
 
   const themeStorageKey = 'pimobile.theme';
 
+  let loginError = $state('');
   let authChecked = $state(false);
   let authenticated = $state(false);
   let currentRepo = $state<SelectedRepo | null>(null);
@@ -20,23 +20,25 @@
     void checkSession();
   });
 
-  setUnauthorizedHandler(() => {
+  function expireSession() {
     authenticated = false;
     currentRepo = null;
-    toast.show('Session expired. Please sign in again.', 'error');
-  });
+    loginError = 'Session expired. Please sign in again.';
+  }
+  setUnauthorizedHandler(expireSession);
 
   async function checkSession() {
     try {
       const session = await apiFetch<SessionResponse>('/api/auth/session');
       authChecked = true;
       authenticated = session.authenticated;
+      loginError = '';
       currentRepo = session.repo;
     } catch (error) {
       authChecked = true;
       authenticated = false;
       currentRepo = null;
-      toast.show(toErrorMessage(error), 'error');
+      loginError = toErrorMessage(error);
     }
   }
 
@@ -73,7 +75,9 @@
   </main>
 {:else if !authenticated}
   <LoginScreen
+    initialError={loginError}
     onLogin={(session) => {
+      loginError = '';
       currentRepo = session.repo;
       authenticated = session.authenticated;
     }}
@@ -81,6 +85,7 @@
 {:else}
   <Workspace
     initialRepo={currentRepo}
+    onunauthorized={expireSession}
     {theme}
     onsetTheme={setTheme}
     onlogout={() => {

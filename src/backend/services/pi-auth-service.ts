@@ -1,12 +1,12 @@
-import fs from "node:fs";
-import path from "node:path";
+import fs from 'node:fs';
+import path from 'node:path';
 
-import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, ModelRuntime } from '@earendil-works/pi-coding-agent';
 
-import type { PiAuthProviderState } from "../../shared/contracts.js";
-import type { AppConfig } from "../config.js";
+import type { PiAuthProviderState } from '../../shared/contracts.js';
+import type { AppConfig } from '../config.js';
 
-export type PiAuthErrorCode = "unknown_provider" | "invalid_token";
+export type PiAuthErrorCode = 'unknown_provider' | 'invalid_token';
 
 export class PiAuthServiceError extends Error {
   constructor(
@@ -14,7 +14,7 @@ export class PiAuthServiceError extends Error {
     message: string,
   ) {
     super(message);
-    this.name = "PiAuthServiceError";
+    this.name = 'PiAuthServiceError';
   }
 }
 
@@ -24,8 +24,10 @@ export class PiAuthService {
   private runtimePromise: Promise<ModelRuntime> | null = null;
 
   constructor(config: AppConfig) {
-    this.authPath = config.piAgentDir ? path.join(config.piAgentDir, "auth.json") : path.join(getAgentDir(), "auth.json");
-    this.modelsPath = config.piAgentDir ? path.join(config.piAgentDir, "models.json") : undefined;
+    this.authPath = config.piAgentDir
+      ? path.join(config.piAgentDir, 'auth.json')
+      : path.join(getAgentDir(), 'auth.json');
+    this.modelsPath = config.piAgentDir ? path.join(config.piAgentDir, 'models.json') : undefined;
   }
 
   private async getRuntime(): Promise<ModelRuntime> {
@@ -53,18 +55,24 @@ export class PiAuthService {
     const runtime = await this.getRuntime();
 
     if (!this.isKnownProvider(runtime, normalizedProvider)) {
-      throw new PiAuthServiceError("unknown_provider", `Provider '${normalizedProvider}' is not registered.`);
+      throw new PiAuthServiceError(
+        'unknown_provider',
+        `Provider '${normalizedProvider}' is not registered.`,
+      );
     }
 
     if (!normalizedToken) {
-      throw new PiAuthServiceError("invalid_token", `Token validation for provider '${normalizedProvider}' failed.`);
+      throw new PiAuthServiceError(
+        'invalid_token',
+        `Token validation for provider '${normalizedProvider}' failed.`,
+      );
     }
 
     const authData = readAuthJson(this.authPath);
     const previousCredential = authData[normalizedProvider];
 
     authData[normalizedProvider] = {
-      type: "api_key",
+      type: 'api_key',
       key: normalizedToken,
     };
     writeAuthJson(this.authPath, authData);
@@ -82,7 +90,10 @@ export class PiAuthService {
       }
       writeAuthJson(this.authPath, authData);
       await runtime.refresh({ allowNetwork: false });
-      throw new PiAuthServiceError("invalid_token", `Token validation for provider '${normalizedProvider}' failed.`);
+      throw new PiAuthServiceError(
+        'invalid_token',
+        `Token validation for provider '${normalizedProvider}' failed.`,
+      );
     }
 
     return {
@@ -97,7 +108,10 @@ export class PiAuthService {
     const runtime = await this.getRuntime();
 
     if (!this.isKnownProvider(runtime, normalizedProvider)) {
-      throw new PiAuthServiceError("unknown_provider", `Provider '${normalizedProvider}' is not registered.`);
+      throw new PiAuthServiceError(
+        'unknown_provider',
+        `Provider '${normalizedProvider}' is not registered.`,
+      );
     }
 
     const authData = readAuthJson(this.authPath);
@@ -154,7 +168,10 @@ export class PiAuthService {
       return false;
     }
 
-    return runtime.getProvider(provider) !== undefined || this.resolveProviders(runtime).some((candidate) => candidate.provider === provider);
+    return (
+      runtime.getProvider(provider) !== undefined ||
+      this.resolveProviders(runtime).some((candidate) => candidate.provider === provider)
+    );
   }
 }
 
@@ -163,9 +180,11 @@ function readAuthJson(authPath: string): Record<string, unknown> {
     if (!fs.existsSync(authPath)) {
       return {};
     }
-    const raw = fs.readFileSync(authPath, "utf-8");
+    const raw = fs.readFileSync(authPath, 'utf-8');
     const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch {
     return {};
   }
@@ -176,5 +195,5 @@ function writeAuthJson(authPath: string, data: Record<string, unknown>): void {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
-  fs.writeFileSync(authPath, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
+  fs.writeFileSync(authPath, JSON.stringify(data, null, 2), { encoding: 'utf-8', mode: 0o600 });
 }

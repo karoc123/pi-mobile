@@ -30,6 +30,7 @@ import type { ModelUsageStore } from './model-usage-store.js';
 type Broadcast = (event: WebsocketEnvelope) => void;
 
 export class PiAgentService {
+  private repoSelection: Promise<void> = Promise.resolve();
   private currentRepo: SelectedRepo | null = null;
   private messages: ChatMessage[] = [];
   private lastError: string | null = null;
@@ -57,6 +58,10 @@ export class PiAgentService {
 
   private get session() {
     return this.sessionAdapter.getSession();
+  }
+
+  getCurrentRepo(): SelectedRepo | null {
+    return this.currentRepo;
   }
 
   getSnapshot(): AgentSnapshot {
@@ -195,9 +200,11 @@ export class PiAgentService {
         this.emitStatus();
 
         const result = await runPromise;
-        this.messages = hydrateMessagesFromSession(session.messages);
+        if (!session.isStreaming) {
+          this.syncFromSession(session);
+          this.emitSnapshot();
+        }
         this.emitStatus();
-        this.emitSnapshot();
 
         return {
           message: formatBashResultMessage(result.exitCode, result.cancelled, result.truncated),
@@ -259,6 +266,7 @@ export class PiAgentService {
       }
 
       case 'navigate-tree': {
+        this.interactivePrompt = null;
         const result = await session.navigateTree(request.entryId);
 
         if (result.cancelled) {
@@ -299,6 +307,12 @@ export class PiAgentService {
   }
 
   async selectRepo(repo: SelectedRepo) {
+    const selection = this.repoSelection.then(() => this.activateRepo(repo));
+    this.repoSelection = selection.catch(() => {});
+    return selection;
+  }
+
+  private async activateRepo(repo: SelectedRepo) {
     if (this.currentRepo?.absolutePath === repo.absolutePath) {
       return;
     }
@@ -397,7 +411,11 @@ export class PiAgentService {
       throw new Error('No repository selected for pi session.');
     }
 
-    return this.sessionAdapter.ensureSession(this.currentRepo);
+    const repo = this.currentRepo;
+    const session = await this.sessionAdapter.ensureSession(repo);
+    if (this.currentRepo?.absolutePath !== repo.absolutePath)
+      throw new Error('Repository changed while opening the session.');
+    return session;
   }
 
   private async createSession(
@@ -415,6 +433,8 @@ export class PiAgentService {
       continueRecent,
       options,
     );
+    this.interactivePrompt = null;
+    this.lastError = null;
     this.syncFromSession(session);
     this.emitStatus();
     return session;
@@ -430,13 +450,14 @@ export class PiAgentService {
       sessionPath,
       options,
     );
+    this.interactivePrompt = null;
+    this.lastError = null;
     this.syncFromSession(session);
     this.emitStatus();
   }
 
   private syncFromSession(session: AgentSession) {
     this.messages = hydrateMessagesFromSession(session.messages);
-    this.lastError = null;
     this.activeAssistantMessageId = null;
   }
 
@@ -526,6 +547,8 @@ export class PiAgentService {
     }
 
     if (event.type === 'message_end' && event.message.role === 'assistant') {
+      if (event.message.stopReason === 'error')
+        this.recordError(event.message.errorMessage || 'Provider request failed.');
       if (!this.activeAssistantMessageId) {
         return;
       }
@@ -582,7 +605,7 @@ export class PiAgentService {
         id: event.toolCallId,
         name: event.toolName,
         status: 'running',
-        detail: `ask_user: ${summarizePayload(event.args, null)}`,
+        detail: `ask_user: ${summarizePayload(event.args)}`,
       }));
       this.emitStatus();
       return;
@@ -593,7 +616,7 @@ export class PiAgentService {
         id: event.toolCallId,
         name: event.toolName,
         status: 'running',
-        detail: summarizePayload(event.args, null),
+        detail: summarizePayload(event.args),
       }));
       this.emitStatus();
       return;
@@ -604,7 +627,7 @@ export class PiAgentService {
         id: event.toolCallId,
         name: event.toolName,
         status: 'running',
-        detail: summarizePayload(event.partialResult, null) || existing?.detail,
+        detail: summarizePayload(event.partialResult, 4096) || existing?.detail,
       }));
       this.emitStatus();
       return;
@@ -616,8 +639,23 @@ export class PiAgentService {
         id: event.toolCallId,
         name: event.toolName,
         status: event.isError ? 'error' : 'complete',
-        detail: endDetail || existing?.detail,
+        detail: summarizePayload(endDetail, 4096) || existing?.detail,
       }));
+      this.emitStatus();
+      return;
+    }
+
+    if (event.type === 'compaction_end' && event.result && this.session) {
+      this.syncFromSession(this.session);
+      this.emitSnapshot();
+    }
+    if (event.type === 'auto_retry_end' && event.finalError) this.recordError(event.finalError);
+
+    if (event.type === 'agent_settled') {
+      if (this.session) {
+        this.syncFromSession(this.session);
+        this.emitSnapshot();
+      }
       this.emitStatus();
       return;
     }
@@ -679,6 +717,7 @@ export class PiAgentService {
   }
 
   private async resetSession() {
+    this.interactivePrompt = null;
     await this.sessionAdapter.reset();
   }
 
@@ -784,7 +823,11 @@ function getModelReference(session: AgentSession) {
 }
 
 function toErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Unknown pi runtime error.';
+  return error instanceof Error
+    ? error.message
+    : typeof error === 'string'
+      ? error
+      : 'Unknown pi runtime error.';
 }
 
 function formatBashResultMessage(

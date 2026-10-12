@@ -30,7 +30,10 @@ const candidates =
   paths.length > 0
     ? paths
     : all
-      ? gitFiles('ls-files', '-z')
+      ? [
+          ...gitFiles('ls-files', '-z'),
+          ...gitFiles('ls-files', '--others', '--exclude-standard', '-z'),
+        ]
       : [
           ...gitFiles('diff', '--name-only', '--diff-filter=ACMR', '-z', 'HEAD'),
           ...gitFiles('ls-files', '--others', '--exclude-standard', '-z'),

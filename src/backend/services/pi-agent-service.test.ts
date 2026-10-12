@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LogService } from './log-service.js';
 import { ModelUsageStore } from './model-usage-store.js';
@@ -12,9 +12,13 @@ import { PiAgentService, parseInteractivePromptArgs } from './pi-agent-service.j
 
 describe('PiAgentService', () => {
   let tempDir = '';
+  const services: PiAgentService[] = [];
+  const logs: LogService[] = [];
 
   afterEach(async () => {
-    delete process.env.PI_TEST_PROVIDER;
+    await Promise.all(services.splice(0).map((service) => service.dispose()));
+    await Promise.all(logs.splice(0).map((log) => log.flush()));
+    vi.unstubAllEnvs();
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });
       tempDir = '';
@@ -22,7 +26,7 @@ describe('PiAgentService', () => {
   });
 
   it('wires prompt and command-state using test provider and snapshot push', async () => {
-    process.env.PI_TEST_PROVIDER = '1';
+    vi.stubEnv('PI_TEST_PROVIDER', '1');
     tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-mobile-agent-wiring-'));
     await mkdir(path.join(tempDir, 'repo-b'), { recursive: true });
 
@@ -39,6 +43,8 @@ describe('PiAgentService', () => {
         port: 3000,
         appPassword: 'secret-pass',
         workspaceRoot: tempDir,
+        piAgentDir: path.join(tempDir, '.pi-mobile', 'agent'),
+        piSessionDir: path.join(tempDir, '.pi-mobile', 'sessions'),
         modelUsagePath: path.join(tempDir, '.pi-mobile', 'model-usage.json'),
         logsDirPath: path.join(tempDir, '.pi-mobile', 'logs'),
         logLevel: 'debug',
@@ -52,6 +58,8 @@ describe('PiAgentService', () => {
       logService.child({ source: 'agent' }),
     );
 
+    services.push(service);
+    logs.push(logService);
     await service.selectRepo({
       name: 'repo-b',
       relativePath: 'repo-b',
@@ -74,6 +82,72 @@ describe('PiAgentService', () => {
 
     const stateAfterReset = await service.getCommandState();
     expect(stateAfterReset.session?.totalMessages).toBe(0);
+  });
+
+  it('emits agent_settled and ensures last agent_status has isStreaming: false and runtimePhase: idle', async () => {
+    vi.stubEnv('PI_TEST_PROVIDER', '1');
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'pi-mobile-agent-settled-'));
+    await mkdir(path.join(tempDir, 'repo-settled'), { recursive: true });
+
+    const logService = new LogService({
+      logDirPath: path.join(tempDir, '.pi-mobile', 'logs'),
+      minLevel: 'debug',
+    });
+
+    const statusPayloads: Array<{ isStreaming: boolean; runtimePhase: string }> = [];
+    const service = new PiAgentService(
+      {
+        nodeEnv: 'test',
+        host: '127.0.0.1',
+        port: 3000,
+        appPassword: 'secret-pass',
+        workspaceRoot: tempDir,
+        piAgentDir: path.join(tempDir, '.pi-mobile', 'agent'),
+        piSessionDir: path.join(tempDir, '.pi-mobile', 'sessions'),
+        modelUsagePath: path.join(tempDir, '.pi-mobile', 'model-usage.json'),
+        logsDirPath: path.join(tempDir, '.pi-mobile', 'logs'),
+        logLevel: 'debug',
+        sessionCookieName: 'pi_mobile_session',
+        sessionCookieSecure: false,
+      },
+      (event) => {
+        if (event.type === 'agent_status') {
+          statusPayloads.push({
+            isStreaming: event.payload.isStreaming,
+            runtimePhase: event.payload.runtimePhase,
+          });
+        }
+      },
+      new ModelUsageStore(path.join(tempDir, '.pi-mobile', 'model-usage.json')),
+      logService.child({ source: 'agent' }),
+    );
+
+    services.push(service);
+    logs.push(logService);
+    await service.selectRepo({
+      name: 'repo-settled',
+      relativePath: 'repo-settled',
+      absolutePath: path.join(tempDir, 'repo-settled'),
+    });
+
+    statusPayloads.length = 0;
+
+    await service.prompt('single word done');
+
+    // Wait for agent run to settle
+    const startTime = Date.now();
+    while (Date.now() - startTime < 3000) {
+      if (statusPayloads.length > 0 && statusPayloads.at(-1)?.isStreaming === false) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(statusPayloads.length).toBeGreaterThan(0);
+    const lastStatus = statusPayloads.at(-1);
+    expect(lastStatus).toBeDefined();
+    expect(lastStatus?.isStreaming).toBe(false);
+    expect(lastStatus?.runtimePhase).toBe('idle');
   });
 });
 

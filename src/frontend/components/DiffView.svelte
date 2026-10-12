@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
+
   import 'diff2html/bundles/css/diff2html.min.css';
 
   import type {
@@ -10,18 +12,22 @@
     GitRemoteSyncStatus,
     GitSyncResult,
   } from '../../shared/contracts.js';
-  import { api, apiFetch, run } from '../lib/api.js';
+  import { api, apiFetch, run, toErrorMessage, type RunOptions } from '../lib/api.js';
   import { renderDiff } from '../lib/diff.js';
   import { toast } from '../lib/toast.svelte.js';
   import Sheet from './Sheet.svelte';
 
   interface Props {
     active?: boolean;
-    workspaceChange?: unknown;
+    workspaceChange?: { version: number };
     onworkspacechange?: (path?: string) => void;
   }
 
-  const { active = false, workspaceChange = null, onworkspacechange = () => {} }: Props = $props();
+  const {
+    active = false,
+    workspaceChange = { version: 0 },
+    onworkspacechange = () => {},
+  }: Props = $props();
 
   let files = $state<DiffFile[]>([]);
   let syncStatus = $state<GitRemoteSyncStatus | null>(null);
@@ -29,6 +35,10 @@
   let busy = $state<string | null>(null);
 
   let actionsOpen = $state(false);
+  let diffError = $state('');
+  let requestId = 0;
+  let loaded = false;
+  let actionsElement: HTMLDivElement | undefined = $state();
   let branchSheetMode = $state<'switch' | 'create' | null>(null);
   let branches = $state<GitBranchInfo[]>([]);
   let branchToCreate = $state('');
@@ -49,30 +59,35 @@
   );
 
   export async function loadDiff() {
+    const id = ++requestId;
     loading = true;
     try {
       const response = await apiFetch<GitDiffResponse>('/api/git/diff');
+      if (id !== requestId) return;
       files = response.files;
       syncStatus = response.sync;
-    } catch {
-      files = [];
-      syncStatus = null;
+      diffError = '';
+      loaded = true;
+    } catch (error) {
+      if (id === requestId) diffError = toErrorMessage(error);
     } finally {
-      loading = false;
+      if (id === requestId) loading = false;
     }
   }
 
   $effect(() => {
-    if (active) {
-      void loadDiff();
-    }
+    const version = workspaceChange.version;
+    if (!active) return;
+    const timer = setTimeout(() => void loadDiff(), untrack(() => loaded) && version > 0 ? 400 : 0);
+    return () => {
+      clearTimeout(timer);
+      requestId++;
+    };
   });
 
-  $effect(() => {
-    if (workspaceChange !== null && active) {
-      void loadDiff();
-    }
-  });
+  function runAction<T>(key: string, action: () => Promise<T>, okText?: RunOptions<T>['okText']) {
+    return run(action, { okText, busy: (isBusy) => (busy = isBusy ? key : null) });
+  }
 
   async function applyHunkAction(
     diff: string,
@@ -86,7 +101,8 @@
           ? 'Hunk unstaged.'
           : 'Hunk reverted.';
 
-    await run(
+    await runAction(
+      `hunk:${action}:${hunkId}`,
       async () => {
         await api.post('/api/git/hunk', { diff, action });
         await loadDiff();
@@ -95,67 +111,56 @@
         }
       },
       successMsg,
-      (isBusy) => {
-        busy = isBusy ? `hunk:${action}:${hunkId}` : null;
-      },
     );
   }
 
   async function triggerStageAll() {
     actionsOpen = false;
-    await run(
+    await runAction(
+      'stage-all',
       async () => {
         await api.post('/api/git/stage-all');
         await loadDiff();
       },
       'All changes staged.',
-      (isBusy) => {
-        busy = isBusy ? 'stage-all' : null;
-      },
     );
   }
 
   async function triggerUnstageAll() {
     actionsOpen = false;
-    await run(
+    await runAction(
+      'unstage-all',
       async () => {
         await api.post('/api/git/unstage-all');
         await loadDiff();
       },
       'All changes unstaged.',
-      (isBusy) => {
-        busy = isBusy ? 'unstage-all' : null;
-      },
     );
   }
 
   async function triggerPull() {
     actionsOpen = false;
-    await run(
+    await runAction(
+      'pull',
       async () => {
         const response = await api.post<GitSyncResult>('/api/git/pull');
         await loadDiff();
         return response;
       },
       (res) => res.summary || 'Pull completed.',
-      (isBusy) => {
-        busy = isBusy ? 'pull' : null;
-      },
     );
   }
 
   async function triggerPush() {
     actionsOpen = false;
-    await run(
+    await runAction(
+      'push',
       async () => {
         const response = await api.post<GitSyncResult>('/api/git/push');
         await loadDiff();
         return response;
       },
       (res) => res.summary || 'Push completed.',
-      (isBusy) => {
-        busy = isBusy ? 'push' : null;
-      },
     );
   }
 
@@ -171,7 +176,8 @@
       return;
     }
 
-    await run(
+    await runAction(
+      'commit',
       async () => {
         const res = await api.post<GitCommitResult>('/api/git/commit', { message: trimmed });
         await loadDiff();
@@ -179,23 +185,14 @@
         return res;
       },
       (res) => `Committed ${res.commitSha.slice(0, 7)}.`,
-      (isBusy) => {
-        busy = isBusy ? 'commit' : null;
-      },
     );
   }
 
   async function loadBranches() {
-    await run(
-      async () => {
-        const res = await apiFetch<GitBranchesResponse>('/api/git/branches');
-        branches = res.branches;
-      },
-      undefined,
-      (isBusy) => {
-        busy = isBusy ? 'branches' : null;
-      },
-    );
+    await runAction('branches', async () => {
+      const res = await apiFetch<GitBranchesResponse>('/api/git/branches');
+      branches = res.branches;
+    });
   }
 
   function openBranchSwitch() {
@@ -216,7 +213,8 @@
   }
 
   async function triggerSwitchBranch(name: string) {
-    await run(
+    await runAction(
+      'switch-branch',
       async () => {
         await api.post('/api/git/branch/switch', { name });
         closeBranchSheet();
@@ -224,9 +222,6 @@
         onworkspacechange();
       },
       `Switched to ${name}.`,
-      (isBusy) => {
-        busy = isBusy ? 'switch-branch' : null;
-      },
     );
   }
 
@@ -237,7 +232,8 @@
       return;
     }
 
-    await run(
+    await runAction(
+      'create-branch',
       async () => {
         await api.post('/api/git/branch/create', { name: trimmed });
         closeBranchSheet();
@@ -245,9 +241,6 @@
         onworkspacechange();
       },
       `Created branch ${trimmed}.`,
-      (isBusy) => {
-        busy = isBusy ? 'create-branch' : null;
-      },
     );
   }
 
@@ -281,6 +274,15 @@
   }
 </script>
 
+<svelte:window
+  onpointerdown={(event) => {
+    if (!actionsElement?.contains(event.target as Node)) actionsOpen = false;
+  }}
+  onkeydown={(event) => {
+    if (event.key === 'Escape') actionsOpen = false;
+  }}
+/>
+
 <section class="view-shell diff-view">
   <div class="section-header">
     <div>
@@ -291,7 +293,7 @@
       <span class="status-pill"
         >{files.length} file{files.length === 1 ? '' : 's'} · staged {stagedHunkCount}</span
       >
-      <div class="diff-actions">
+      <div class="diff-actions" bind:this={actionsElement}>
         <button
           class="primary-button"
           type="button"
@@ -436,11 +438,18 @@
     </form>
   </Sheet>
 
-  {#if loading}
+  {#if diffError}
+    <div class="notice error" role="alert">
+      {diffError}
+      <button class="ghost-button" type="button" onclick={() => void loadDiff()}>Retry</button>
+    </div>
+  {/if}
+  {#if loading && files.length > 0}<p role="status">Refreshing diff…</p>{/if}
+  {#if loading && files.length === 0}
     <div class="empty-state-card">
       <p>Loading diff...</p>
     </div>
-  {:else if files.length === 0}
+  {:else if files.length === 0 && !diffError}
     <div class="empty-state-card">
       <h3>Working tree clean</h3>
       <p>As soon as pi or the editor changes files, the modified hunks will appear here.</p>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
 
   import type {
     AgentRuntimePhase,
@@ -62,13 +62,12 @@
 
   let prompt = $state('');
   let promptField = $state<HTMLTextAreaElement | null>(null);
-  let logContainer = $state<HTMLDivElement | null>(null);
   let handledPrefillToken = $state(0);
   let copiedMessageId = $state<string | null>(null);
   let promptCursorIndex = $state(0);
   let selectedSlashSuggestionIndex = $state(0);
   let slashSuggestionsDismissed = $state(false);
-  let isNearBottom = true;
+  let isNearBottom = $state(true);
 
   const statusTitle = $derived(
     lastError
@@ -106,6 +105,10 @@
       : getSlashCommandSuggestions(prompt, promptCursorIndex, runtimeSlashSuggestions),
   );
 
+  const activeSlashIndex = $derived(
+    Math.min(selectedSlashSuggestionIndex, Math.max(0, slashSuggestions.length - 1)),
+  );
+
   const contextChipLabel = $derived.by(() => {
     if (!usage) return '?/?';
     const used = usage.contextTokens === null ? '?' : formatCompactTokenCount(usage.contextTokens);
@@ -133,23 +136,24 @@
     }
   }
 
-  function handleScroll() {
-    if (!logContainer) return;
-    const distanceToBottom =
-      logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight;
-    isNearBottom = distanceToBottom < 48;
+  function checkNearBottom() {
+    if (typeof window === 'undefined') return;
+    const scrollPos = window.scrollY + window.innerHeight;
+    const threshold = document.documentElement.scrollHeight - 60;
+    isNearBottom = scrollPos >= threshold;
   }
 
   function scrollToBottom() {
-    if (!logContainer) return;
-    logContainer.scrollTop = logContainer.scrollHeight;
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' });
   }
 
   $effect(() => {
-    // When messages change, stick to bottom if user is near bottom
-    const _len = messages.length;
-    const _phase = runtimePhase;
-    if (isNearBottom) {
+    void messages.at(-1)?.text;
+    void messages.at(-1)?.tools;
+    void runtimePhase;
+    void interactivePrompt;
+    if (untrack(() => isNearBottom)) {
       tick().then(scrollToBottom);
     }
   });
@@ -191,12 +195,19 @@
       }
     };
 
-    if (typeof window !== 'undefined' && window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleViewportResize);
-      return () => {
-        window.visualViewport?.removeEventListener('resize', handleViewportResize);
-      };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('scroll', checkNearBottom, { passive: true });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', handleViewportResize);
+      }
     }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('scroll', checkNearBottom);
+        window.visualViewport?.removeEventListener('resize', handleViewportResize);
+      }
+    };
   });
 
   function handleSubmit() {
@@ -242,22 +253,26 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
+    if (event.isComposing) {
+      return;
+    }
+
     if (slashSuggestions.length > 0) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        selectedSlashSuggestionIndex = (selectedSlashSuggestionIndex + 1) % slashSuggestions.length;
+        selectedSlashSuggestionIndex = (activeSlashIndex + 1) % slashSuggestions.length;
         return;
       }
       if (event.key === 'ArrowUp') {
         event.preventDefault();
         selectedSlashSuggestionIndex =
-          (selectedSlashSuggestionIndex - 1 + slashSuggestions.length) % slashSuggestions.length;
+          (activeSlashIndex - 1 + slashSuggestions.length) % slashSuggestions.length;
         return;
       }
       if (event.key === 'Enter' || event.key === 'Tab') {
         if (!event.shiftKey) {
           event.preventDefault();
-          selectSlashSuggestion(slashSuggestions[selectedSlashSuggestionIndex]);
+          selectSlashSuggestion(slashSuggestions[activeSlashIndex]);
           return;
         }
       }
@@ -267,7 +282,7 @@
       }
     }
 
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       handleSubmit();
     }
@@ -299,7 +314,7 @@
     <div class="notice error">{lastError}</div>
   {/if}
 
-  <div class="chat-log" bind:this={logContainer} onscroll={handleScroll}>
+  <div class="chat-log">
     {#if messages.length === 0}
       <article class="empty-state-card">
         <h3>No transcript yet</h3>
@@ -358,6 +373,8 @@
         onDismiss={() => oninteractivedismiss?.()}
       />
     {/if}
+
+    <div class="scroll-sentinel" aria-hidden="true"></div>
   </div>
 
   <div class="composer">
@@ -403,10 +420,10 @@
         {#each slashSuggestions as suggestion, index (`${suggestion.command}-${index}`)}
           <button
             class="composer-suggestion"
-            class:selected={index === selectedSlashSuggestionIndex}
+            class:selected={index === activeSlashIndex}
             type="button"
             role="option"
-            aria-selected={index === selectedSlashSuggestionIndex}
+            aria-selected={index === activeSlashIndex}
             onclick={() => selectSlashSuggestion(suggestion)}
           >
             <strong>{suggestion.command}</strong>
@@ -471,6 +488,12 @@
     font-family: 'IBM Plex Mono', 'Consolas', 'Liberation Mono', monospace;
   }
 
+  @media (pointer: coarse) {
+    :global(body:has(.composer textarea:focus)) .composer {
+      bottom: 0.5rem;
+    }
+  }
+
   .chat-log {
     position: relative;
     display: grid;
@@ -485,6 +508,12 @@
 
   .chat-log > * {
     min-width: 0;
+  }
+
+  .scroll-sentinel {
+    height: 1px;
+    width: 100%;
+    pointer-events: none;
   }
 
   .chat-log::before {

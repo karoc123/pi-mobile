@@ -192,4 +192,142 @@ describe('LiveConnection', () => {
 
     live.destroy();
   });
+
+  it('preserves snapshot messages and properties on repo_selected', () => {
+    const onRepoSelected = vi.fn();
+    const live = new LiveConnection({ onRepoSelected });
+    live.connect();
+    const ws = MockWebSocket.instances[0]!;
+    ws.onopen?.();
+
+    const testSnapshot: AgentSnapshot = {
+      ...emptyAgentSnapshot,
+      runtimePhase: 'idle',
+      messages: [
+        {
+          id: 'msg-existing-1',
+          role: 'user',
+          text: 'Persist this text',
+          status: 'complete',
+          timestamp: new Date().toISOString(),
+        },
+      ],
+      usage: {
+        ...emptyAgentSnapshot.usage,
+        inputTokens: 100,
+        outputTokens: 50,
+        totalCost: 0.002,
+        modelId: 'test-model',
+      },
+    };
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        payload: testSnapshot,
+      } satisfies WebsocketEnvelope),
+    });
+
+    expect(live.agentSnapshot.messages).toHaveLength(1);
+
+    const nextRepo = {
+      name: 'new-repo',
+      relativePath: 'new-repo',
+      absolutePath: '/work/new-repo',
+    };
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'repo_selected',
+        payload: { repo: nextRepo },
+      } satisfies WebsocketEnvelope),
+    });
+
+    expect(live.agentSnapshot.messages).toHaveLength(1);
+    expect(live.agentSnapshot.messages[0]?.text).toBe('Persist this text');
+    expect(live.agentSnapshot.usage?.modelId).toBe('test-model');
+    expect(live.agentSnapshot.repo).toEqual(nextRepo);
+    expect(onRepoSelected).toHaveBeenCalledWith(nextRepo);
+
+    live.destroy();
+  });
+
+  it('invokes onRepoSelected when snapshot carries a new or changed repo', () => {
+    const onRepoSelected = vi.fn();
+    const live = new LiveConnection({ onRepoSelected });
+    live.connect();
+    const ws = MockWebSocket.instances[0]!;
+    ws.onopen?.();
+
+    const repo1 = {
+      name: 'repo-one',
+      relativePath: 'repo-one',
+      absolutePath: '/work/repo-one',
+    };
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        payload: {
+          ...emptyAgentSnapshot,
+          repo: repo1,
+        },
+      } satisfies WebsocketEnvelope),
+    });
+
+    expect(onRepoSelected).toHaveBeenCalledWith(repo1);
+
+    const repo2 = {
+      name: 'repo-two',
+      relativePath: 'repo-two',
+      absolutePath: '/work/repo-two',
+    };
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        payload: {
+          ...emptyAgentSnapshot,
+          repo: repo2,
+        },
+      } satisfies WebsocketEnvelope),
+    });
+
+    expect(onRepoSelected).toHaveBeenCalledWith(repo2);
+
+    live.destroy();
+  });
+  it('reconnects an apparently connected socket after a long background stay and ignores old messages', () => {
+    const live = new LiveConnection();
+    live.connect();
+    const old = MockWebSocket.instances[0];
+    old.onopen?.();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get');
+    const now = vi.spyOn(Date, 'now').mockReturnValue(100);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    now.mockReturnValue(11_000);
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(MockWebSocket.instances).toHaveLength(2);
+    old.onmessage?.({
+      data: JSON.stringify({
+        type: 'snapshot',
+        payload: { ...emptyAgentSnapshot, lastError: 'stale' },
+      }),
+    });
+    expect(live.agentSnapshot.lastError).toBeNull();
+    live.destroy();
+  });
+
+  it('reconnects on online and removes resume listeners on destruction', () => {
+    const live = new LiveConnection();
+    live.connect();
+    MockWebSocket.instances[0].onopen?.();
+    window.dispatchEvent(new Event('online'));
+    expect(MockWebSocket.instances).toHaveLength(2);
+    live.destroy();
+    window.dispatchEvent(new Event('online'));
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
 });

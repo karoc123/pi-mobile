@@ -1,10 +1,15 @@
-import { constants } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { constants, createWriteStream } from 'node:fs';
 import {
+  chmod,
   copyFile,
   mkdir,
   open,
   readdir,
   readFile,
+  realpath,
   rename,
   rm,
   stat,
@@ -13,6 +18,7 @@ import {
 import path from 'node:path';
 
 import type { FileDocument, FileEntry, SelectedRepo } from '../../shared/contracts.js';
+import { HttpError } from '../utils/http-error.js';
 import { relativeFrom, resolveWithin } from '../utils/path-utils.js';
 
 const ignoredEntries = new Set(['.git', 'node_modules', 'dist', 'coverage']);
@@ -30,6 +36,8 @@ const imageMimeTypeByExtension: Record<string, string> = {
   '.tif': 'image/tiff',
   '.tiff': 'image/tiff',
 };
+
+export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 export class FileService {
   async browse(repo: SelectedRepo, relativePath = '.') {
@@ -98,9 +106,64 @@ export class FileService {
   }
 
   async writeFile(repo: SelectedRepo, relativePath: string, content: string) {
-    const absolutePath = resolveWithin(repo.absolutePath, relativePath);
-    await mkdir(path.dirname(absolutePath), { recursive: true });
-    await writeFile(absolutePath, content, 'utf8');
+    await this.writeStream(repo, relativePath, Readable.from([content]));
+  }
+
+  async writeStream(
+    repo: SelectedRepo,
+    relativePath: string,
+    source: Readable,
+    maxBytes = MAX_FILE_BYTES,
+  ) {
+    const requestedPath = resolveWithin(repo.absolutePath, relativePath);
+    await mkdir(path.dirname(requestedPath), { recursive: true });
+    const root = await realpath(repo.absolutePath);
+    const parent = await realpath(path.dirname(requestedPath));
+    resolveWithin(root, path.relative(root, parent));
+    let targetPath = path.join(parent, path.basename(requestedPath));
+    let mode: number | undefined;
+    try {
+      targetPath = await realpath(targetPath);
+      resolveWithin(root, path.relative(root, targetPath));
+      const target = await stat(targetPath);
+      if (!target.isFile()) throw new HttpError(400, 'bad_request', 'Target is not a file.');
+      mode = target.mode & 0o777;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    if (source.destroyed) throw new HttpError(400, 'bad_request', 'Upload aborted.');
+    const tempPath = path.join(path.dirname(targetPath), `.tmp.${randomUUID()}`);
+    let bytes = 0;
+    const limit = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytes += chunk.length;
+        callback(
+          bytes > maxBytes
+            ? new HttpError(413, 'payload_too_large', 'File size exceeds 50MB limit.')
+            : null,
+          chunk,
+        );
+      },
+    });
+    const onError = (error: Error) => limit.destroy(error);
+    const onClose = () => {
+      if (!source.readableEnded)
+        limit.destroy(new HttpError(400, 'bad_request', 'Upload aborted.'));
+    };
+    source.on('error', onError);
+    source.on('close', onClose);
+    try {
+      const writing = pipeline(limit, createWriteStream(tempPath, { flags: 'wx', mode }));
+      source.pipe(limit);
+      await writing;
+      if (mode !== undefined) await chmod(tempPath, mode);
+      await rename(tempPath, targetPath);
+    } finally {
+      source.unpipe(limit);
+      source.off('error', onError);
+      source.off('close', onClose);
+      await rm(tempPath, { force: true });
+    }
   }
 
   async createFile(repo: SelectedRepo, relativePath: string, content = '') {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import WorkspacePicker from './WorkspacePicker.svelte';
@@ -40,5 +40,27 @@ describe('WorkspacePicker', () => {
       expect(screen.getByText('my-project')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Use repo' })).toBeTruthy();
     });
+  });
+  it('loads each folder navigation once', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async (url) =>
+        new Response(
+          JSON.stringify(
+            String(url).includes('path=folder')
+              ? { currentPath: 'folder', entries: [], currentRepo: null }
+              : {
+                  currentPath: '.',
+                  entries: [{ name: 'folder', relativePath: 'folder', isGitRepo: false }],
+                  currentRepo: null,
+                },
+          ),
+          { status: 200 },
+        ),
+    );
+    render(WorkspacePicker, { open: true });
+    await fireEvent.click(await screen.findByRole('button', { name: /folder/ }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

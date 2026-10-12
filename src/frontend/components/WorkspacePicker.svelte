@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type {
     SelectedRepo,
     WorkspaceCloneResult,
@@ -51,7 +52,7 @@
 
   $effect(() => {
     if (open) {
-      void loadWorkspaces(currentPath);
+      untrack(() => void loadWorkspaces(currentPath));
     }
   });
 
@@ -74,11 +75,14 @@
   }
 
   async function handleSelect(path: string) {
-    await run(async () => {
-      const response = await api.post<{ repo: SelectedRepo }>('/api/workspaces/select', { path });
-      onselect(response.repo);
-      onclose();
-    }, 'Repository activated.');
+    await run(
+      async () => {
+        const response = await api.post<{ repo: SelectedRepo }>('/api/workspaces/select', { path });
+        onselect(response.repo);
+        onclose();
+      },
+      { okText: 'Repository activated.' },
+    );
   }
 
   async function submitClone(event?: SubmitEvent) {
@@ -104,9 +108,9 @@
         onclose();
         return response;
       },
-      (res) => `Repository cloned and activated (${res.repo.name}).`,
-      (busy) => {
-        cloning = busy;
+      {
+        okText: (res) => `Repository cloned and activated (${res.repo.name}).`,
+        busy: (busy) => (cloning = busy),
       },
     );
   }

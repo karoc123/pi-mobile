@@ -1,15 +1,15 @@
-import { defineConfig } from "vitest/config";
-import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { defineConfig } from 'vitest/config';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 export default defineConfig({
   plugins: [svelte()],
-  cacheDir: ".vitest-cache",
+  cacheDir: '.vitest-cache',
   resolve: {
-    conditions: ["browser"],
+    conditions: ['browser'],
   },
   test: {
-    environment: "jsdom",
+    environment: 'jsdom',
     globals: true,
-    include: ["src/**/*.test.ts"],
+    include: ['src/**/*.test.ts'],
   },
 });

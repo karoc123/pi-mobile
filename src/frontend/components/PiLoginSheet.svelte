@@ -71,9 +71,9 @@
         token = '';
         await loadStatus();
       },
-      `Pi token for ${selectedProvider} updated.`,
-      (busy) => {
-        submitting = busy;
+      {
+        okText: `Pi token for ${selectedProvider} updated.`,
+        busy: (busy) => (submitting = busy),
       },
     );
   }
@@ -91,9 +91,9 @@
         await api.post('/api/pi/auth/logout', { provider: selectedProvider });
         await loadStatus();
       },
-      `Pi provider ${selectedProvider} signed out.`,
-      (busy) => {
-        submitting = busy;
+      {
+        okText: `Pi provider ${selectedProvider} signed out.`,
+        busy: (busy) => (submitting = busy),
       },
     );
   }

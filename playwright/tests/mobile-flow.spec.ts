@@ -47,6 +47,7 @@ test('mobile browser flow covers login, repo selection, chat, editor save, and h
   await page.locator('button.send-button').click();
   await expect(page.locator('.message-card.assistant').last()).toContainText(runToken);
 
+  await page.locator('.composer-status-title').click();
   await page.getByRole('button', { name: 'Editor' }).click();
   await page.getByRole('button', { name: /notes\.txt/ }).click();
   await expect(page.getByRole('heading', { level: 2, name: 'notes.txt' })).toBeVisible();
@@ -142,6 +143,7 @@ async function unlockAndSelectRepo(page: import('@playwright/test').Page) {
     .first()
     .getByRole('button', { name: /Use repo|Active/ })
     .click();
+  await expect(page.getByRole('dialog', { name: 'Workspace root' })).toBeHidden();
 }
 
 test('mobile browser flow displays tool calls and completion', async ({ page }) => {
@@ -238,9 +240,10 @@ test('mobile browser flow creates and switches branches', async ({ page }) => {
 
   const branchNameInput = page.locator('#new-branch-name');
   await expect(branchNameInput).toBeVisible();
-  await branchNameInput.fill('feature/p0-branch');
+  const branchName = `feature/review-${Date.now()}`;
+  await branchNameInput.fill(branchName);
   await page.getByRole('button', { name: 'Create branch' }).click();
-  await expect(page.locator('.notice.success')).toContainText('Created branch feature/p0-branch.');
+  await expect(page.locator('.notice.success')).toContainText(`Created branch ${branchName}.`);
 
   await page.getByRole('button', { name: 'Open git actions' }).click();
   await page.getByRole('menuitem', { name: 'Switch branch…' }).click();
@@ -263,11 +266,108 @@ test('mobile browser flow previews image and downloads it', async ({ page }) => 
   const imagePreview = page.locator('.editor-image-preview img');
   await expect(imagePreview).toBeVisible();
   await expect(imagePreview).toHaveAttribute('src', /\/api\/files\/raw\?path=/);
+  await expect
+    .poll(() => imagePreview.evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0);
 
   await page.getByRole('button', { name: 'Actions' }).click();
   const editorActions = page.getByRole('dialog', { name: 'Editor actions' });
   await editorActions.getByRole('button', { name: 'Download file' }).click();
+  const downloaded = page.waitForEvent('download');
   await editorActions.getByRole('button', { name: 'Download file' }).click();
+  const download = await downloaded;
+  expect(download.suggestedFilename()).toBe('pixel.png');
+  expect(await download.failure()).toBeNull();
 
   await expect(page.locator('.notice.success')).toContainText('File downloaded.');
+});
+
+test('chat follows long responses and keeps manual scrolling stable', async ({ page }) => {
+  await unlockAndSelectRepo(page);
+  await page.request.post('/api/agent/new-session');
+  await expect(page.locator('.message-card')).toHaveCount(0);
+  const longPrompt = `${'A long transcript paragraph used to verify mobile scrolling.\n\n'.repeat(80)}LAST_AUTOSCROLL`;
+  await page.request.post('/api/agent/prompt', { data: { prompt: longPrompt } });
+  await expect(page.locator('.message-card.assistant').last()).toContainText('LAST_AUTOSCROLL');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const cards = document.querySelectorAll('.message-card.assistant');
+        const bottom = cards[cards.length - 1].getBoundingClientRect().bottom;
+        const composer = document.querySelector('.composer')!.getBoundingClientRect();
+        return bottom <= composer.top && bottom > 0;
+      }),
+    )
+    .toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(100);
+  await page.request.post('/api/agent/prompt', { data: { prompt: 'single word MANUAL_SCROLL' } });
+  await expect(page.locator('.message-card.assistant').last()).toContainText('MANUAL_SCROLL');
+  expect(await page.evaluate(() => window.scrollY)).toBeLessThan(100);
+});
+
+test('mobile composer supports multiline input and releases space while focused', async ({
+  page,
+}) => {
+  await unlockAndSelectRepo(page);
+  const input = page.getByPlaceholder('Ask pi to change the active repository...');
+  await input.fill('first line');
+  await expect(input).toHaveValue('first line');
+  await input.press('End');
+  await input.press('Enter');
+  await input.press('a');
+  await expect(input).toHaveValue('first line\na');
+  await expect(page.locator('.bottom-nav')).toBeHidden();
+  await expect
+    .poll(() => page.locator('.composer').evaluate((el) => getComputedStyle(el).bottom))
+    .toBe('8px');
+  await page.locator('.composer-status-title').click();
+  await expect(page.locator('.bottom-nav')).toBeVisible();
+});
+
+test('login failures and expired sessions show errors on the login screen', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('App password').fill('wrong');
+  await page.getByRole('button', { name: 'Unlock workspace' }).click();
+  await expect(page.locator('.inline-error')).toContainText('Invalid password');
+  await page.getByLabel('App password').fill('test-password');
+  const stateLoaded = page.waitForResponse(
+    (response) => response.url().endsWith('/api/agent/command-state') && response.status() === 200,
+  );
+  await page.getByRole('button', { name: 'Unlock workspace' }).click();
+  await stateLoaded;
+  await page.context().clearCookies();
+  await page.getByRole('button', { name: 'Open workspace menu' }).click();
+  await page.getByRole('button', { name: 'Pi Login' }).click();
+  await expect(page.getByLabel('App password')).toBeVisible();
+  await expect(page.locator('.inline-error')).toContainText('Session expired');
+});
+
+test('review surfaces fit mobile and desktop in both themes', async ({ page }, testInfo) => {
+  await unlockAndSelectRepo(page);
+  await page.request.post('/api/agent/new-session');
+  await page.request.post('/api/agent/prompt', { data: { prompt: 'trigger:tool_read' } });
+  await expect(page.locator('.tool-inline-item')).toBeVisible();
+  await page.locator('.tool-inline-item summary').click();
+  await expect(page.locator('.tool-summary-detail')).toBeVisible();
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const theme of ['vscode-dark', 'vscode-light']) {
+      await page.getByRole('button', { name: 'Open workspace menu' }).click();
+      await page
+        .getByRole('button', { name: theme === 'vscode-dark' ? 'VS Code Dark' : 'VS Code Light' })
+        .click();
+      await page
+        .getByRole('dialog', { name: 'App menu' })
+        .getByRole('button', { name: 'Close' })
+        .click();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`review-${width}-${theme}.png`),
+        fullPage: true,
+      });
+    }
+  }
 });

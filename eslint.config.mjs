@@ -60,6 +60,15 @@ export default tseslint.config(
   })),
   {
     files: ['src/**/*.svelte'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'SvelteDirective[kind=EventHandler]',
+          message: 'Use callback event attributes with Svelte 5 Runes.',
+        },
+      ],
+    },
     languageOptions: {
       parserOptions: {
         parser: tseslint.parser,
@@ -87,7 +96,15 @@ export default tseslint.config(
       'no-restricted-imports': [
         'error',
         {
-          paths: [...nodeBuiltinPaths, ...serverPackagePaths],
+          paths: [
+            ...nodeBuiltinPaths,
+            ...serverPackagePaths,
+            {
+              name: 'svelte',
+              importNames: ['createEventDispatcher'],
+              message: 'Use callback props with Svelte 5 Runes.',
+            },
+          ],
           patterns: [
             {
               group: ['@backend/**', '**/backend/**', '**/backend', 'node:*'],

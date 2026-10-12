@@ -55,19 +55,19 @@ export class LiveConnection {
   private dismissedPromptId: string | null = null;
   private options: LiveConnectionOptions;
 
+  private hiddenSince: number | null = null;
+
   private onVisibilityChange = () => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-      if (this.status !== 'connected') {
-        this.reconnectNow();
-      }
+    if (document.visibilityState !== 'visible') {
+      this.hiddenSince = Date.now();
+      return;
     }
+    const stale = this.hiddenSince !== null && Date.now() - this.hiddenSince > 10_000;
+    this.hiddenSince = null;
+    if (stale || this.status !== 'connected') this.reconnectNow();
   };
 
-  private onOnline = () => {
-    if (this.status !== 'connected') {
-      this.reconnectNow();
-    }
-  };
+  private onOnline = () => this.reconnectNow();
 
   constructor(options: LiveConnectionOptions = {}) {
     this.options = options;
@@ -110,6 +110,7 @@ export class LiveConnection {
     };
 
     nextSocket.onmessage = (event) => {
+      if (this.socket !== nextSocket) return;
       try {
         const envelope = JSON.parse(event.data as string) as WebsocketEnvelope;
         this.handleMessage(envelope);
@@ -209,11 +210,18 @@ export class LiveConnection {
       const interactivePrompt =
         serverPrompt && serverPrompt.promptId === this.dismissedPromptId ? null : serverPrompt;
 
+      const previousRepo = this.agentSnapshot.repo;
       this.agentSnapshot = {
         ...event.payload,
         interactivePrompt,
       };
       this.status = 'connected';
+      if (
+        event.payload.repo &&
+        (!previousRepo || previousRepo.absolutePath !== event.payload.repo.absolutePath)
+      ) {
+        this.options.onRepoSelected?.(event.payload.repo);
+      }
       return;
     }
 
@@ -267,10 +275,11 @@ export class LiveConnection {
 
     if (event.type === 'repo_selected') {
       this.agentSnapshot = {
-        ...emptyAgentSnapshot,
+        ...this.agentSnapshot,
         repo: event.payload.repo,
       };
       this.options.onRepoSelected?.(event.payload.repo);
+      return;
     }
   }
 }

@@ -69,6 +69,7 @@ export class WebsocketHub {
 
   close() {
     clearInterval(this.pingInterval);
+    for (const client of this.server.clients) client.terminate();
     this.server.close();
   }
 
@@ -116,5 +117,9 @@ export function extractCookie(headerValue: string | undefined, cookieName: strin
 
   const cookies = headerValue.split(';').map((entry) => entry.trim());
   const matched = cookies.find((entry) => entry.startsWith(`${cookieName}=`));
-  return matched ? decodeURIComponent(matched.slice(cookieName.length + 1)) : null;
+  try {
+    return matched ? decodeURIComponent(matched.slice(cookieName.length + 1)) : null;
+  } catch {
+    return null;
+  }
 }

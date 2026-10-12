@@ -46,7 +46,7 @@ To secure filesystem access from mobile clients, an explicit authentication boun
 - **Navigation:** A bottom navigation switches between three primary views; the app menu holds the repository picker, theme switch, log view and Pi login:
   1. **Chat:** Feeds interactions directly into the active `pi` execution process. Utilizes modular Markdown text parsing with responsive fullscreen viewports for generated code blocks. Embedded `<ToolCalls>` provides structured, collapsible tool inspections via native `<details>`.
   2. **Git Diff:** Uses `diff2html` in explicit `line-by-line` layout configuration. Hunk actions (`stage`, `unstage`, `revert`) route through a single consolidated endpoint `POST /api/git/hunk`. Header shows remote sync state (`↑ ahead`, `↓ behind`, or up-to-date) and commit counters.
-  3. **Editor:** A touch-first text editing surface implemented with **CodeMirror 6** (dynamically loaded), ensuring fluid virtual keyboard integration, real-time syntax highlighting, and file actions powered by raw binary/text transport.
+  3. **Editor:** A touch-first text editing surface implemented with **CodeMirror 6** (editor and language modules loaded on demand), ensuring fluid virtual keyboard integration, real-time syntax highlighting, and file actions powered by raw binary/text transport.
 - **Native Elements:** Dialogs and bottom sheets use native `<dialog>` elements for accessible modal semantics without custom overlay wrappers.
 
 ### 2.3 Backend & Tool-Wrapper
@@ -54,9 +54,9 @@ To secure filesystem access from mobile clients, an explicit authentication boun
 Written in TypeScript running on Node.js, the backend acts as a high-fidelity router orchestrating the host environment, Git states, and the `pi` runtime.
 
 - **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` (v1.0+) TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process using `ModelRuntime` for model discovery, selection, and auth credential synchronization.
-- **`Snapshot-Push WebSocket Architecture`:** The backend delivers initial state upon connection and after any session mutation via the `snapshot` envelope. Live deltas (`chat_message_delta`, `chat_message_updated`, `agent_status`) keep the client perfectly in sync without polling.
+- **`Snapshot-Push WebSocket Architecture`:** The backend delivers initial state upon connection and after any session mutation via the `snapshot` envelope. Live deltas (`chat_message_added`, `chat_message_updated`, `agent_status`) keep the client perfectly in sync without polling.
 - **`GitService`:** Parses `git diff -U3` into structural JSON objects, making raw line offsets and hunk chunks readable for the frontend. Applies hunk staging, unstaging, and reverts via `git apply`.
-- **`FileService`:** Executes raw text and binary file operations with streaming and atomic rename guarantees. Non-text files are recognized via NUL-byte inspection in the first 8 KB.
+- **`FileService`:** Executes raw text and binary file operations with streaming and atomic rename guarantees. Non-text files are recognized via NUL-byte inspection in the first 8 KB. Streaming uploads and JSON editor saves share one atomic write path, preserve existing permissions and internal symlinks, reject uploads over 50 MiB, and remove temporary files on failure.
 - **`WatcherService`:** Watches the selected repository with `chokidar` and broadcasts `workspace_changed` events. Internal runtime directories (`.pi-mobile`, `.pi`) and logs/session paths are ignored.
 - **`ModelUsageStore`:** Counts accepted prompts per `provider/model` in a small JSON file (`model-usage.json`) and ranks the model palette by current model, usage count, availability and name.
 - **`Test Provider`:** Setting `PI_TEST_PROVIDER=1` activates an in-process faux provider within `ModelRuntime` for fast, offline, deterministic unit and Playwright E2E testing.
@@ -68,6 +68,8 @@ Written in TypeScript running on Node.js, the backend acts as a high-fidelity ro
 - **Request Correlation:** Every HTTP response includes `x-request-id`; API failures return a structured error payload with the same request ID.
 - **Live Log Streaming:** `GET /api/logs/stream` (SSE) pushes new backend events in real time, while `GET /api/logs` supports paged history queries.
 - **Client Status Panel:** A tool-icon toggle in the app chrome shows/hides runtime status chips (WebSocket connection, backend health, log stream, resource access checks).
+
+Shutdown terminates WebSocket clients and ends SSE responses before closing HTTP and flushing logs. Git subprocesses collect output as bytes, tolerate closed stdin, and terminate on timeout.
 
 ### 2.5 Wear OS Client
 
@@ -89,10 +91,10 @@ All API responses follow standard contracts: success payloads return JSON data o
 
 File operations use direct HTTP transport without base64 serialization overhead:
 
-1. **Viewing & Downloading**: The frontend accesses files via `GET /api/files/raw?path=...[&download=1]`. Images are previewed directly via `<img src>`, and downloads trigger native browser saving via `<a download>`.
-2. **Saving**: The editor dispatches content updates to `PUT /api/files/raw?path=...`. The backend streams the payload into a temporary file and executes an atomic rename upon completion.
+1. **Viewing & Downloading**: The frontend accesses files via `GET /api/files/raw?path=...[&download=1]`. Images are previewed directly via `<img src>`, and downloads trigger native browser saving via `<a download>`. Dotfiles are supported. Raw responses carry `nosniff` and a sandbox CSP; only raster images may be displayed inline, while HTML, SVG and other files are attachments.
+2. **Saving**: Uploads use `PUT /api/files/raw?path=...`; text editor saves use `POST /api/files/write`. Both delegate to `FileService.writeStream`. The backend streams the payload into a temporary file and executes an atomic rename upon completion.
 3. **Change Detection**: The filesystem watcher (`chokidar`) detects resulting filesystem events and broadcasts `{ "type": "workspace_changed", "payload": { ... } }`.
-4. **Reactive Reloading**: Active views reload automatically upon receiving workspace change notifications.
+4. **Reactive Reloading**: Active views reload upon receiving workspace change notifications. Diff refreshes debounce watcher bursts and discard stale responses while retaining existing hunks on errors. Editor reloads preserve dirty drafts and discard outdated file responses; typing during a save remains unsaved.
 
 ### 3.2 Consolidated Hunk Actions (Stage, Unstage, Revert)
 
@@ -112,15 +114,18 @@ Tool execution traces are embedded directly in chat messages:
 
 1. The backend hydrator transforms tool calls and execution results into structured `ChatToolCall` items on `ChatMessage.tools`.
 2. Real-time updates during tool execution broadcast `chat_message_updated` envelopes.
-3. The frontend `<ToolCalls>` component renders native `<details class="tool-inline-item">` blocks with status badges, icons, and formatted tool details.
+3. Arguments are limited to 240 characters and results to 4 KiB of text, with an explicit truncation marker. Results match tool calls by id; calls without results are shown as running or aborted.
+4. The frontend `<ToolCalls>` component renders native `<details class="tool-inline-item">` blocks with status badges, icons, and formatted tool details created only when expanded.
 
 ### 3.4 Snapshot-Push Synchronization (Zero Polling)
 
 To eliminate CPU-intensive polling on low-power devices:
 
 1. When a client establishes a WebSocket connection, the backend immediately sends a full `snapshot` envelope containing all active messages, tools, usage, and runtime phase.
-2. Any session-level reset (`new-session`, `resume`, `fork`, `tree`, `compact`, `bash`) triggers a fresh `snapshot` broadcast.
-3. The frontend maintains its active conversation state purely from push envelopes, with zero HTTP polling during idle or active execution.
+2. Repository and session creation are serialized to prevent concurrent selections from binding an agent to the wrong directory. Interactive questions are cleared on session changes.
+3. Any session-level reset (`new-session`, `resume`, `fork`, `tree`, `compact`, `bash`) triggers a fresh `snapshot` broadcast.
+4. At `agent_settled`, the backend refreshes the transcript (including deferred bash results) and emits the final idle status. Auto-compaction also publishes a fresh snapshot.
+5. The frontend maintains its active conversation state purely from push envelopes, with zero HTTP polling during idle or active execution. Returning from more than ten seconds in the background, or a network online event, reconnects the socket to obtain a fresh snapshot.
 
 ### 3.5 Clone-From-Picker Workflow
 

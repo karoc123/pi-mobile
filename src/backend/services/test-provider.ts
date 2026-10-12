@@ -1,8 +1,14 @@
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from '@earendil-works/pi-ai';
 import type { ModelRuntime } from '@earendil-works/pi-coding-agent';
 
+const isTestProvider = () => process.env.PI_TEST_PROVIDER === '1';
+
+export function getTestModel(modelRuntime: ModelRuntime) {
+  return isTestProvider() ? modelRuntime.getModel('faux', 'faux-1') : undefined;
+}
+
 export async function setupTestProvider(modelRuntime: ModelRuntime): Promise<void> {
-  if (process.env.PI_TEST_PROVIDER !== '1') {
+  if (!isTestProvider()) {
     return;
   }
 

@@ -1,14 +1,7 @@
 <script lang="ts">
-  import type { Component } from 'svelte';
+  import { untrack, type Component } from 'svelte';
 
-  import type {
-    FileCreateDirectoryResult,
-    FileCreateResult,
-    FileDeleteResult,
-    FileDuplicateResult,
-    FileMoveResult,
-  } from '../../shared/contracts.js';
-  import { api, apiFetch, run } from '../lib/api.js';
+  import { api, apiFetch, run, type RunOptions } from '../lib/api.js';
   import { editorState } from '../lib/editor-state.svelte.js';
   import { toast } from '../lib/toast.svelte.js';
   import Sheet from './Sheet.svelte';
@@ -33,59 +26,63 @@
     | 'download-file';
 
   interface ActionConfig {
-    mode: ActionMode;
     title: string;
     submitLabel: string;
     isDanger?: boolean;
-    requiresFile?: boolean;
+    endpoint?: string;
+    body?: (path: string) => Record<string, string>;
+    okText?: string;
   }
 
   const ACTION_CONFIGS: Record<Exclude<ActionMode, 'menu'>, ActionConfig> = {
     'create-file': {
-      mode: 'create-file',
       title: 'Create file',
       submitLabel: 'Create file',
+      endpoint: 'create',
+      body: (path) => ({ path, content: newFileContent }),
+      okText: 'File created.',
     },
     'create-directory': {
-      mode: 'create-directory',
       title: 'Create folder',
       submitLabel: 'Create folder',
+      endpoint: 'create-directory',
+      okText: 'Folder created.',
     },
     'upload-file': {
-      mode: 'upload-file',
       title: 'Upload file',
       submitLabel: 'Select file...',
     },
     'download-file': {
-      mode: 'download-file',
       title: 'Download file',
       submitLabel: 'Download file',
-      requiresFile: true,
     },
     'duplicate-file': {
-      mode: 'duplicate-file',
       title: 'Duplicate file',
       submitLabel: 'Duplicate file',
-      requiresFile: true,
+      endpoint: 'duplicate',
+      body: (path) => ({ sourcePath: editorState.selectedFilePath, targetPath: path }),
+      okText: 'File duplicated.',
     },
     'rename-file': {
-      mode: 'rename-file',
       title: 'Rename file',
       submitLabel: 'Rename file',
-      requiresFile: true,
+      endpoint: 'rename',
+      body: (path) => ({ fromPath: editorState.selectedFilePath, toPath: path }),
+      okText: 'File renamed.',
     },
     'move-file': {
-      mode: 'move-file',
       title: 'Move file',
       submitLabel: 'Move file',
-      requiresFile: true,
+      endpoint: 'move',
+      body: (path) => ({ fromPath: editorState.selectedFilePath, toPath: path }),
+      okText: 'File moved.',
     },
     'delete-file': {
-      mode: 'delete-file',
       title: 'Delete file',
       submitLabel: 'Delete file',
       isDanger: true,
-      requiresFile: true,
+      endpoint: 'delete',
+      okText: 'File deleted.',
     },
   };
 
@@ -242,157 +239,53 @@
     return false;
   }
 
+  function runAction<T>(key: string, action: () => Promise<T>, okText?: RunOptions<T>['okText']) {
+    return run(action, { okText, busy: (isBusy) => (busy = isBusy ? key : null) });
+  }
+
   async function submitAction(event?: Event) {
     event?.preventDefault();
-    if (busy !== null || !canSubmitAction()) {
-      return;
-    }
+    if (busy !== null || !canSubmitAction()) return;
 
-    if (actionMode === 'create-file') {
-      const fullPath = joinPath(editorState.currentPath, newFileName.trim());
-      busy = 'action';
-      await run(
-        async () => {
-          await api.post<FileCreateResult>('/api/files/create', {
-            path: fullPath,
-            content: newFileContent,
-          });
-          await editorState.browse(parentPath(fullPath));
-          await editorState.openFile(fullPath);
-          onworkspacechange(fullPath);
-        },
-        'File created.',
-        (isBusy) => {
-          busy = isBusy ? 'action' : null;
-        },
-      );
-      closeActions();
-      return;
-    }
-
-    if (actionMode === 'create-directory') {
-      const fullPath = joinPath(editorState.currentPath, newDirectoryName.trim());
-      busy = 'action';
-      await run(
-        async () => {
-          await api.post<FileCreateDirectoryResult>('/api/files/create-directory', {
-            path: fullPath,
-          });
-          await editorState.browse(editorState.currentPath);
-          onworkspacechange(fullPath);
-        },
-        'Folder created.',
-        (isBusy) => {
-          busy = isBusy ? 'action' : null;
-        },
-      );
-      closeActions();
-      return;
-    }
-
-    if (actionMode === 'duplicate-file' && editorState.selectedFilePath) {
-      const fromPath = editorState.selectedFilePath;
-      const toPath = targetPath.trim();
-      busy = 'action';
-      await run(
-        async () => {
-          await api.post<FileDuplicateResult>('/api/files/duplicate', {
-            sourcePath: fromPath,
-            targetPath: toPath,
-          });
-          await editorState.browse(parentPath(toPath));
-          await editorState.openFile(toPath);
-          onworkspacechange(toPath);
-        },
-        'File duplicated.',
-        (isBusy) => {
-          busy = isBusy ? 'action' : null;
-        },
-      );
-      closeActions();
-      return;
-    }
-
-    if (actionMode === 'rename-file' && editorState.selectedFilePath) {
-      const fromPath = editorState.selectedFilePath;
-      const toPath = targetPath.trim();
-      busy = 'action';
-      await run(
-        async () => {
-          await api.post<FileMoveResult>('/api/files/rename', {
-            fromPath,
-            toPath,
-          });
-          await editorState.browse(parentPath(toPath));
-          await editorState.openFile(toPath);
-          onworkspacechange(toPath);
-        },
-        'File renamed.',
-        (isBusy) => {
-          busy = isBusy ? 'action' : null;
-        },
-      );
-      closeActions();
-      return;
-    }
-
-    if (actionMode === 'move-file' && editorState.selectedFilePath) {
-      const fromPath = editorState.selectedFilePath;
-      const toPath = targetPath.trim();
-      busy = 'action';
-      await run(
-        async () => {
-          await api.post<FileMoveResult>('/api/files/move', {
-            fromPath,
-            toPath,
-          });
-          await editorState.browse(parentPath(toPath));
-          await editorState.openFile(toPath);
-          onworkspacechange(toPath);
-        },
-        'File moved.',
-        (isBusy) => {
-          busy = isBusy ? 'action' : null;
-        },
-      );
-      closeActions();
-      return;
-    }
-
-    if (actionMode === 'delete-file' && editorState.selectedFilePath) {
-      const filePath = editorState.selectedFilePath;
-      if (!window.confirm(`Delete ${filePath}?`)) {
-        return;
-      }
-
-      busy = 'action';
-      await run(
-        async () => {
-          await api.post<FileDeleteResult>('/api/files/delete', {
-            path: filePath,
-          });
-          editorState.closeDocument();
-          await editorState.browse(parentPath(filePath));
-          onworkspacechange(filePath);
-        },
-        'File deleted.',
-        (isBusy) => {
-          busy = isBusy ? 'action' : null;
-        },
-      );
-      closeActions();
-      return;
-    }
-
-    if (actionMode === 'upload-file') {
+    const mode = actionMode;
+    if (mode === 'upload-file') {
       fileInputElement?.click();
       return;
     }
-
-    if (actionMode === 'download-file' && editorState.selectedFilePath) {
+    if (mode === 'download-file') {
       downloadFile(editorState.selectedFilePath);
       closeActions();
+      return;
     }
+    const config = currentActionConfig;
+    if (!config?.endpoint) return;
+
+    const creatingDirectory = mode === 'create-directory';
+    const deleting = mode === 'delete-file';
+    const path =
+      mode === 'create-file'
+        ? joinPath(editorState.currentPath, newFileName.trim())
+        : creatingDirectory
+          ? joinPath(editorState.currentPath, newDirectoryName.trim())
+          : deleting
+            ? editorState.selectedFilePath
+            : targetPath.trim();
+    if (deleting && !window.confirm(`Delete ${path}?`)) return;
+
+    const body = config.body?.(path) ?? { path };
+    const browsePath = creatingDirectory ? editorState.currentPath : parentPath(path);
+    await runAction(
+      'action',
+      async () => {
+        await api.post(`/api/files/${config.endpoint}`, body);
+        if (deleting) editorState.closeDocument();
+        await editorState.browse(browsePath);
+        if (!creatingDirectory && !deleting) await editorState.openFile(path);
+        onworkspacechange(path);
+      },
+      config.okText,
+    );
+    closeActions();
   }
 
   function downloadFile(filePath: string) {
@@ -417,9 +310,9 @@
       editorState.currentPath,
       uploadingFileName.trim() || file.name,
     );
-    busy = 'upload';
 
-    await run(
+    await runAction(
+      'upload',
       async () => {
         await apiFetch(`/api/files/raw?path=${encodeURIComponent(targetUploadPath)}`, {
           method: 'PUT',
@@ -431,9 +324,6 @@
         onworkspacechange(targetUploadPath);
       },
       'File uploaded.',
-      (isBusy) => {
-        busy = isBusy ? 'upload' : null;
-      },
     );
 
     input.value = '';
@@ -445,38 +335,48 @@
       return;
     }
 
-    busy = 'save';
-    await run(
+    const savedPath = editorState.selectedFilePath;
+    const savedContent = editorState.draftContent;
+    await runAction(
+      'save',
       async () => {
         await api.post('/api/files/write', {
-          path: editorState.selectedFilePath,
-          content: editorState.draftContent,
+          path: savedPath,
+          content: savedContent,
         });
-        editorState.markSaved();
-        onworkspacechange(editorState.selectedFilePath);
+        editorState.markSaved(savedPath, savedContent);
+        onworkspacechange(savedPath);
       },
       'File saved.',
-      (isBusy) => {
-        busy = isBusy ? 'save' : null;
-      },
     );
   }
 
   $effect(() => {
-    if (active && editorState.loadedPath === null && !editorState.loading) {
-      void editorState.browse(editorState.currentPath);
-    }
+    if (!active) return;
+    untrack(() => {
+      if (editorState.loadedPath === null && !editorState.loading) {
+        void editorState.browse(editorState.currentPath);
+      }
+    });
   });
 
   $effect(() => {
-    if (workspaceChange && editorState.selectedFilePath && !editorState.dirty) {
-      const changePath =
-        typeof workspaceChange === 'object' && workspaceChange !== null && 'path' in workspaceChange
-          ? (workspaceChange as { path: string }).path
-          : '';
-      if (!changePath || changePath === editorState.selectedFilePath) {
-        void editorState.openFile(editorState.selectedFilePath);
-      }
+    const change =
+      typeof workspaceChange === 'object' &&
+      workspaceChange !== null &&
+      'version' in workspaceChange
+        ? (workspaceChange as { path?: string; version?: number })
+        : null;
+    const version = change?.version ?? 0;
+    if (version === 0) return;
+
+    const selectedPath = untrack(() => editorState.selectedFilePath);
+    const isDirty = untrack(() => editorState.dirty);
+    if (!selectedPath || isDirty) return;
+
+    const changePath = change?.path ?? '';
+    if (!changePath || changePath === selectedPath) {
+      void editorState.openFile(selectedPath);
     }
   });
 
@@ -777,11 +677,13 @@
           </div>
         {:else}
           {#if CodeEditorComponent}
-            <CodeEditorComponent
-              value={editorState.draftContent}
-              filePath={editorState.selectedFilePath}
-              onchange={(content: string) => editorState.updateDraft(content)}
-            />
+            {#key editorState.selectedFilePath}
+              <CodeEditorComponent
+                value={editorState.draftContent}
+                filePath={editorState.selectedFilePath}
+                onchange={(content: string) => editorState.updateDraft(content)}
+              />
+            {/key}
           {:else if codeEditorPromise}
             <div class="empty-state-card compact">
               <h3>Loading editor engine...</h3>

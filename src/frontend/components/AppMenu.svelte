@@ -32,10 +32,11 @@
   }: Props = $props();
 
   async function handleLogout() {
-    await run(async () => {
-      await api.post('/api/auth/logout');
+    try {
+      await run(() => api.post('/api/auth/logout'));
+    } finally {
       onlogout();
-    }, 'Signed out.');
+    }
   }
 </script>
 
@@ -45,6 +46,7 @@
       <p class="eyebrow">Workspace menu</p>
       <h2>{currentRepo ? currentRepo.name : 'PiMobile'}</h2>
     </div>
+    <button class="ghost-button" type="button" onclick={onclose}>Close</button>
   </div>
 
   <section class="menu-section">

@@ -24,7 +24,7 @@ import type {
 import type { AppConfig } from '../config.js';
 import { flattenMessageText, summarizeText } from './pi-agent-hydrator.js';
 import type { LogChannel } from './log-service.js';
-import { setupTestProvider } from './test-provider.js';
+import { setupTestProvider, getTestModel } from './test-provider.js';
 
 export type SessionOpenOptions = {
   preferredModel?: { provider: string; modelId: string } | null;
@@ -34,6 +34,8 @@ export type SessionOpenOptions = {
 
 export class PiAgentSessionAdapter {
   private session: AgentSession | null = null;
+  private lifecycle: Promise<unknown> = Promise.resolve();
+  private sessionRepo: string | null = null;
   private unsubscribe: (() => void) | null = null;
 
   constructor(
@@ -46,19 +48,32 @@ export class PiAgentSessionAdapter {
     return this.session;
   }
 
+  private serialize<T>(action: () => Promise<T>): Promise<T> {
+    const pending = this.lifecycle.then(action);
+    this.lifecycle = pending.catch(() => {});
+    return pending;
+  }
+
   async reset() {
-    this.unsubscribe?.();
-    this.unsubscribe = null;
-    this.session?.dispose();
-    this.session = null;
+    await this.serialize(async () => {
+      this.unsubscribe?.();
+      this.unsubscribe = null;
+      await this.session?.abort();
+      this.session?.dispose();
+      this.session = null;
+      this.sessionRepo = null;
+    });
   }
 
   async ensureSession(repo: SelectedRepo) {
-    if (this.session) {
-      return this.session;
-    }
-
-    return this.createSession(repo, true);
+    return this.serialize(async () => {
+      if (this.session && this.sessionRepo === repo.absolutePath) return this.session;
+      return this.openSessionManager(
+        repo,
+        SessionManager.continueRecent(repo.absolutePath, this.resolveSessionDirectory(repo)),
+        { useConfiguredDefaults: true },
+      );
+    });
   }
 
   async createSession(
@@ -66,11 +81,13 @@ export class PiAgentSessionAdapter {
     continueRecent: boolean,
     options: SessionOpenOptions = { useConfiguredDefaults: true },
   ) {
-    const sessionDirectory = this.resolveSessionDirectory(repo);
-    const sessionManager = continueRecent
-      ? SessionManager.continueRecent(repo.absolutePath, sessionDirectory)
-      : SessionManager.create(repo.absolutePath, sessionDirectory);
-    return this.openSessionManager(repo, sessionManager, options);
+    return this.serialize(async () => {
+      const sessionDirectory = this.resolveSessionDirectory(repo);
+      const manager = continueRecent
+        ? SessionManager.continueRecent(repo.absolutePath, sessionDirectory)
+        : SessionManager.create(repo.absolutePath, sessionDirectory);
+      return this.openSessionManager(repo, manager, options);
+    });
   }
 
   async openSessionPath(
@@ -78,7 +95,9 @@ export class PiAgentSessionAdapter {
     sessionPath: string,
     options: SessionOpenOptions = { useConfiguredDefaults: false },
   ) {
-    return this.openSessionManager(repo, SessionManager.open(sessionPath), options);
+    return this.serialize(() =>
+      this.openSessionManager(repo, SessionManager.open(sessionPath), options),
+    );
   }
 
   getRuntimeState() {
@@ -256,8 +275,10 @@ export class PiAgentSessionAdapter {
 
     this.unsubscribe?.();
     this.unsubscribe = null;
+    await this.session?.abort();
     this.session?.dispose();
 
+    this.sessionRepo = repo.absolutePath;
     this.session = session;
     this.unsubscribe = session.subscribe((event) => {
       this.onSessionEvent(event);
@@ -271,6 +292,9 @@ export class PiAgentSessionAdapter {
     preferredModel: { provider: string; modelId: string } | null | undefined,
     useConfiguredDefaults: boolean,
   ) {
+    const testModel = getTestModel(modelRuntime);
+    if (testModel) return testModel;
+
     if (preferredModel) {
       const model = modelRuntime.getModel(preferredModel.provider, preferredModel.modelId);
 
@@ -284,10 +308,6 @@ export class PiAgentSessionAdapter {
       : undefined;
     if (configured) {
       return configured;
-    }
-
-    if (process.env.PI_TEST_PROVIDER === '1') {
-      return modelRuntime.getModel('faux', 'faux-1');
     }
 
     return undefined;

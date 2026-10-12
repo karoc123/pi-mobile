@@ -134,7 +134,7 @@ export type GitSyncResult = {
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 
-export type ChatToolStatus = 'running' | 'complete' | 'error';
+export type ChatToolStatus = 'running' | 'complete' | 'error' | 'aborted';
 
 export type ChatToolCall = {
   id: string;
@@ -257,6 +257,7 @@ export type BackendLogQueryResponse = {
 };
 
 export type ApiErrorCode =
+  | 'payload_too_large'
   | 'bad_request'
   | 'unauthorized'
   | 'forbidden'

@@ -49,7 +49,7 @@ export async function apiFetch<T>(url: string, init: RequestInit = {}): Promise<
   });
 
   if (!response.ok) {
-    if (response.status === 401 && unauthorizedHandler) {
+    if (response.status === 401 && url.split('?')[0] !== '/api/auth/login' && unauthorizedHandler) {
       unauthorizedHandler();
     }
     throw await toApiRequestError(response);
@@ -102,24 +102,9 @@ export interface RunOptions<T = unknown> {
 
 export async function run<T>(
   action: () => Promise<T>,
-  optionsOrOkText?: string | ((result: T) => string) | RunOptions<T>,
-  busySetter?: (isBusy: boolean) => void,
+  { okText, busy, rethrow = false }: RunOptions<T> = {},
 ): Promise<T | null> {
-  let okText: string | ((result: T) => string) | undefined;
-  let setBusy: ((isBusy: boolean) => void) | undefined = busySetter;
-  let rethrow = false;
-
-  if (typeof optionsOrOkText === 'string' || typeof optionsOrOkText === 'function') {
-    okText = optionsOrOkText;
-  } else if (optionsOrOkText && typeof optionsOrOkText === 'object') {
-    okText = optionsOrOkText.okText;
-    if (typeof optionsOrOkText.busy === 'function') {
-      setBusy = optionsOrOkText.busy;
-    }
-    rethrow = Boolean(optionsOrOkText.rethrow);
-  }
-
-  setBusy?.(true);
+  busy?.(true);
 
   try {
     const result = await action();
@@ -139,7 +124,7 @@ export async function run<T>(
     }
     return null;
   } finally {
-    setBusy?.(false);
+    busy?.(false);
   }
 }
 

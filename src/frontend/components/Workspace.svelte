@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
 
   import type {
+    AgentCommandState,
     AgentCommandResponse,
     AgentSlashCommand,
     SelectedRepo,
@@ -28,9 +29,16 @@
     theme: ThemeName;
     onsetTheme: (value: ThemeName) => void;
     onlogout: () => void;
+    onunauthorized?: () => void;
   }
 
-  const { initialRepo = null, theme, onsetTheme, onlogout }: Props = $props();
+  const {
+    initialRepo = null,
+    theme,
+    onsetTheme,
+    onlogout,
+    onunauthorized = onlogout,
+  }: Props = $props();
 
   let currentRepo = $state<SelectedRepo | null>(null);
   let view = $state<AppViewName>('chat');
@@ -66,13 +74,13 @@
       handleWorkspaceChange(path);
     },
     onRepoSelected: (repo) => {
-      currentRepo = repo;
-      editorState.reset();
-      handleWorkspaceChange();
+      if (currentRepo?.absolutePath !== repo.absolutePath) {
+        currentRepo = repo;
+        editorState.reset();
+        handleWorkspaceChange();
+      }
     },
-    onUnauthorized: () => {
-      onlogout();
-    },
+    onUnauthorized: () => onunauthorized(),
   });
 
   onMount(() => {
@@ -90,11 +98,33 @@
   }
 
   function handleRepoSelect(repo: SelectedRepo) {
+    if (currentRepo?.absolutePath === repo.absolutePath) {
+      workspaceOpen = false;
+      return;
+    }
     currentRepo = repo;
     workspaceOpen = false;
     editorState.reset();
     handleWorkspaceChange();
   }
+
+  $effect(() => {
+    const repoPath = currentRepo?.absolutePath;
+    availableCommands = [];
+    if (!repoPath) return;
+    let cancelled = false;
+    void api
+      .get<AgentCommandState>('/api/agent/command-state')
+      .then((state) => {
+        if (!cancelled) availableCommands = state.availableCommands;
+      })
+      .catch((error) => {
+        if (!cancelled) toast.show(toErrorMessage(error), 'error');
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
 
   function seedComposer(value: string) {
     composerPrefill = value;
@@ -128,7 +158,7 @@
 
     await run(
       () => api.post<AgentCommandResponse>('/api/agent/command', { command: 'new-session' }),
-      'Started a new session.',
+      { okText: 'Started a new session.' },
     );
   }
 

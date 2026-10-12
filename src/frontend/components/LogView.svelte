@@ -69,7 +69,12 @@
     return [...bySeq.values()].sort((left, right) => left.seq - right.seq);
   }
 
+  let logRequestId = 0;
+
   async function loadLogs(refresh = false) {
+    const id = ++logRequestId;
+    loading = refresh;
+    loadingMore = !refresh;
     if (refresh) {
       loading = true;
     } else {
@@ -97,16 +102,16 @@
       }
 
       const response = await apiFetch<BackendLogQueryResponse>(`/api/logs?${query.toString()}`);
+      if (id !== logRequestId) return;
       entries = refresh ? response.entries : mergeLogEntries(entries, response.entries);
       entries = entries.slice(-maxVisibleLogEntries);
       hasMore = response.hasMore;
       lastError = '';
     } catch (error) {
-      lastError = toErrorMessage(error);
+      if (id === logRequestId) lastError = toErrorMessage(error);
     } finally {
-      if (refresh) {
+      if (id === logRequestId) {
         loading = false;
-      } else {
         loadingMore = false;
       }
     }
@@ -137,9 +142,9 @@
         lastError = '';
         await loadLogs(true);
       },
-      'Backend log deleted.',
-      (busy) => {
-        clearing = busy;
+      {
+        okText: 'Backend log deleted.',
+        busy: (busy) => (clearing = busy),
       },
     );
   }

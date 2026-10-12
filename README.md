@@ -22,21 +22,6 @@ The companion Wear OS client is maintained in the [PiMobile Wear OS repository](
 
 ---
 
-## Why Docker is the default path
-
-- No local Node/npm setup required
-- Reproducible runtime
-- All state in three directories next to `docker-compose.yml`
-- No bind-mount of your full `~/.ssh` or `~/.pi` directories
-
-PiMobile persists data in bind mounts:
-
-- `./workspace` → `/workspace`: repositories + file edits
-- `./db` → `/data/db`: logs, `known_hosts`, `model-usage.json`
-- `./pi` → `/data/pi`: Pi auth/session data
-
----
-
 ## Required `.env` values for Docker
 
 At minimum:

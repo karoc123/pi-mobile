@@ -32,6 +32,12 @@
 </nav>
 
 <style>
+  @media (pointer: coarse) {
+    :global(body:has(.composer textarea:focus)) .bottom-nav {
+      display: none;
+    }
+  }
+
   .bottom-nav {
     position: fixed;
     left: 0.75rem;

@@ -1,5 +1,4 @@
-import { createWriteStream, existsSync } from 'node:fs';
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
@@ -31,7 +30,7 @@ import type {
 
 import type { AppConfig } from './config.js';
 import { AuthService } from './services/auth-service.js';
-import { FileService } from './services/file-service.js';
+import { FileService, MAX_FILE_BYTES } from './services/file-service.js';
 import { GitService } from './services/git-service.js';
 import { LogService } from './services/log-service.js';
 import { PiAgentService } from './services/pi-agent-service.js';
@@ -53,6 +52,7 @@ type AppServices = {
   piAgentService: PiAgentService;
   piAuthService: PiAuthService;
   serverStartedAt: Date;
+  shutdownSignal?: AbortSignal;
 };
 
 export function createApp(services: AppServices) {
@@ -239,7 +239,7 @@ export function createApp(services: AppServices) {
         return await services.piAuthService.loginToken(provider, token);
       } catch (error) {
         if (error instanceof PiAuthServiceError) {
-          const statusCode = error.code === 'unknown_provider' ? 400 : 401;
+          const statusCode = 400;
           throw new HttpError(statusCode, 'validation_error', error.message, { retriable: false });
         }
 
@@ -449,9 +449,12 @@ export function createApp(services: AppServices) {
       writeEvent('ping', { time: Date.now() });
     }, 15000);
 
-    request.on('close', () => {
+    const stop = () => response.end();
+    services.shutdownSignal?.addEventListener('abort', stop, { once: true });
+    response.on('close', () => {
       clearInterval(heartbeat);
       unsubscribe();
+      services.shutdownSignal?.removeEventListener('abort', stop);
     });
   });
 
@@ -612,15 +615,24 @@ function createFileRouter(
     repoRoute(async (repo, request, response) => {
       const filePath = getEntryPath(getQueryString(request, 'path'));
       const absolutePath = resolveWithin(repo.absolutePath, filePath);
-      const download = request.query.download === '1';
+      const download =
+        request.query.download === '1' ||
+        !/\.(png|jpe?g|gif|webp|bmp|avif|ico|tiff?)$/i.test(filePath);
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      response.setHeader('Content-Security-Policy', 'sandbox');
       await new Promise<void>((resolve, reject) => {
         if (download) {
-          response.download(absolutePath, path.basename(absolutePath), (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
+          response.download(
+            absolutePath,
+            path.basename(absolutePath),
+            { dotfiles: 'allow' },
+            (err) => {
+              if (err) reject(err);
+              else resolve();
+            },
+          );
         } else {
-          response.sendFile(absolutePath, (err) => {
+          response.sendFile(absolutePath, { dotfiles: 'allow' }, (err) => {
             if (err) reject(err);
             else resolve();
           });
@@ -631,40 +643,21 @@ function createFileRouter(
 
   router.put(
     '/raw',
-    repoRoute(async (repo, request) => {
+    repoRoute(async (repo, request, response) => {
       const filePath = getEntryPath(getQueryString(request, 'path'));
-      const targetPath = resolveWithin(repo.absolutePath, filePath);
-      await mkdir(path.dirname(targetPath), { recursive: true });
-
-      const tempPath = path.join(
-        path.dirname(targetPath),
-        `.tmp.${Date.now()}.${Math.random().toString(36).slice(2)}`,
-      );
-
-      const maxBytes = 50 * 1024 * 1024;
-      let bytesWritten = 0;
-
-      await new Promise<void>((resolve, reject) => {
-        const outStream = createWriteStream(tempPath);
-
-        request.on('data', (chunk: Buffer) => {
-          bytesWritten += chunk.length;
-          if (bytesWritten > maxBytes) {
-            request.destroy(new HttpError(413, 'bad_request', 'File size exceeds 50MB limit.'));
-          }
-        });
-
-        request.pipe(outStream);
-
-        outStream.on('finish', () => resolve());
-        outStream.on('error', (err) => reject(err));
-        request.on('error', (err) => reject(err));
-      }).catch(async (err) => {
-        await rm(tempPath, { force: true }).catch(() => {});
-        throw err;
-      });
-
-      await rename(tempPath, targetPath);
+      if (Number(request.headers['content-length']) > MAX_FILE_BYTES) {
+        response.setHeader('Connection', 'close');
+        throw new HttpError(413, 'payload_too_large', 'File size exceeds 50MB limit.');
+      }
+      try {
+        await fileService.writeStream(repo, filePath, request);
+      } catch (error) {
+        if (isHttpError(error) && error.statusCode === 413) {
+          response.setHeader('Connection', 'close');
+        }
+        if (request.aborted) throw new HttpError(400, 'bad_request', 'Upload aborted.');
+        throw error;
+      }
       return { ok: true, path: filePath };
     }),
   );

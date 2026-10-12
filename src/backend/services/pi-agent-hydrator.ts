@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import type { ChatMessage, ChatToolCall } from '../../shared/contracts.js';
 
-export function hydrateMessagesFromSession(sessionMessages: readonly unknown[]): ChatMessage[] {
+export function hydrateMessagesFromSession(
+  sessionMessages: readonly unknown[],
+  isStreaming = false,
+): ChatMessage[] {
   const result: ChatMessage[] = [];
 
   for (const entry of sessionMessages) {
@@ -19,24 +22,46 @@ export function hydrateMessagesFromSession(sessionMessages: readonly unknown[]):
       toolName?: string;
       result?: unknown;
       isError?: boolean;
+      command?: string;
+      output?: string;
+      exitCode?: number;
+      cancelled?: boolean;
     };
 
     if (candidate.role === 'toolResult' || candidate.role === 'tool-result') {
-      const lastAssistant = [...result].reverse().find((message) => message.role === 'assistant');
-      if (lastAssistant && lastAssistant.tools) {
-        const matchingTool = lastAssistant.tools.find(
-          (tool) =>
-            tool.id === candidate.toolCallId ||
-            (candidate.toolName && tool.name === candidate.toolName),
-        );
-        if (matchingTool) {
-          matchingTool.status = candidate.isError ? 'error' : 'complete';
-          const resultDetail = extractToolResultDetail(candidate);
-          if (resultDetail) {
-            matchingTool.detail = resultDetail;
-          }
+      const matchingTool = result
+        .flatMap((message) => message.tools ?? [])
+        .find((tool) => tool.id === candidate.toolCallId);
+      if (matchingTool) {
+        matchingTool.status = candidate.isError ? 'error' : 'complete';
+        const resultDetail = extractToolResultDetail(candidate);
+        if (resultDetail) {
+          matchingTool.detail = summarizePayload(resultDetail, 4096);
         }
       }
+      continue;
+    }
+
+    if (candidate.role === 'bashExecution') {
+      result.push({
+        id: randomUUID(),
+        role: 'assistant',
+        text: `$ ${candidate.command ?? ''}`,
+        status: 'complete',
+        timestamp: resolveMessageTimestamp(candidate),
+        tools: [
+          {
+            id: randomUUID(),
+            name: 'bash',
+            status: candidate.cancelled
+              ? 'aborted'
+              : candidate.exitCode === 0
+                ? 'complete'
+                : 'error',
+            detail: summarizePayload(candidate.output, 4096),
+          },
+        ],
+      });
       continue;
     }
 
@@ -44,7 +69,8 @@ export function hydrateMessagesFromSession(sessionMessages: readonly unknown[]):
       continue;
     }
 
-    const tools = candidate.role === 'assistant' ? extractToolCalls(candidate) : undefined;
+    const tools =
+      candidate.role === 'assistant' ? extractToolCalls(candidate, isStreaming) : undefined;
     const text = flattenMessageText(candidate);
 
     if (candidate.role === 'assistant' && text.length === 0 && (!tools || tools.length === 0)) {
@@ -120,7 +146,7 @@ export function summarizePayload(payload: unknown, maxLength: number | null = 24
     return text;
   }
 
-  return text.slice(0, maxLength);
+  return text.length > maxLength ? `${text.slice(0, maxLength)}… (gekürzt)` : text;
 }
 
 export function summarizeText(text: string) {
@@ -133,7 +159,7 @@ export function summarizeText(text: string) {
   return normalized.slice(0, 120);
 }
 
-function extractToolCalls(candidate: { content?: unknown }): ChatToolCall[] {
+function extractToolCalls(candidate: { content?: unknown }, isStreaming: boolean): ChatToolCall[] {
   if (!Array.isArray(candidate.content)) {
     return [];
   }
@@ -161,12 +187,12 @@ function extractToolCalls(candidate: { content?: unknown }): ChatToolCall[] {
       const toolId = String(typedChunk.id || typedChunk.toolCallId || randomUUID());
       const toolName = String(typedChunk.name || typedChunk.toolName || 'unknown');
       const toolArgs = typedChunk.arguments ?? typedChunk.args;
-      const detail = toolArgs ? summarizePayload(toolArgs, null) : '';
+      const detail = toolArgs ? summarizePayload(toolArgs) : '';
 
       tools.push({
         id: toolId,
         name: toolName,
-        status: 'complete',
+        status: isStreaming ? 'running' : 'aborted',
         detail,
       });
     }

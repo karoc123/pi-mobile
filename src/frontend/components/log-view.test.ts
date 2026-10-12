@@ -152,4 +152,38 @@ describe('LogView', () => {
       expect(screen.getByText('Live stream connected')).toBeTruthy();
     });
   });
+  it('ignores old filter responses arriving after the latest filter result', async () => {
+    let resolveOld!: (response: Response) => void;
+    const old = new Promise<Response>((resolve) => {
+      resolveOld = resolve;
+    });
+    const entry = (message: string) => ({
+      seq: 1,
+      timestamp: '2026-10-11T12:00:00Z',
+      level: 'info',
+      source: 'server',
+      message,
+      event: null,
+      repo: null,
+      requestId: null,
+      details: null,
+    });
+    const response = (message: string) =>
+      new Response(
+        JSON.stringify({ entries: [entry(message)], hasMore: false, nextBeforeSeq: null }),
+      );
+    vi.spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(old)
+      .mockResolvedValue(response('latest filtered result'));
+    render(LogView);
+    await fireEvent.input(screen.getByPlaceholderText('message, event, repo, request id'), {
+      target: { value: 'latest' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await screen.findByText('latest filtered result');
+    resolveOld(response('stale unfiltered result'));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(screen.queryByText('stale unfiltered result')).toBeNull();
+    expect(screen.getByText('latest filtered result')).toBeTruthy();
+  });
 });

@@ -60,7 +60,17 @@ const watcherService = new WatcherService(
   },
 );
 
-const activateRepo = async (repo: SelectedRepo) => {
+let repoActivation: Promise<void> = Promise.resolve();
+const activateRepo = (repo: SelectedRepo) => {
+  const activation = repoActivation.then(() => activateRepository(repo));
+  repoActivation = activation.catch(() => {});
+  return activation;
+};
+
+const activateRepository = async (repo: SelectedRepo) => {
+  if (piAgentService.getCurrentRepo()?.absolutePath === repo.absolutePath) {
+    return;
+  }
   await watcherService.watch(repo.absolutePath);
   await piAgentService.selectRepo(repo);
   websocketHub.broadcast({
@@ -69,7 +79,9 @@ const activateRepo = async (repo: SelectedRepo) => {
   });
 };
 
+const shutdownController = new AbortController();
 const app = createApp({
+  shutdownSignal: shutdownController.signal,
   config,
   authService,
   logService,
@@ -125,6 +137,8 @@ async function shutdown(signal?: string) {
   });
 
   try {
+    websocketHub.close();
+    shutdownController.abort();
     await watcherService.dispose();
     await piAgentService.dispose();
     await new Promise<void>((resolve, reject) => {

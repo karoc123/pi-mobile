@@ -1,4 +1,4 @@
-export type ApiErrorCode = "bad_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "validation_error" | "runtime_error" | "internal_error";
+import type { ApiErrorCode } from '../../shared/contracts.js';
 
 type HttpErrorOptions = {
   details?: unknown;
@@ -11,9 +11,14 @@ export class HttpError extends Error {
   readonly details?: unknown;
   readonly retriable: boolean;
 
-  constructor(statusCode: number, code: ApiErrorCode, message: string, options: HttpErrorOptions = {}) {
+  constructor(
+    statusCode: number,
+    code: ApiErrorCode,
+    message: string,
+    options: HttpErrorOptions = {},
+  ) {
     super(message);
-    this.name = "HttpError";
+    this.name = 'HttpError';
     this.statusCode = statusCode;
     this.code = code;
     this.details = options.details;

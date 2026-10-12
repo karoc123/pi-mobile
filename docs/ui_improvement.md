@@ -1,6 +1,6 @@
 # UI & UX Improvement Plan: PiMobile Frontend
 
-Dieses Dokument fasst die Ergebnisse des **Impeccable Audits** für die Oberfläche von `pi-mobile` (`src/frontend`) zusammen und definiert konkrete, priorisierte Maßnahmen zur Behebung.
+Dieses Dokument fasst die Ergebnisse des **Impeccable Audits** für die Oberfläche von `pi-mobile` (`../src/frontend`) zusammen und definiert konkrete, priorisierte Maßnahmen zur Behebung.
 
 ---
 
@@ -36,7 +36,7 @@ Dieses Dokument fasst die Ergebnisse des **Impeccable Audits** für die Oberflä
 - **Problem:** Es existieren im gesamten Projekt keine Stile für `:focus-visible`. Buttons und Nav-Items haben Standard-Outlines, während die Chat-Textarea in [`src/frontend/styles.css#L688-L690`](file:///home/zink/dev/pi-mobile/src/frontend/styles.css#L688-L690) den Fokusring komplett entfernt (`outline: none;`).
 - **Standard:** WCAG 2.4.7 Focus Visible (Level AA).
 - **Maßnahme:**
-  1. Globalen `:focus-visible`-Stil in [`src/frontend/styles.css`](file:///home/zink/dev/pi-mobile/src/frontend/styles.css) einfügen:
+  1. Globalen `:focus-visible`-Stil in [`../src/frontend/styles.css`](file:///home/zink/dev/pi-mobile/src/frontend/styles.css) einfügen:
      ```css
      :focus-visible {
        outline: 2px solid var(--accent);
@@ -99,7 +99,7 @@ Dieses Dokument fasst die Ergebnisse des **Impeccable Audits** für die Oberflä
 
 ### [P2] Accessibility: Reine Farbcodierung in der System-Statusleiste
 
-- **Problem:** In [`src/frontend/components/SystemStatus.svelte`](file:///home/zink/dev/pi-mobile/src/frontend/components/SystemStatus.svelte) unterscheiden sich `.status-chip.ok`, `.warn` und `.error` ausschließlich durch eine dezente Rahmenfarbe (`border-color`).
+- **Problem:** In [`../src/frontend/components/SystemStatus.svelte`](file:///home/zink/dev/pi-mobile/src/frontend/components/SystemStatus.svelte) unterscheiden sich `.status-chip.ok`, `.warn` und `.error` ausschließlich durch eine dezente Rahmenfarbe (`border-color`).
 - **Standard:** WCAG 1.4.1 Use of Color (Farbe darf nicht das einzige Mittel zur Informationsübertragung sein).
 - **Maßnahme:**
   1. Visuelle Statusindikatoren (z. B. Icons wie `✓`, `▲`, `✕` oder Dot-Marker) hinzufügen.
@@ -110,7 +110,7 @@ Dieses Dokument fasst die Ergebnisse des **Impeccable Audits** für die Oberflä
 
 ### [P2] Accessibility: Fehlende Unterstützung für `prefers-reduced-motion`
 
-- **Problem:** In [`src/frontend/styles.css`](file:///home/zink/dev/pi-mobile/src/frontend/styles.css) laufen `@keyframes pulse`, `@keyframes terminal-blink` sowie diverse Hover-/Aktiv-Transitions ohne Abfrage der Nutzer-Systemeinstellung.
+- **Problem:** In [`../src/frontend/styles.css`](file:///home/zink/dev/pi-mobile/src/frontend/styles.css) laufen `@keyframes pulse`, `@keyframes terminal-blink` sowie diverse Hover-/Aktiv-Transitions ohne Abfrage der Nutzer-Systemeinstellung.
 - **Standard:** WCAG 2.2.2 Pause, Stop, Hide / WCAG 2.3.3 Animation from Interactions.
 - **Maßnahme:**
   Media Query am Ende der Stylesheet-Definition einfügen:

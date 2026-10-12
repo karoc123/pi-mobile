@@ -48,6 +48,7 @@ describe('WebsocketHub', () => {
         'abc-token',
       );
       expect(extractCookie(`${cookieName}=hello%20world`, cookieName)).toBe('hello world');
+      expect(extractCookie(`${cookieName}=%E0%A4%A`, cookieName)).toBeNull();
     });
   });
 
@@ -76,6 +77,9 @@ describe('WebsocketHub', () => {
 
       hub.handleUpgrade(reqInvalid, mockSocket, Buffer.alloc(0));
       expect(mockSocket.destroy).toHaveBeenCalledTimes(2);
+      const malformed = { headers: { cookie: `${cookieName}=%E0%A4%A` } } as IncomingMessage;
+      expect(() => hub.handleUpgrade(malformed, mockSocket, Buffer.alloc(0))).not.toThrow();
+      expect(mockSocket.destroy).toHaveBeenCalledTimes(3);
     });
 
     it('proceeds with upgrade when valid session token cookie is provided', () => {

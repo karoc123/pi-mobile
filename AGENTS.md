@@ -23,7 +23,7 @@
 
 ### High-Value Commands
 
-- **Code Quality Gates**: `npm run check` (Runs TypeScript check, `svelte-check`, ESLint, formatting check, dependency check, and guardrail tests)
+- **Code Quality Gates**: `npm run check` (Runs TypeScript check, `svelte-check`, ESLint, full-tree formatting check, dependency check, and guardrail tests)
 - **Local Development Mode**: `npm run dev` (Starts backend server with live reload and frontend asset watch)
 - **Production Build**: `npm run build` (Compiles TypeScript and bundles static frontend assets into `dist/`)
 - **Run Unit Tests**: `npm test` (Runs Vitest test suite)
@@ -42,6 +42,7 @@ All contributions must adhere to principles that ensure the system remains extre
 
 - **Svelte 5 Runes Exclusively**: Zero legacy Svelte syntax allowed (`createEventDispatcher`, `export let`, `$:` or `on:`). All components must use `$state`, `$derived`, `$effect`, `$props`, snippet/callback props (`onsubmit`, `onclick`, etc.), and scoped `<style>` blocks.
 - **TypeScript 6.0.x Pin**: TypeScript is pinned to `~6.0.2` to guarantee complete compatibility and strict type safety across `svelte-check`, `typescript-eslint`, and `eslint-plugin-svelte` without version divergence.
+- **Test Isolation & Gates**: Agent tests must set isolated `piAgentDir` and `piSessionDir`. E2E starts its own server without `.env` loading or server reuse. The Svelte compiler enforces Runes; warnings fail typecheck. `npm run check` checks formatting across the tracked tree and new files.
 - **Stateless & Git Single Source of Truth**: The local filesystem and Git tree are the absolute Single Source of Truth. Avoid heavy databases or persistent sync state; use simple memory states or HTTP-only cookies for password sessions.
 - **Agent Snapshot Push (No Polling)**: The server pushes a full `snapshot` WebSocket envelope upon client connection and after any session mutation (repo selection, new session, resume, fork, tree, compaction, bash execution). Clients update state reactively via snapshot and real-time delta envelopes; no polling loops.
 - **Clean Lifecycle & Auth Gate**: The root `App.svelte` acts as an authentication gate. Unmounting the `Workspace` component automatically disposes WebSocket connections and resets active editor state.

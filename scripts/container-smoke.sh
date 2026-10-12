@@ -69,7 +69,7 @@ curl -fsS "http://127.0.0.1:$SMOKE_PORT/api/health" | node -e \
 
 echo "[container-smoke] Verify global git sshCommand configuration..."
 SSH_CMD="$(compose exec -T pi-mobile-server git config --global core.sshCommand)"
-test "$SSH_CMD" = "ssh -o UserKnownHostsFile=/data/db/known_hosts -o StrictHostKeyChecking=accept-new"
+test "$SSH_CMD" = 'ssh -i "/home/node/.ssh/id_ed25519" -o IdentitiesOnly=yes -o UserKnownHostsFile=/data/db/known_hosts -o StrictHostKeyChecking=accept-new'
 
 login
 PROVIDER="$(curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$SMOKE_PORT/api/pi/auth/status" | node -e \

@@ -124,6 +124,7 @@ describe('createApp', () => {
         browse: vi.fn(async () => []),
         readFile: vi.fn(async () => ({ path: 'README.md', content: '# temp repo\n' })),
         writeFile: vi.fn(async () => undefined),
+        writeStream: new FileService().writeStream,
         createFile,
       } as never,
       gitService: {

@@ -78,6 +78,18 @@ describe('apiFetch and api', () => {
     expect(unauthorizedSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('shows a failed app login without expiring an existing app session', async () => {
+    const unauthorized = vi.fn();
+    setUnauthorizedHandler(unauthorized);
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: 'Invalid password.' } }), { status: 401 }),
+    );
+    await expect(api.post('/api/auth/login', { password: 'wrong' })).rejects.toThrow(
+      'Invalid password.',
+    );
+    expect(unauthorized).not.toHaveBeenCalled();
+  });
+
   it('parses structured ApiErrorResponse on failure', async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
@@ -175,8 +187,7 @@ describe('run helper', () => {
       async () => {
         return { count: 42 };
       },
-      'Action completed successfully.',
-      busySetter,
+      { okText: 'Action completed successfully.', busy: busySetter },
     );
 
     expect(result).toEqual({ count: 42 });
@@ -209,10 +220,9 @@ describe('run helper', () => {
   });
 
   it('supports function for okText derived from result', async () => {
-    const result = await run(
-      async () => ({ branch: 'feature/test' }),
-      (res) => `Switched to ${res.branch}.`,
-    );
+    const result = await run(async () => ({ branch: 'feature/test' }), {
+      okText: (res) => `Switched to ${res.branch}.`,
+    });
 
     expect(result).toEqual({ branch: 'feature/test' });
     expect(toast.message).toBe('Switched to feature/test.');

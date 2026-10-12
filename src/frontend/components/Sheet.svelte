@@ -65,6 +65,9 @@
   class:wide
   aria-label={ariaLabel ?? title}
   oncancel={handleCancel}
+  onclose={() => {
+    if (open) onclose();
+  }}
   onclick={handleClick}
 >
   <div class="sheet-dialog-inner">
