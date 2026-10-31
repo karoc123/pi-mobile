@@ -53,7 +53,7 @@ To secure filesystem access from mobile clients, an explicit authentication boun
 
 Written in TypeScript running on Node.js, the backend acts as a high-fidelity router orchestrating the host environment, Git states, and the `pi` runtime.
 
-- **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` (v1.0+) TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process using `ModelRuntime` for model discovery, selection, and auth credential synchronization.
+- **`In-Container Agent Execution`:** The backend uses the official `@earendil-works/pi-coding-agent` TypeScript SDK as the primary integration layer. A repository-bound `AgentSession` is created directly inside the Node.js process using `ModelRuntime` for model discovery, selection, and auth credential synchronization.
 - **`Snapshot-Push WebSocket Architecture`:** The backend delivers initial state upon connection and after any session mutation via the `snapshot` envelope. Live deltas (`chat_message_added`, `chat_message_updated`, `agent_status`) keep the client perfectly in sync without polling.
 - **`GitService`:** Parses `git diff -U3` into structural JSON objects, making raw line offsets and hunk chunks readable for the frontend. Applies hunk staging, unstaging, and reverts via `git apply`.
 - **`FileService`:** Executes raw text and binary file operations with streaming and atomic rename guarantees. Non-text files are recognized via NUL-byte inspection in the first 8 KB. Streaming uploads and JSON editor saves share one atomic write path, preserve existing permissions and internal symlinks, reject uploads over 50 MiB, and remove temporary files on failure.
@@ -142,6 +142,7 @@ To eliminate CPU-intensive polling on low-power devices:
 
 `Dockerfile` uses a two-stage build:
 
+- Node.js requirements: `^22.22.2 || ^24.15.0 || >=26.0.0`; the Docker image follows Node.js 22. Chokidar 6 requires at least 22.22, and jsdom 30 requires at least 22.22.2 on that line.
 - Build stage: Installs dependencies, builds frontend and backend, and prunes development packages.
 - Runtime stage: Installs `git` and `openssh-client`, copies distribution bundles, and runs `docker/entrypoint.sh`.
 
