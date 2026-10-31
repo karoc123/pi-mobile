@@ -209,6 +209,57 @@ test('mobile browser flow handles command palette session operations', async ({ 
   await expect(page.locator('.notice.success')).toContainText('Started a new session.');
 });
 
+test('model palette keeps long lists inside the viewport and filters models', async ({ page }) => {
+  await page.route('**/api/agent/command-state', async (route) => {
+    const response = await route.fetch();
+    const state = await response.json();
+    state.models = Array.from({ length: 60 }, (_, index) => ({
+      provider: 'test-provider',
+      modelId: `model-${index}`,
+      name: `Test model ${index}`,
+      available: true,
+      isCurrent: index === 0,
+      usingSubscription: false,
+    }));
+    await route.fulfill({ response, json: state });
+  });
+  await unlockAndSelectRepo(page);
+  await page.getByRole('button', { name: 'Chat' }).click();
+  await page.locator('.cmd-button').click();
+  const dialog = page.getByRole('dialog', { name: 'Command palette' });
+  const search = dialog.getByRole('searchbox', { name: 'Search models' });
+  const results = dialog.locator('.model-results');
+  await expect(results.locator('button')).toHaveCount(60);
+
+  for (const viewport of [
+    { width: 390, height: 664 },
+    { width: 390, height: 400 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const bounds = await dialog.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height + 1);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width + 1);
+    const searchBounds = await search.boundingBox();
+    await results.locator('button').last().scrollIntoViewIfNeeded();
+    await expect(results.locator('button').last()).toBeInViewport();
+    expect(await search.boundingBox()).toEqual(searchBounds);
+    expect(await results.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+      true,
+    );
+  }
+
+  await search.fill(' MODEL-59 ');
+  await expect(results.locator('button')).toHaveCount(1);
+  await expect(results).toContainText('test-provider/model-59');
+  await search.fill('missing-model');
+  await expect(dialog.getByRole('status')).toHaveText('No models match your search.');
+  await search.fill('');
+  await expect(results.locator('button')).toHaveCount(60);
+});
+
 test('mobile browser flow views logs with search and filters', async ({ page }) => {
   await unlockAndSelectRepo(page);
 

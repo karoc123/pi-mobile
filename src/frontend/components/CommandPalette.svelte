@@ -33,6 +33,7 @@
 
   let loading = $state(false);
   let busy = $state(false);
+  let modelSearch = $state('');
   let commandState = $state<AgentCommandState | null>(null);
   let selectedCommand = $state(SLASH_COMMANDS[0]?.command ?? '/model');
   let sessionNameDraft = $state('');
@@ -51,6 +52,7 @@
 
   $effect(() => {
     if (open) {
+      modelSearch = '';
       if (initialCommand) {
         selectedCommand = resolveCommand(initialCommand);
       }
@@ -67,6 +69,14 @@
   const availableModels = $derived(
     commandState?.models.filter((model: AgentModelOption) => model.available || model.isCurrent) ??
       [],
+  );
+
+  const filteredModels = $derived(
+    availableModels.filter((model) =>
+      `${model.provider}/${model.modelId} ${model.name}`
+        .toLowerCase()
+        .includes(modelSearch.trim().toLowerCase()),
+    ),
   );
 
   const thinkingOptions = $derived(
@@ -156,6 +166,7 @@
   eyebrow="Command palette"
   ariaLabel="Command palette"
   wide={true}
+  contained={true}
 >
   <div class="command-body">
     <div class="command-layout">
@@ -173,48 +184,62 @@
         {/each}
       </div>
 
-      <div class="command-panel">
+      <div class="command-panel" class:model-panel={selectedCommand === '/model'}>
         {#if loading && !commandState}
           <p class="empty-state small">Loading available commands...</p>
         {:else if !commandState}
           <p class="empty-state small">No command state available yet.</p>
         {:else}
           {#if selectedCommand === '/model'}
-            <div class="command-stack">
-              <p class="subdued">Pick the active Pi model for this session.</p>
-              {#if availableModels.length === 0}
-                <p class="empty-state small">No models are available for switching right now.</p>
-              {:else}
-                {#each availableModels as model (model.provider + '/' + model.modelId)}
-                  <button
-                    class:selected={model.isCurrent}
-                    class="command-option"
-                    type="button"
-                    disabled={busy || model.isCurrent}
-                    onclick={() =>
-                      executeCommand({
-                        command: 'set-model',
-                        provider: model.provider,
-                        modelId: model.modelId,
-                      })}
-                  >
-                    <div class="command-option-main">
-                      <strong>{model.provider}/{model.modelId}</strong>
-                      <span>{model.name}</span>
-                      {#if formatModelUsage(model)}
-                        <span>{formatModelUsage(model)}</span>
-                      {/if}
-                    </div>
-                    <span class="command-meta"
-                      >{model.isCurrent
-                        ? 'Current'
-                        : model.usingSubscription
-                          ? 'OAuth'
-                          : 'Ready'}</span
+            <div class="command-stack model-stack">
+              <div class="model-search">
+                <p class="subdued">Pick the active Pi model for this session.</p>
+                <label class="field-label" for="model-search-input">Search models</label>
+                <input
+                  id="model-search-input"
+                  class="text-input"
+                  type="search"
+                  bind:value={modelSearch}
+                  placeholder="Provider or model name"
+                />
+              </div>
+              <div class="model-results">
+                {#if availableModels.length === 0}
+                  <p class="empty-state small">No models are available for switching right now.</p>
+                {:else if filteredModels.length === 0}
+                  <p class="empty-state small" role="status">No models match your search.</p>
+                {:else}
+                  {#each filteredModels as model (model.provider + '/' + model.modelId)}
+                    <button
+                      class:selected={model.isCurrent}
+                      class="command-option"
+                      type="button"
+                      disabled={busy || model.isCurrent}
+                      onclick={() =>
+                        executeCommand({
+                          command: 'set-model',
+                          provider: model.provider,
+                          modelId: model.modelId,
+                        })}
                     >
-                  </button>
-                {/each}
-              {/if}
+                      <div class="command-option-main">
+                        <strong>{model.provider}/{model.modelId}</strong>
+                        <span>{model.name}</span>
+                        {#if formatModelUsage(model)}
+                          <span>{formatModelUsage(model)}</span>
+                        {/if}
+                      </div>
+                      <span class="command-meta"
+                        >{model.isCurrent
+                          ? 'Current'
+                          : model.usingSubscription
+                            ? 'OAuth'
+                            : 'Ready'}</span
+                      >
+                    </button>
+                  {/each}
+                {/if}
+              </div>
             </div>
           {:else if selectedCommand === '/session'}
             <div class="command-stack">
@@ -630,6 +655,8 @@
   .command-stack {
     display: grid;
     gap: 0.75rem;
+    align-content: start;
+    min-width: 0;
   }
 
   .command-list,
@@ -639,6 +666,34 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .command-panel.model-panel {
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .model-stack {
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .model-search,
+  .model-results {
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+  }
+
+  .model-search .subdued {
+    margin: 0;
+  }
+
+  .model-results {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    align-content: start;
   }
 
   .command-tab,

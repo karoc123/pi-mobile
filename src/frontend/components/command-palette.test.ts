@@ -103,6 +103,28 @@ describe('CommandPalette', () => {
     });
   });
 
+  it('filters models by provider, ID and name and restores the list when cleared', async () => {
+    vi.spyOn(apiModule, 'apiFetch').mockResolvedValue(mockState);
+    render(CommandPalette, { open: true, onclose: () => {} });
+
+    const search = await screen.findByRole('searchbox', { name: 'Search models' });
+    for (const value of [' OPENAI ', 'GPT-4O']) {
+      await fireEvent.input(search, { target: { value } });
+      expect(screen.queryByText('anthropic/claude-3-5-sonnet')).toBeNull();
+      expect(screen.getByText('openai/gpt-4o')).toBeTruthy();
+    }
+    await fireEvent.input(search, { target: { value: 'Claude 3.5' } });
+    expect(screen.getByText('anthropic/claude-3-5-sonnet')).toBeTruthy();
+    expect(screen.queryByText('openai/gpt-4o')).toBeNull();
+
+    await fireEvent.input(search, { target: { value: 'no-such-model' } });
+    expect(screen.getByRole('status').textContent).toBe('No models match your search.');
+
+    await fireEvent.input(search, { target: { value: '' } });
+    expect(screen.getByText('anthropic/claude-3-5-sonnet')).toBeTruthy();
+    expect(screen.getByText('openai/gpt-4o')).toBeTruthy();
+  });
+
   it('executes model switch command when model is clicked', async () => {
     const apiSpy = vi.spyOn(apiModule, 'apiFetch').mockImplementation(async (url, init) => {
       if (

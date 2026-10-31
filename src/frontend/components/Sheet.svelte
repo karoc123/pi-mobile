@@ -8,6 +8,7 @@
     eyebrow?: string;
     ariaLabel?: string;
     wide?: boolean;
+    contained?: boolean;
     children?: Snippet;
     header?: Snippet;
   }
@@ -19,6 +20,7 @@
     eyebrow,
     ariaLabel,
     wide = false,
+    contained = false,
     children,
     header,
   }: Props = $props();
@@ -70,7 +72,7 @@
   }}
   onclick={handleClick}
 >
-  <div class="sheet-dialog-inner">
+  <div class="sheet-dialog-inner" class:contained>
     {#if header}
       {@render header()}
     {:else if title || eyebrow}
@@ -131,6 +133,12 @@
     justify-content: space-between;
     align-items: flex-start;
     gap: 1rem;
+  }
+
+  .sheet-dialog-inner.contained {
+    max-height: calc(85dvh - 1px);
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
   }
 
   .sheet-header h2 {
