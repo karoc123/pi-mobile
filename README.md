@@ -61,6 +61,8 @@ The Pi CLI `/login` works as well when it uses the same agent directory.
 
 ## Local dev mode (alternative, no Docker)
 
+Requires Node.js `^22.22.2 || ^24.15.0 || >=26.0.0` (see `package.json`).
+
 Use this if you want hot reload and to contribute to PiMobile itself or use self evolving Pi agents:
 
 ```bash
