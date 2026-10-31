@@ -14,7 +14,6 @@
 - **Workspace Documentation**:
   - `docs/VISION.md`
   - `docs/ARCHITECTURE.md`
-  - `CONTEXT.md`
 - **Monorepo Architecture**:
   - Combined Node.js/TypeScript stack.
   - `src/backend/` — Express server, WebSocket hub, and Git/Filesystem orchestration.
@@ -45,6 +44,7 @@ All contributions must adhere to principles that ensure the system remains extre
 - **Test Isolation & Gates**: Agent tests must set isolated `piAgentDir` and `piSessionDir`. E2E starts its own server without `.env` loading or server reuse. The Svelte compiler enforces Runes; warnings fail typecheck. `npm run check` checks formatting across the tracked tree and new files.
 - **Stateless & Git Single Source of Truth**: The local filesystem and Git tree are the absolute Single Source of Truth. Avoid heavy databases or persistent sync state; use simple memory states or HTTP-only cookies for password sessions.
 - **Agent Snapshot Push (No Polling)**: The server pushes a full `snapshot` WebSocket envelope upon client connection and after any session mutation (repo selection, new session, resume, fork, tree, compaction, bash execution). Clients update state reactively via snapshot and real-time delta envelopes; no polling loops.
+- **Provider Login**: Keep provider credentials out of login state, logs and WebSocket broadcasts; pending SDK logins must be cancelled on app logout and shutdown.
 - **Clean Lifecycle & Auth Gate**: The root `App.svelte` acts as an authentication gate. Unmounting the `Workspace` component automatically disposes WebSocket connections and resets active editor state.
 - **Deterministic Test Provider**: Setting `PI_TEST_PROVIDER=1` registers an in-process faux provider within the Pi agent runtime for fast, deterministic unit and Playwright E2E testing without external network calls or API keys.
 - **DRY (Don't Repeat Yourself)**: Centralize WebSocket event schemas and API responses in `src/shared/contracts.ts`. Share TypeScript interfaces between backend routes and frontend components.
@@ -86,5 +86,5 @@ All contributions must adhere to principles that ensure the system remains extre
 - Zero legacy Svelte syntax; 100% Svelte 5 Runes.
 - Secure password boundaries are active and verified across all newly introduced routes.
 - Quality gates pass: `npm run check` (0 errors, 0 warnings), `npm test`, `npm run build`, and `npm run test:e2e`.
-- Documentation (`ARCHITECTURE.md`, `CONTEXT.md`, `AGENTS.md`) is updated to reflect any technical pivot.
+- Documentation (`ARCHITECTURE.md`, `AGENTS.md`) is updated to reflect any technical pivot.
 - Hand-off report includes a short summary of implemented logic and remaining risks.

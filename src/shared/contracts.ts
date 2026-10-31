@@ -25,6 +25,40 @@ export type PiAuthProviderState = {
   provider: string;
   label: string;
   configured: boolean;
+  supportsOAuth?: boolean;
+  supportsApiKey?: boolean;
+  authMethod?: 'api_key' | 'oauth' | null;
+  subscription?: boolean;
+};
+
+export type PiAuthLoginPrompt = {
+  id: string;
+  type: 'text' | 'secret' | 'manual_code' | 'select';
+  message: string;
+  placeholder?: string;
+  options?: readonly { id: string; label: string; description?: string }[];
+};
+
+export type PiAuthLoginState = {
+  id: string;
+  provider: string;
+  status: 'pending' | 'succeeded' | 'failed' | 'cancelled';
+  message: string;
+  expiresAt: number;
+  url?: string;
+  userCode?: string;
+  prompt?: PiAuthLoginPrompt;
+};
+
+export type PiAuthOAuthStartRequest = {
+  provider: string;
+  method?: 'device_code' | 'browser';
+};
+
+export type PiAuthOAuthResponseRequest = {
+  id: string;
+  promptId: string;
+  answer: string;
 };
 
 export type PiAuthStatusResponse = {

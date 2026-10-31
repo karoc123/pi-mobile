@@ -21,7 +21,8 @@ test('mobile browser flow covers login, repo selection, chat, editor save, and h
     .toBe('vscode-light');
 
   await page.getByRole('button', { name: 'Pi Login' }).click();
-  await expect(page.getByRole('heading', { level: 2, name: 'Provider token' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Provider sign-in' })).toBeVisible();
+  await page.getByLabel('Provider', { exact: true }).selectOption('anthropic');
   await page.getByLabel('API token').fill(`token-${Date.now()}`);
   await page.getByRole('button', { name: 'Save token' }).click();
   await expect(page.locator('.notice.success')).toContainText('Pi token for');
@@ -370,4 +371,85 @@ test('review surfaces fit mobile and desktop in both themes', async ({ page }, t
       });
     }
   }
+});
+
+test('mobile subscription sign-in shows the code, resumes after reload, and completes', async ({
+  page,
+}, testInfo) => {
+  const pending = {
+    id: 'test-oauth-flow',
+    provider: 'openai-codex',
+    status: 'pending',
+    message: 'Open the sign-in page and enter this code.',
+    expiresAt: Date.now() + 900_000,
+    userCode: 'ABCD-EFGH',
+    url: 'https://auth.openai.com/codex/device',
+  };
+  let current: typeof pending | null = null;
+  let complete = false;
+  await page.route('**/api/pi/auth/status', (route) =>
+    route.fulfill({
+      json: {
+        providers: [
+          {
+            provider: 'openai-codex',
+            label: 'OpenAI Codex / ChatGPT subscription',
+            configured: complete,
+            supportsOAuth: true,
+            supportsApiKey: false,
+            authMethod: complete ? 'oauth' : null,
+            subscription: complete,
+          },
+        ],
+      },
+    }),
+  );
+  await page.route('**/api/pi/auth/oauth', (route) => {
+    if (route.request().method() === 'POST') {
+      expect(route.request().postDataJSON()).toEqual({
+        provider: 'openai-codex',
+        method: 'device_code',
+      });
+      current = pending;
+      return route.fulfill({ json: pending });
+    }
+    return route.fulfill({ json: { login: current } });
+  });
+  await page.route('**/api/pi/auth/oauth/stream?*', (route) =>
+    route.fulfill({
+      contentType: 'text/event-stream',
+      body: `data: ${JSON.stringify(complete ? { ...pending, status: 'succeeded', message: 'Connected. You can now select a model from this provider.', userCode: undefined, url: undefined } : pending)}\n\n`,
+    }),
+  );
+  await page.goto('/');
+  await page.getByLabel('App password').fill('test-password');
+  await page.getByRole('button', { name: 'Unlock workspace' }).click();
+  const openLogin = async () => {
+    await page.getByRole('button', { name: 'Open workspace menu' }).click();
+    await page.getByRole('button', { name: 'Pi Login' }).click();
+  };
+  await openLogin();
+  await page.getByRole('button', { name: 'Sign in with ChatGPT' }).click();
+  await expect(page.getByLabel('One-time code')).toHaveValue('ABCD-EFGH');
+  await expect(page.getByRole('link', { name: 'Open sign-in page' })).toHaveAttribute(
+    'href',
+    pending.url,
+  );
+  await expect(page.getByRole('button', { name: 'Cancel sign-in' })).toBeVisible();
+  await expect(page.getByLabel('Provider', { exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page.screenshot({ path: testInfo.outputPath('subscription-sign-in-mobile.png') });
+  await page.reload();
+  await openLogin();
+  await expect(page.getByLabel('One-time code')).toHaveValue('ABCD-EFGH');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  complete = true;
+  await openLogin();
+  await expect(page.getByText('Connected · subscription', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Connected. You can now select a model from this provider.'),
+  ).toBeVisible();
+  await expect(page.getByLabel('One-time code')).toHaveCount(0);
 });

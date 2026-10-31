@@ -73,7 +73,7 @@ test "$SSH_CMD" = 'ssh -i "/home/node/.ssh/id_ed25519" -o IdentitiesOnly=yes -o 
 
 login
 PROVIDER="$(curl -fsS -b "$COOKIE_JAR" "http://127.0.0.1:$SMOKE_PORT/api/pi/auth/status" | node -e \
-  'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); const p=d.providers?.[0]?.provider; if(!p) process.exit(1); process.stdout.write(p)')"
+  'const d=JSON.parse(require("fs").readFileSync(0,"utf8")); const p=d.providers?.find(p=>p.provider==="anthropic" && p.supportsApiKey)?.provider; if(!p) process.exit(1); process.stdout.write(p)')"
 TOKEN_BODY="$(node -e 'process.stdout.write(JSON.stringify({provider:process.argv[1],token:"smoke-token"}))' "$PROVIDER")"
 curl -fsS -b "$COOKIE_JAR" -H "Content-Type: application/json" -d "$TOKEN_BODY" \
   "http://127.0.0.1:$SMOKE_PORT/api/pi/auth/login-token" >/dev/null

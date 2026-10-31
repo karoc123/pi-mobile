@@ -27,7 +27,6 @@ const authService = new AuthService(config.appPassword);
 const resourceHealthService = new ResourceHealthService(config);
 const workspaceService = new WorkspaceService(config.workspaceRoot, config.defaultRepo);
 const gitService = new GitService();
-const piAuthService = new PiAuthService(config);
 
 const websocketHub = new WebsocketHub(
   authService,
@@ -44,6 +43,8 @@ const piAgentService = new PiAgentService(
   new ModelUsageStore(config.modelUsagePath, logService.child({ source: 'model-usage' })),
   logService.child({ source: 'pi-agent' }),
 );
+
+const piAuthService = new PiAuthService(config, () => piAgentService.refreshAuth());
 
 const watcherService = new WatcherService(
   (payload) => {
@@ -139,6 +140,7 @@ async function shutdown(signal?: string) {
   try {
     websocketHub.close();
     shutdownController.abort();
+    await piAuthService.dispose();
     await watcherService.dispose();
     await piAgentService.dispose();
     await new Promise<void>((resolve, reject) => {

@@ -21,6 +21,8 @@ import type {
   GitDiffResponse,
   GitSyncResult,
   PiAuthLoginTokenRequest,
+  PiAuthOAuthStartRequest,
+  PiAuthOAuthResponseRequest,
   PiAuthLogoutRequest,
   PiAuthStatusResponse,
   SelectedRepo,
@@ -133,6 +135,17 @@ export function createApp(services: AppServices) {
           response.json(result ?? { ok: true });
         }
       } catch (error) {
+        if (error instanceof PiAuthServiceError) {
+          next(
+            new HttpError(
+              error.code === 'login_conflict' ? 409 : 400,
+              'validation_error',
+              error.message,
+              { retriable: false },
+            ),
+          );
+          return;
+        }
         next(error);
       }
     };
@@ -211,16 +224,117 @@ export function createApp(services: AppServices) {
 
   app.use('/api', requireAuth(services));
 
-  app.post('/api/auth/logout', (request, response) => {
-    services.authService.logout(request.cookies?.[services.config.sessionCookieName]);
-    response.clearCookie(services.config.sessionCookieName, { path: '/' });
-    response.json({ authenticated: false });
-  });
+  app.post(
+    '/api/auth/logout',
+    route(async (request, response) => {
+      services.authService.logout(request.cookies?.[services.config.sessionCookieName]);
+      response.clearCookie(services.config.sessionCookieName, { path: '/' });
+      await services.piAuthService.cancelLogin(
+        request.cookies?.[services.config.sessionCookieName],
+      );
+      response.json({ authenticated: false });
+    }),
+  );
 
   app.get(
     '/api/pi/auth/status',
     route(async () => (await services.piAuthService.getStatus()) satisfies PiAuthStatusResponse),
   );
+
+  const authOwner = (request: Request): string =>
+    request.cookies[services.config.sessionCookieName] as string;
+
+  app.get(
+    '/api/pi/auth/oauth',
+    route((request) => ({
+      login: services.piAuthService.getLogin(authOwner(request))?.state ?? null,
+    })),
+  );
+
+  app.post(
+    '/api/pi/auth/oauth',
+    route(async (request) => {
+      const body = getBodyObject<PiAuthOAuthStartRequest>(request);
+      if (
+        typeof body.provider !== 'string' ||
+        !body.provider.trim() ||
+        (body.method !== undefined && body.method !== 'browser' && body.method !== 'device_code')
+      ) {
+        throw new HttpError(400, 'bad_request', 'Provider and valid login method are required.');
+      }
+      return services.piAuthService.startLogin(
+        authOwner(request),
+        body.provider.trim(),
+        body.method ?? 'device_code',
+      );
+    }),
+  );
+
+  app.post(
+    '/api/pi/auth/oauth/respond',
+    route((request) => {
+      const body = getBodyObject<PiAuthOAuthResponseRequest>(request);
+      const flow = services.piAuthService.getLogin(authOwner(request));
+      if (
+        !flow ||
+        flow.state.id !== body.id ||
+        typeof body.promptId !== 'string' ||
+        typeof body.answer !== 'string' ||
+        body.answer.length > 16_384 ||
+        !flow.answer(body.promptId, body.answer)
+      ) {
+        throw new HttpError(
+          400,
+          'bad_request',
+          'This response is invalid or expired. For browser sign-in, paste the complete callback URL.',
+        );
+      }
+      return { ok: true };
+    }),
+  );
+
+  app.post(
+    '/api/pi/auth/oauth/cancel',
+    route(async (request) => {
+      const body = getBodyObject<{ id: string }>(request);
+      const flow = services.piAuthService.getLogin(authOwner(request));
+      if (!flow || flow.state.id !== body.id) {
+        throw new HttpError(404, 'not_found', 'Sign-in was not found.');
+      }
+      await services.piAuthService.cancelLogin(authOwner(request));
+      return flow.state;
+    }),
+  );
+
+  app.get('/api/pi/auth/oauth/stream', (request, response) => {
+    const owner = authOwner(request);
+    const flow = services.piAuthService.getLogin(owner);
+    if (!flow || flow.state.id !== request.query.id) {
+      sendApiError(response, new HttpError(404, 'not_found', 'Sign-in was not found.'));
+      return;
+    }
+    response.setHeader('Content-Type', 'text/event-stream');
+    response.setHeader('Cache-Control', 'no-store, no-transform');
+    response.setHeader('X-Accel-Buffering', 'no');
+    response.flushHeaders();
+    const unsubscribe = flow.subscribe((state) => {
+      response.write(`data: ${JSON.stringify(state)}\n\n`);
+    });
+    const heartbeat = setInterval(() => {
+      if (!services.authService.isValid(owner)) {
+        response.end();
+        return;
+      }
+      response.write(': heartbeat\n\n');
+    }, 15_000);
+    const stop = () => response.end();
+    services.shutdownSignal?.addEventListener('abort', stop, { once: true });
+    response.on('close', () => {
+      unsubscribe();
+      clearInterval(heartbeat);
+      services.shutdownSignal?.removeEventListener('abort', stop);
+    });
+  });
 
   app.post(
     '/api/pi/auth/login-token',
@@ -235,16 +349,7 @@ export function createApp(services: AppServices) {
         });
       }
 
-      try {
-        return await services.piAuthService.loginToken(provider, token);
-      } catch (error) {
-        if (error instanceof PiAuthServiceError) {
-          const statusCode = 400;
-          throw new HttpError(statusCode, 'validation_error', error.message, { retriable: false });
-        }
-
-        throw error;
-      }
+      return services.piAuthService.loginToken(provider, token);
     }),
   );
 
@@ -258,15 +363,7 @@ export function createApp(services: AppServices) {
         throw new HttpError(400, 'bad_request', 'Provider is required.', { retriable: false });
       }
 
-      try {
-        return await services.piAuthService.logout(provider);
-      } catch (error) {
-        if (error instanceof PiAuthServiceError && error.code === 'unknown_provider') {
-          throw new HttpError(400, 'validation_error', error.message, { retriable: false });
-        }
-
-        throw error;
-      }
+      return services.piAuthService.logout(provider);
     }),
   );
 

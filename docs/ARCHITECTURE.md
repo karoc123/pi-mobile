@@ -40,6 +40,14 @@ To secure filesystem access from mobile clients, an explicit authentication boun
 - **Configuration:** The master password is safe-guarded via environment variables (`APP_PASSWORD`) fed through Docker Compose or loaded from a local `.env` file during `npm start`.
 - **Flow:** `GET /api/health`, `GET /api/auth/session` and `POST /api/auth/login` are public. A single middleware registered after them rejects every other `/api` request without a valid session with `401`, and the WebSocket upgrade performs the same check. The frontend then shows the login screen.
 
+Provider authentication is separate from the app password gate. `PiAuthService` serves
+`/api/pi/auth/*` (status, API token, logout, OAuth). `PiOAuthLogin` wraps
+`ModelRuntime.login()` as a single in-memory login owned by the initiating app session and
+streams its state via SSE. It ends on completion, cancel, a 15-minute deadline, app logout
+or shutdown. Credentials are persisted and renewed by the Pi SDK and never enter login
+state or WebSocket envelopes; a credential change refreshes the agent's model runtime and
+pushes a snapshot.
+
 ### 2.2 Frontend (Mobile-Optimized Svelte 5 Web App)
 
 - **Technology:** Svelte 5 Runes exclusively (`$state`, `$derived`, `$effect`, `$props`, snippet/callback props), scoped CSS with two themes (`vscode-dark` and `vscode-light`), and centralized design tokens in `styles.css`.

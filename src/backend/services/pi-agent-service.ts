@@ -49,6 +49,13 @@ export class PiAgentService {
     });
   }
 
+  async refreshAuth() {
+    if (this.session) {
+      await this.session.modelRuntime.refresh({ allowNetwork: false });
+    }
+    this.emitSnapshot();
+  }
+
   private emitSnapshot() {
     this.broadcast({
       type: 'snapshot',
