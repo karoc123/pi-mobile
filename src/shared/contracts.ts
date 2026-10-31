@@ -136,9 +136,11 @@ export type GitCommitResult = {
   commitSha: string;
 };
 
+export type GitHunkAction = 'stage' | 'unstage' | 'revert';
+
 export type GitHunkActionRequest = {
   diff: string;
-  action: 'stage' | 'unstage' | 'revert';
+  action: GitHunkAction;
 };
 
 export type GitRemoteSyncStatus = {
@@ -184,13 +186,6 @@ export type ChatMessage = {
   status: 'streaming' | 'complete';
   timestamp: string;
   tools?: ChatToolCall[];
-};
-
-export type ToolActivity = {
-  id: string;
-  toolName: string;
-  status: 'running' | 'complete' | 'error';
-  detail: string;
 };
 
 export type AgentUsage = {
@@ -331,15 +326,6 @@ export type InteractivePrompt = {
   promptId: string;
   title: string;
   questions: InteractiveQuestion[];
-};
-
-/** Antwort auf eine einzelne Frage.
- * `value` ist ein String bei Single-Select oder Freitext,
- * ein String-Array bei Multi-Select.
- */
-export type InteractiveAnswer = {
-  questionId: string;
-  value: string | string[];
 };
 
 export type AgentThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';

@@ -313,27 +313,11 @@ export function createApp(services: AppServices) {
       sendApiError(response, new HttpError(404, 'not_found', 'Sign-in was not found.'));
       return;
     }
-    response.setHeader('Content-Type', 'text/event-stream');
-    response.setHeader('Cache-Control', 'no-store, no-transform');
-    response.setHeader('X-Accel-Buffering', 'no');
-    response.flushHeaders();
+    openEventStream(response, services.shutdownSignal, () => services.authService.isValid(owner));
     const unsubscribe = flow.subscribe((state) => {
       response.write(`data: ${JSON.stringify(state)}\n\n`);
     });
-    const heartbeat = setInterval(() => {
-      if (!services.authService.isValid(owner)) {
-        response.end();
-        return;
-      }
-      response.write(': heartbeat\n\n');
-    }, 15_000);
-    const stop = () => response.end();
-    services.shutdownSignal?.addEventListener('abort', stop, { once: true });
-    response.on('close', () => {
-      unsubscribe();
-      clearInterval(heartbeat);
-      services.shutdownSignal?.removeEventListener('abort', stop);
-    });
+    response.on('close', unsubscribe);
   });
 
   app.post(
@@ -525,10 +509,7 @@ export function createApp(services: AppServices) {
   app.get('/api/logs/stream', (request, response) => {
     const query = parseLogQuery(request);
 
-    response.setHeader('Content-Type', 'text/event-stream');
-    response.setHeader('Cache-Control', 'no-cache, no-transform');
-    response.setHeader('Connection', 'keep-alive');
-    response.flushHeaders();
+    openEventStream(response, services.shutdownSignal);
     response.write('retry: 3000\n\n');
 
     const writeEvent = (event: string, payload: unknown) => {
@@ -541,18 +522,7 @@ export function createApp(services: AppServices) {
     const unsubscribe = services.logService.subscribe((entry) => {
       writeEvent('log', entry);
     }, query);
-
-    const heartbeat = setInterval(() => {
-      writeEvent('ping', { time: Date.now() });
-    }, 15000);
-
-    const stop = () => response.end();
-    services.shutdownSignal?.addEventListener('abort', stop, { once: true });
-    response.on('close', () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-      services.shutdownSignal?.removeEventListener('abort', stop);
-    });
+    response.on('close', unsubscribe);
   });
 
   app.get('/api/agent/state', (request, response) => {
@@ -775,6 +745,31 @@ function createFileRouter(
   });
 
   return router;
+}
+
+function openEventStream(
+  response: Response,
+  shutdownSignal: AbortSignal | undefined,
+  isAlive: () => boolean = () => true,
+) {
+  response.setHeader('Content-Type', 'text/event-stream');
+  response.setHeader('Cache-Control', 'no-store, no-transform');
+  response.setHeader('X-Accel-Buffering', 'no');
+  response.flushHeaders();
+
+  const heartbeat = setInterval(() => {
+    if (!isAlive()) {
+      response.end();
+      return;
+    }
+    response.write(': heartbeat\n\n');
+  }, 15_000);
+  const stop = () => response.end();
+  shutdownSignal?.addEventListener('abort', stop, { once: true });
+  response.on('close', () => {
+    clearInterval(heartbeat);
+    shutdownSignal?.removeEventListener('abort', stop);
+  });
 }
 
 function requireAuth(services: AppServices) {

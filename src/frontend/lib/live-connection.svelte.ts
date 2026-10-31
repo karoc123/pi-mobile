@@ -9,7 +9,7 @@ import { apiFetch } from './api.js';
 
 export type SocketStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline';
 
-export const emptyUsage: AgentUsage = {
+const emptyUsage: AgentUsage = {
   inputTokens: 0,
   outputTokens: 0,
   cacheReadTokens: 0,

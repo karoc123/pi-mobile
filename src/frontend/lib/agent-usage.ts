@@ -1,5 +1,3 @@
-import type { AgentUsage } from '../../shared/contracts.js';
-
 export function formatCompactTokenCount(value: number) {
   if (value < 1000) {
     return String(value);
@@ -26,36 +24,4 @@ export function formatUsageCost(value: number) {
   }
 
   return `$${value.toFixed(3)}`;
-}
-
-export function formatUsageSummary(usage: AgentUsage) {
-  const parts: string[] = [];
-
-  if (usage.inputTokens > 0) {
-    parts.push(`↑${formatCompactTokenCount(usage.inputTokens)}`);
-  }
-
-  if (usage.outputTokens > 0) {
-    parts.push(`↓${formatCompactTokenCount(usage.outputTokens)}`);
-  }
-
-  if (usage.totalCost > 0 || usage.usingSubscription) {
-    parts.push(`${formatUsageCost(usage.totalCost)}${usage.usingSubscription ? ' (sub)' : ''}`);
-  }
-
-  const contextWindow = usage.contextWindow ? formatCompactTokenCount(usage.contextWindow) : '?';
-  const contextPercent =
-    usage.contextPercent === null ? '?' : `${usage.contextPercent.toFixed(1)}%`;
-  const autoIndicator = usage.autoCompactEnabled ? ' (auto)' : '';
-  parts.push(`${contextPercent}/${contextWindow}${autoIndicator}`);
-
-  return parts.join(' ');
-}
-
-export function formatModelLabel(modelId: string | null) {
-  if (!modelId) {
-    return 'No model';
-  }
-
-  return modelId;
 }

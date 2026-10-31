@@ -34,7 +34,7 @@ A fine-grained Git workflow right on your phone. Instead of just handling entire
 2. **Visual Inspection (Diff View):** As soon as the agent pauses, you switch to the Git Dashboard using the bottom navigation bar. You instantly see two modified files.
 3. **Fine-Grained Staging (Hunk Revert):** You expand the diff of the test file. The agent wrote three test cases, but one is redundant. You tap **[ Revert ]** next to that specific code hunk—the block vanishes immediately, and the file is reverted on the Pi.
 4. **Manual Touch-ups (In-App Editor):** You notice a small typo in an error message. Instead of prompting the agent again, you open the file directly in the app's streamlined text editor on your phone, fix the typo, and hit save. The diff panel refreshes instantly.
-5. **One-Tap Commit:** Based on the remaining changes, the backend suggests a precise commit message. You tap the large green **[ Commit ]** button right in your thumb's natural reach. The code is clean and checked in.
+5. **One-Tap Commit:** You tap the large green **[ Commit ]** button right in your thumb's natural reach. The code is clean and checked in.
 
 ---
 

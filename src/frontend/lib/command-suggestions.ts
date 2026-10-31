@@ -26,15 +26,10 @@ export const SLASH_COMMAND_ALIASES: Record<string, string> = {
   '/thinking': '/settings',
 };
 
-export type SlashCommandQuery = {
+type SlashCommandQuery = {
   value: string;
   start: number;
   end: number;
-};
-
-export type SubmittedSlashCommand = {
-  suggestion: SlashCommandSuggestion;
-  args: string;
 };
 
 export function toRuntimeSlashCommandSuggestions(
@@ -127,29 +122,5 @@ export function applySlashCommandSuggestion(
   return {
     prompt: updatedPrompt,
     cursorIndex: query.start + replacement.length,
-  };
-}
-
-export function getSubmittedSlashCommand(
-  prompt: string,
-  suggestions: SlashCommandSuggestion[] = SLASH_COMMANDS,
-): SubmittedSlashCommand | null {
-  const trimmedPrompt = prompt.trim();
-  const match = /^(\/[a-z0-9:_-]+)(?:\s+(.*))?$/i.exec(trimmedPrompt);
-
-  if (!match) {
-    return null;
-  }
-
-  const normalizedCommand = match[1].toLowerCase();
-  const suggestion = suggestions.find((entry) => entry.command.toLowerCase() === normalizedCommand);
-
-  if (!suggestion) {
-    return null;
-  }
-
-  return {
-    suggestion,
-    args: (match[2] ?? '').trim(),
   };
 }

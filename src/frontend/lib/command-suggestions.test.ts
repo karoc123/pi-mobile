@@ -4,7 +4,6 @@ import {
   applySlashCommandSuggestion,
   findSlashCommandQuery,
   getSlashCommandSuggestions,
-  getSubmittedSlashCommand,
   toRuntimeSlashCommandSuggestions,
 } from './command-suggestions.js';
 
@@ -31,14 +30,6 @@ describe('slash command suggestions', () => {
     });
   });
 
-  it('parses a submitted slash command before prompt dispatch', () => {
-    expect(getSubmittedSlashCommand('  /bash git status --short  ')).toEqual({
-      suggestion: { command: '/bash', description: 'Run direct bash commands' },
-      args: 'git status --short',
-    });
-    expect(getSubmittedSlashCommand('write a summary')).toBeNull();
-  });
-
   it('supports runtime slash commands with skill prefixes', () => {
     const runtimeSuggestions = toRuntimeSlashCommandSuggestions([
       {
@@ -54,13 +45,5 @@ describe('slash command suggestions', () => {
         description: 'Review repository health',
       },
     ]);
-
-    expect(getSubmittedSlashCommand('/skill:repo-review run', runtimeSuggestions)).toEqual({
-      suggestion: {
-        command: '/skill:repo-review',
-        description: 'Review repository health',
-      },
-      args: 'run',
-    });
   });
 });

@@ -70,7 +70,7 @@ describe('GitService', () => {
     expect(diffFiles).toHaveLength(1);
     expect(diffFiles[0].hunks).toHaveLength(2);
 
-    await service.revertHunk(repo, diffFiles[0].hunks[0].diff);
+    await service.applyHunk(repo, diffFiles[0].hunks[0].diff, 'revert');
 
     const updatedContent = await readFile(filePath, 'utf8');
 

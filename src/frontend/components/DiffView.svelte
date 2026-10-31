@@ -9,6 +9,8 @@
     GitBranchInfo,
     GitCommitResult,
     GitDiffResponse,
+    GitHunkAction,
+    GitHunkActionRequest,
     GitRemoteSyncStatus,
     GitSyncResult,
   } from '../../shared/contracts.js';
@@ -89,11 +91,7 @@
     return run(action, { okText, busy: (isBusy) => (busy = isBusy ? key : null) });
   }
 
-  async function applyHunkAction(
-    diff: string,
-    hunkId: string,
-    action: 'stage' | 'unstage' | 'revert',
-  ) {
+  async function applyHunkAction(diff: string, hunkId: string, action: GitHunkAction) {
     const successMsg =
       action === 'stage'
         ? 'Hunk staged.'
@@ -104,7 +102,7 @@
     await runAction(
       `hunk:${action}:${hunkId}`,
       async () => {
-        await api.post('/api/git/hunk', { diff, action });
+        await api.post('/api/git/hunk', { diff, action } satisfies GitHunkActionRequest);
         await loadDiff();
         if (action === 'revert') {
           onworkspacechange();

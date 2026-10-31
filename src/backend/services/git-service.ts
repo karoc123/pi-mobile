@@ -2,6 +2,7 @@ import type {
   DiffFile,
   DiffHunk,
   GitBranchInfo,
+  GitHunkAction,
   GitRemoteSyncStatus,
   SelectedRepo,
 } from '../../shared/contracts.js';
@@ -56,7 +57,7 @@ export class GitService {
     };
   }
 
-  async applyHunk(repo: SelectedRepo, diff: string, action: 'stage' | 'unstage' | 'revert') {
+  async applyHunk(repo: SelectedRepo, diff: string, action: GitHunkAction) {
     const normalizedDiff = normalizePatch(diff);
     const args =
       action === 'stage'
@@ -67,18 +68,6 @@ export class GitService {
     await this.runGit(repo, args, {
       input: normalizedDiff,
     });
-  }
-
-  async revertHunk(repo: SelectedRepo, diff: string) {
-    await this.applyHunk(repo, diff, 'revert');
-  }
-
-  async stageHunk(repo: SelectedRepo, diff: string) {
-    await this.applyHunk(repo, diff, 'stage');
-  }
-
-  async unstageHunk(repo: SelectedRepo, diff: string) {
-    await this.applyHunk(repo, diff, 'unstage');
   }
 
   async stageAll(repo: SelectedRepo) {

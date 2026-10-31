@@ -133,11 +133,8 @@ describe('createApp', () => {
         pull: gitPull,
         push: gitPush,
         applyHunk: gitApplyHunk,
-        stageHunk: vi.fn(),
-        unstageHunk: vi.fn(),
         stageAll: gitStageAll,
         unstageAll: gitUnstageAll,
-        revertHunk: vi.fn(),
       } as never,
       resourceHealthService: {
         check: getResourceHealth,

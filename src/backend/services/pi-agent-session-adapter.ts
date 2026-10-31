@@ -436,7 +436,7 @@ function isModelReadyForSelection(modelRuntime: ModelRuntime, provider: string) 
   );
 }
 
-export function deriveRuntimePhase(input: {
+function deriveRuntimePhase(input: {
   isStreaming: boolean;
   isCompacting: boolean;
   isRetrying: boolean;
