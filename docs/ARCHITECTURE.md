@@ -150,7 +150,7 @@ To eliminate CPU-intensive polling on low-power devices:
 
 `Dockerfile` uses a two-stage build:
 
-- Node.js requirements: `^22.22.2 || ^24.15.0 || >=26.0.0`; the Docker image follows Node.js 22. Chokidar 6 requires at least 22.22, and jsdom 30 requires at least 22.22.2 on that line.
+- Node.js requirements: `^22.22.2 || ^24.15.0 || >=26.0.0`; the Docker image follows Node.js 22. Chokidar 6 requires at least 22.22, and jsdom 31 requires at least 22.22.2 on that line.
 - Build stage: Installs dependencies, builds frontend and backend, and prunes development packages.
 - Runtime stage: Installs `git` and `openssh-client`, copies distribution bundles, and runs `docker/entrypoint.sh`.
 
